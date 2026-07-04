@@ -301,6 +301,71 @@ export default function Home() {
   }, [messages]);
 
   // File upload state & handlers
+  const handleJdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', files[0]);
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `⏳ **Ingesting Job Description...** parsing raw file and structuring schema fields.`
+    }]);
+    
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/ingest/upload-jd', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Job Description upload ingestion failed');
+      }
+      
+      const structuredJd = await res.json();
+      setJd(structuredJd);
+      
+      const successMsg = {
+        role: 'assistant' as const,
+        content: `✅ **JD Ingestion Success**: Loaded Job Description for **${structuredJd.role}** (${structuredJd.experience_years}+ years experience, skills: ${structuredJd.required_skills.join(', ')}).`
+      };
+      
+      setMessages(prev => [...prev.slice(0, -1), successMsg]);
+      
+      // Persist JD to session
+      const storedId = localStorage.getItem('recruitai_session_id');
+      if (storedId) {
+        await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jd_structured: structuredJd,
+            title: `Hiring: ${structuredJd.role}`,
+            conversation_history: [...messages, successMsg]
+          })
+        });
+        handleLoadSessionsList();
+      }
+    } catch (err) {
+      console.error(err);
+      const error = err as Error;
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `❌ **JD Ingestion Failed**: ${error.message || 'An error occurred during JD upload.'}`
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -728,9 +793,11 @@ export default function Home() {
 
         {/* ACTIVE JOB DESCRIPTION */}
         <div className="bg-slate-900/60 border border-zinc-800 rounded-xl p-3.5 shadow-md flex flex-col gap-2.5 backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-            <Briefcase className="w-3.5 h-3.5" />
-            <span>Active Position</span>
+          <div className="flex items-center justify-between text-emerald-400 font-bold text-xs uppercase tracking-wider">
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-3.5 h-3.5" />
+              <span>Active Position</span>
+            </div>
           </div>
           {jd ? (
             <div className="flex flex-col gap-1.5">
@@ -762,6 +829,20 @@ export default function Home() {
               </button>
             </div>
           )}
+
+          <div className="pt-2.5 border-t border-slate-800/80 mt-1 flex flex-col gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Custom JD</span>
+            <div className="relative border border-dashed border-slate-800 hover:border-emerald-600/80 rounded-lg p-2.5 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-950/20 group">
+              <input 
+                type="file" 
+                accept=".txt,.pdf,.doc,.docx"
+                onChange={handleJdUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+              />
+              <Paperclip className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 mb-1 transition-colors" />
+              <span className="text-[10px] text-slate-400 group-hover:text-slate-200 transition-colors">Choose JD text/PDF file</span>
+            </div>
+          </div>
         </div>
 
         {/* SCREENED CANDIDATES */}
