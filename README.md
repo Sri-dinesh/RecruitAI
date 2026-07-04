@@ -34,6 +34,23 @@ RecruitAI uses a state-of-the-art **Multi-Agent Supervisor** architecture implem
 - **Interview & Salary Agent:** Generates custom technical/behavioral prep questions and queries market salary benchmarks.
 - **Human-in-the-Loop Node:** Restricts candidate shortlist finalization behind explicit user yes/no confirmation.
 
+### Workflow Visualization Diagram
+
+```mermaid
+graph TD;
+	__start__([__start__]) --> supervisor_agent;
+	supervisor_agent -.-> fallback;
+	supervisor_agent -.-> hitl_confirm;
+	supervisor_agent -.-> interview_salary_agent;
+	supervisor_agent -.-> jd_agent;
+	supervisor_agent -.-> screening_agent;
+	fallback --> __end__([__end__]);
+	hitl_confirm --> __end__;
+	interview_salary_agent --> __end__;
+	jd_agent --> __end__;
+	screening_agent --> __end__;
+```
+
 ---
 
 ## Advanced RAG Pipeline
