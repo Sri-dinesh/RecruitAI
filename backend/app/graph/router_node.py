@@ -28,39 +28,72 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     """
     q = query.lower().strip()
     
-    # 1. count check
+    # 0. Numeric Selection mappings (from fallback option lists)
+    num_query = q.strip(".")
+    if num_query in ["1", "one"]:
+        return "load_context", 1.0
+    if num_query in ["2", "two"]:
+        return "count", 1.0
+    if num_query in ["3", "three"]:
+        return "screen", 1.0
+    if num_query in ["4", "four"]:
+        return "rewrite_jd", 1.0
+    if num_query in ["5", "five"]:
+        return "interview_questions", 1.0
+    if num_query in ["6", "six"]:
+        return "salary", 1.0
+    if num_query in ["7", "seven"]:
+        return "finalize_shortlist", 1.0
+
+    # 1. load_context check
+    if re.search(r"\b(load|parse|read|ingest|import)\b.*\b(jd|job description|resume|cv|candidate|resumes|context)\b", q) or re.search(r"\b(jd|job description|resume|cv|candidate|resumes|context)\b.*\b(load|parse|read|ingest|import)\b", q):
+        return "load_context", 1.0
+
+    # 2. count check
     if re.search(r"\b(how many|count of|number of|how many (candidates|resumes|applicants))\b", q):
         return "count", 1.0
 
-    # 2. finalize_shortlist check
+    # 3. screen check
+    if re.search(r"\b(screen|rank|evaluate|find top|get top|top candidate|filter|match)\b.*\b(candidate|resume|applicant|resumes)\b", q) or re.search(r"\b(candidate|resume|applicant|resumes)\b.*\b(screen|rank|evaluate|find top|get top|top candidate|filter|match)\b", q) or q in ["screen", "screen candidates", "rank candidates"]:
+        return "screen", 1.0
+
+    # 4. finalize_shortlist check
     if re.search(r"\b(finalize|lock in|go with these|finalize shortlist)\b", q):
         return "finalize_shortlist", 1.0
 
-    # 3. compare check
+    # 5. compare check
     if re.search(r"\b(compare|side.by.side|vs|versus)\b", q):
         return "compare", 1.0
 
-    # 4. email/outreach check
+    # 6. email/outreach check
     if re.search(r"\b(email|draft|send email|write email|outreach)\b", q):
         return "email", 1.0
 
-    # 5. skill trend check
+    # 7. skill trend check
     if re.search(r"\b(trend|trending|in.demand|market skill|skill trend)\b", q):
         return "trend", 1.0
 
-    # 6. schedule/calendar check
+    # 8. schedule/calendar check
     if re.search(r"\b(schedule|calendar|book|interview time|slot)\b", q):
         return "schedule", 1.0
 
-    # 7. red flags check
+    # 9. red flags check
     if re.search(r"\b(red flag|gap|inconsistent|suspicious|resume issue)\b", q):
         return "redflags", 1.0
 
-    # 8. fetch live jd check
+    # 10. fetch live jd check
     if re.search(r"\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b.*\b(api|internet|web|online|live|indianapi|serpapi)\b", q) or re.search(r"\b(api|internet|web|online|live|indianapi|serpapi)\b.*\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b", q):
         return "fetch_jd_api", 1.0
 
-    # 9. simple greeting or fallback check
+    # 11. rewrite_jd check
+    if re.search(r"\b(rewrite|polish|improve|startup tone)\b.*\b(jd|job description|role)\b", q) or re.search(r"\b(jd|job description)\b.*\b(rewrite|polish|improve|startup tone)\b", q):
+        return "rewrite_jd", 1.0
+
+    # 12. interview_questions check
+    if re.search(r"\b(interview|prep|preparation|practice)\b.*\b(question|questions|prep)\b", q) or re.search(r"\b(question|questions)\b.*\b(interview|prep|candidate)\b", q):
+        return "interview_questions", 1.0
+
+    # 13. simple greeting or fallback check
     if q in ["hi", "hello", "hey", "who are you", "help"]:
         return "other", 1.0
 
