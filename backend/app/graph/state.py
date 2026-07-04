@@ -9,3 +9,4 @@ class RecruitState(TypedDict):
     last_shortlist: Optional[List[Candidate]]
     pending_confirmation: Optional[dict]
     last_intent: Optional[str]
+    scheduled_interviews: Optional[List[dict]]  # {candidate_name, slot, booked_at}

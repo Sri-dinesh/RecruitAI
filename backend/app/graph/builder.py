@@ -11,6 +11,13 @@ from app.graph.nodes.interview_qgen_node import interview_qgen_node
 from app.graph.nodes.salary_node import salary_node
 from app.graph.nodes.hitl_confirm_node import hitl_confirm_node
 
+# Phase 10 nodes
+from app.graph.nodes.compare_node import compare_node
+from app.graph.nodes.email_node import email_node
+from app.graph.nodes.trend_node import trend_node
+from app.graph.nodes.schedule_node import schedule_node
+from app.graph.nodes.redflags_node import redflags_node
+
 def supervisor_agent_node(state: RecruitState) -> dict:
     """
     Supervisor Agent.
@@ -45,25 +52,37 @@ def jd_agent_node(state: RecruitState) -> dict:
 def screening_agent_node(state: RecruitState) -> dict:
     """
     Specialized Screening & RAG Agent.
-    Manages candidate count computations and advanced RAG screening matches.
+    Manages candidate count computations, advanced RAG screening matches,
+    candidate comparison tables, and resume red-flag detection.
     """
     intent = state.get("last_intent")
     if intent == "screen":
         return screen_node(state)
     elif intent == "count":
         return count_node(state)
+    elif intent == "compare":
+        return compare_node(state)
+    elif intent == "redflags":
+        return redflags_node(state)
     return {}
 
 def interview_salary_agent_node(state: RecruitState) -> dict:
     """
     Specialized Interview & Salary Agent.
-    Generates technical prep questions and retrieves live salary metrics.
+    Generates technical prep questions, retrieves live salary metrics,
+    drafts recruiter emails, analyzes skill trends, and schedules interviews.
     """
     intent = state.get("last_intent")
     if intent == "interview_questions":
         return interview_qgen_node(state)
     elif intent == "salary":
         return salary_node(state)
+    elif intent == "email":
+        return email_node(state)
+    elif intent == "trend":
+        return trend_node(state)
+    elif intent == "schedule":
+        return schedule_node(state)
     return {}
 
 def fallback_node(state: RecruitState) -> dict:
@@ -107,12 +126,12 @@ def route_to_subagent(state: RecruitState) -> str:
     Supervisor conditional routing logic.
     """
     intent = state.get("last_intent")
-    
+
     if intent in ["load_context", "rewrite_jd"]:
         return "jd_agent"
-    elif intent in ["screen", "count"]:
+    elif intent in ["screen", "count", "compare", "redflags"]:
         return "screening_agent"
-    elif intent in ["interview_questions", "salary"]:
+    elif intent in ["interview_questions", "salary", "email", "trend", "schedule"]:
         return "interview_salary_agent"
     elif intent == "finalize_shortlist":
         return "hitl_confirm"

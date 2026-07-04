@@ -93,3 +93,38 @@ def suggest_jd_improvements(jd_raw_text: str) -> List[str]:
     except Exception as e:
         print(f"Error checking JD improvements: {e}")
         return []
+
+
+def detect_red_flags(candidate: Candidate) -> List[str]:
+    """
+    Uses LLM to detect timeline gaps, inconsistent dates, or suspicious patterns in a resume.
+    Returns a list of strings (each string = one red flag description).
+    If no red flags, returns an empty list [].
+    """
+    system_instruction = (
+        "You are an expert resume analyst specializing in detecting red flags in candidate resumes. "
+        "Carefully analyze the resume for: timeline gaps (unexplained periods of 6+ months), "
+        "inconsistent dates (overlapping positions, suspicious date ranges), "
+        "job hopping (multiple jobs < 1 year in a row), inflated or vague claims, "
+        "and any other suspicious patterns. "
+        "Output a JSON object: {\"red_flags\": [\"description 1\", \"description 2\"]}. "
+        "If the resume looks clean with no issues, return {\"red_flags\": []}. "
+        "Be specific and concise for each flag (max 2 sentences per flag). "
+        "Output ONLY valid JSON, no other text."
+    )
+    prompt = (
+        f"Analyze the following resume for red flags:\n\n"
+        f"Candidate: {candidate.name}\n"
+        f"Resume Content:\n{candidate.raw_text}"
+    )
+
+    try:
+        response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
+        data = json.loads(response_text)
+        flags = data.get("red_flags", [])
+        # Ensure all items are strings
+        return [str(f) for f in flags if f]
+    except Exception as e:
+        print(f"Error detecting red flags for {candidate.name}: {e}")
+        return []
+

@@ -12,7 +12,12 @@ INTENT_PLAIN_MAP = {
     "rewrite_jd": "rewriting or polishing the job description",
     "interview_questions": "generating interview questions",
     "salary": "benchmarking market salary data",
-    "finalize_shortlist": "finalizing the candidate shortlist"
+    "finalize_shortlist": "finalizing the candidate shortlist",
+    "compare": "comparing candidates side-by-side in a table",
+    "email": "drafting or sending a recruiter email to a candidate",
+    "trend": "analyzing trending skills and market demand for a role",
+    "schedule": "scheduling or booking an interview time slot",
+    "redflags": "detecting red flags, timeline gaps, or inconsistencies in resumes"
 }
 
 def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
@@ -25,15 +30,35 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     # 1. count check
     if re.search(r"\b(how many|count of|number of|how many (candidates|resumes|applicants))\b", q):
         return "count", 1.0
-        
+
     # 2. finalize_shortlist check
     if re.search(r"\b(finalize|lock in|go with these|finalize shortlist)\b", q):
         return "finalize_shortlist", 1.0
-        
-    # 3. simple greeting or fallback check
+
+    # 3. compare check
+    if re.search(r"\b(compare|side.by.side|vs|versus)\b", q):
+        return "compare", 1.0
+
+    # 4. email/outreach check
+    if re.search(r"\b(email|draft|send email|write email|outreach)\b", q):
+        return "email", 1.0
+
+    # 5. skill trend check
+    if re.search(r"\b(trend|trending|in.demand|market skill|skill trend)\b", q):
+        return "trend", 1.0
+
+    # 6. schedule/calendar check
+    if re.search(r"\b(schedule|calendar|book|interview time|slot)\b", q):
+        return "schedule", 1.0
+
+    # 7. red flags check
+    if re.search(r"\b(red flag|gap|inconsistent|suspicious|resume issue)\b", q):
+        return "redflags", 1.0
+
+    # 8. simple greeting or fallback check
     if q in ["hi", "hello", "hey", "who are you", "help"]:
         return "other", 1.0
-        
+
     return None
 
 def llm_classify(query: str) -> Tuple[str, float, str, float]:
@@ -49,27 +74,37 @@ def llm_classify(query: str) -> Tuple[str, float, str, float]:
         "- rewrite_jd: Rewrite or edit the JD (e.g. 'rewrite this JD for a startup', 'shorten the job description')\n"
         "- interview_questions: Generate prep questions for a candidate (e.g. 'interview questions for Alice', 'prep questions for the top candidate')\n"
         "- salary: Get salary market benchmarks (e.g. 'what is the salary for this role', 'salary range in India')\n"
+        "- compare: Compare candidates side-by-side in a table (e.g. 'compare top candidates', 'show me a comparison table')\n"
+        "- email: Draft or send a recruiter email (e.g. 'draft an interview invite for Alice', 'write a rejection email for Bob')\n"
+        "- trend: Analyze trending skills or market demand (e.g. 'what skills are trending for Python developers', 'skill trends for this role')\n"
+        "- schedule: Schedule or book an interview slot (e.g. 'schedule an interview with Alice', 'book a meeting with the top candidate')\n"
+        "- redflags: Detect red flags or issues in resumes (e.g. 'check for red flags', 'any gaps in resumes', 'resume issues')\n"
         "- other: Greetings, chit-chat, clarify, or unclassified queries.\n\n"
         "Return a JSON object: {\"intent\": \"<intent>\", \"confidence\": <float_0_to_1>}."
     )
-    
+
     prompt = f"User Query: \"{query}\"\n\nJSON Response:"
-    
+
+    valid_intents = [
+        "load_context", "screen", "rewrite_jd", "interview_questions", "salary",
+        "compare", "email", "trend", "schedule", "redflags", "other"
+    ]
+
     try:
         response_text, provider, latency_ms = call_llm(
             prompt=prompt,
             system_instruction=system_instruction,
             json_mode=True
         )
-        
+
         # Parse JSON output
         data = json.loads(response_text.strip())
         intent = data.get("intent", "other")
         confidence = float(data.get("confidence", 0.5))
-        
-        if intent not in ["load_context", "screen", "rewrite_jd", "interview_questions", "salary", "other"]:
+
+        if intent not in valid_intents:
             intent = "other"
-            
+
         return intent, confidence, provider, latency_ms
     except Exception as e:
         print(f"Router LLM classification failed: {str(e)}")
