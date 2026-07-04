@@ -1,0 +1,11 @@
+Name: Julia Roberts
+Email: julia.r@email.com
+Experience: 6 years
+Skills: Python, Flask, MySQL, AWS, Docker, Git, REST APIs
+
+Projects:
+- Machine Learning Pipeline: Deployed predictive models using Flask and Docker on AWS ECS.
+- Inventory Tracker: Managed database schemas in MySQL for warehouse inventory tracking.
+
+Education:
+- Bachelor of Science in Data Science, Capital University, 2020.

@@ -1,0 +1,11 @@
+Name: Fiona Gallagher
+Email: fiona.g@email.com
+Experience: 4 years
+Skills: React, Node.js, PostgreSQL, JavaScript, HTML5, CSS3, Express
+
+Projects:
+- Local Business Directory: Created a full-stack directory application using React and Node.js, utilizing PostgreSQL for storage.
+- Admin Panel: Coded a responsive admin interface for content managers.
+
+Education:
+- Associate Degree in Web Development, Tech Academy, 2022.

@@ -1,0 +1,11 @@
+Name: Penny Hofstadter
+Email: penny.h@email.com
+Experience: 4 years
+Skills: Technical Writing, QA Testing, Manual Testing, Jira, Confluence, Documentation
+
+Projects:
+- API Documentation: Authored developer guides and setup handbooks for software systems.
+- Quality Assurance: Executed test cases manually and reported bugs via Jira.
+
+Education:
+- Bachelor of Arts in Communications, West College, 2022.

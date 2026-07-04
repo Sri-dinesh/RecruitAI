@@ -1,0 +1,11 @@
+Name: Hannah Abbott
+Email: hannah.a@email.com
+Experience: 3 years
+Skills: Python, React, Node.js, PostgreSQL, AWS, TypeScript, Git
+
+Projects:
+- Portfolio Manager: Built a lightweight tool for personal budget planning using React and Python.
+- Database Syncer: Wrote a Node.js script to sync local records with a cloud PostgreSQL database on AWS.
+
+Education:
+- Bachelor of Science in Computer Science, State College, 2023.

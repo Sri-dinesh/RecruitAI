@@ -1,0 +1,11 @@
+Name: Oliver Twist
+Email: oliver.t@email.com
+Experience: 1 year
+Skills: Python, HTML, CSS, JavaScript
+
+Projects:
+- Calculator App: Built a command line and web calculator using vanilla JavaScript and CSS.
+- File Organizer: Wrote a simple Python script to rename and organize photos.
+
+Education:
+- Bootcamp Graduate, Code Builders, 2025.

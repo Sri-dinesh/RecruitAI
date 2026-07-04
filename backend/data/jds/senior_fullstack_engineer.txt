@@ -1,0 +1,6 @@
+Title: Senior Full Stack Engineer
+Experience: 5+ years
+Required Skills: Python, React, Node.js, PostgreSQL, AWS, TypeScript
+
+About the Role:
+We are looking for a Senior Full Stack Engineer to join our fast-paced startup team. You will be responsible for building robust APIs in Python/Node.js, crafting beautiful and responsive frontends in React/TypeScript, and managing cloud deployments on AWS using PostgreSQL database systems. You should have at least 5 years of professional software engineering experience.

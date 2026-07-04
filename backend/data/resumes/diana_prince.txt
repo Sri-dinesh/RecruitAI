@@ -1,0 +1,11 @@
+Name: Diana Prince
+Email: diana.prince@email.com
+Experience: 7 years
+Skills: Python, Flask, React, TypeScript, Node.js, PostgreSQL, AWS, Serverless, DynamoDB
+
+Projects:
+- IoT Analytics: Built serverless ingestion pipelines on AWS. Created a React dashboard using TypeScript to visualize sensor data stored in PostgreSQL.
+- API gateway: Designed RESTful API endpoints using Python/Flask and Node.js with comprehensive test coverage.
+
+Education:
+- Bachelor of Science in Computer Engineering, Global College, 2019.

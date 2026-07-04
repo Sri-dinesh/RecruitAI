@@ -1,0 +1,11 @@
+Name: George Green
+Email: george.green@email.com
+Experience: 6 years
+Skills: Python, Django, PostgreSQL, Docker, AWS, Linux, Bash Scripting
+
+Projects:
+- Automation Scripts: Wrote extensive command line tools and automation scripts in Python to streamline file processing and DB cleanups in PostgreSQL.
+- Server Management: Configured EC2 instances on AWS and set up continuous deployments.
+
+Education:
+- Bachelor of Science in Mathematics, Science College, 2020.

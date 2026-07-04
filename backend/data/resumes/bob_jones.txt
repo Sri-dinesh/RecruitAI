@@ -1,0 +1,11 @@
+Name: Bob Jones
+Email: bob.jones@email.com
+Experience: 8 years
+Skills: Python, Django, React, Node.js, PostgreSQL, TypeScript, AWS, Docker, Kubernetes, CI/CD
+
+Projects:
+- Cloud Migration: Led the migration of legacy services to AWS using Terraform. Integrated React frontend with Python/Django backends.
+- Database Optimization: Optimized PostgreSQL queries and schemas, reducing slow query counts by 65%.
+
+Education:
+- Master of Science in Software Engineering, Tech Institute, 2018.

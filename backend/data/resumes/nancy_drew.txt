@@ -1,0 +1,11 @@
+Name: Nancy Drew
+Email: nancy.d@email.com
+Experience: 10 years
+Skills: Cobol, Fortran, DB2, Mainframe, JCL, SQL
+
+Projects:
+- Legacy Banking Systems Maintenance: Maintained transactional databases and batch scripts on legacy mainframe hardware.
+- Migration Consulting: Assisted in documenting legacy code logic.
+
+Education:
+- Bachelor of Science in Computer Science, Heritage College, 2016.

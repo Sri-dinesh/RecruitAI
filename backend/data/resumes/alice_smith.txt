@@ -1,0 +1,11 @@
+Name: Alice Smith
+Email: alice.smith@email.com
+Experience: 6 years
+Skills: Python, React, Node.js, PostgreSQL, AWS, TypeScript, Docker, Git
+
+Projects:
+- Microservices Platform: Architected and deployed a collection of microservices using Python and Node.js on AWS ECS, improving request throughput by 40%.
+- Interactive Web Dashboard: Developed a responsive dashboard using React and TypeScript, connected to a PostgreSQL database for real-time analytics.
+
+Education:
+- Bachelor of Science in Computer Science, State University, 2020.

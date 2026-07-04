@@ -1,0 +1,34 @@
+[
+    {
+        "role": "Senior Full Stack Engineer",
+        "location": "India",
+        "min_salary": 1500000,
+        "max_salary": 3000000,
+        "currency": "INR",
+        "period": "yearly"
+    },
+    {
+        "role": "Senior Full Stack Engineer",
+        "location": "US",
+        "min_salary": 1200000,
+        "max_salary": 1800000,
+        "currency": "USD",
+        "period": "yearly"
+    },
+    {
+        "role": "Technical Recruiter",
+        "location": "India",
+        "min_salary": 600000,
+        "max_salary": 1200000,
+        "currency": "INR",
+        "period": "yearly"
+    },
+    {
+        "role": "Technical Recruiter",
+        "location": "US",
+        "min_salary": 700000,
+        "max_salary": 1100000,
+        "currency": "USD",
+        "period": "yearly"
+    }
+]

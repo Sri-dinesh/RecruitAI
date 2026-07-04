@@ -1,0 +1,11 @@
+Name: Michael Scott
+Email: michael.s@email.com
+Experience: 2 years
+Skills: HTML, CSS, JavaScript, jQuery, WordPress, Photoshop
+
+Projects:
+- Client Website Designs: Designed and launched marketing websites for local businesses using WordPress, HTML, and CSS.
+- Image Asset Design: Edited banners and corporate graphics.
+
+Education:
+- High School Diploma, Scranton High, 2016.

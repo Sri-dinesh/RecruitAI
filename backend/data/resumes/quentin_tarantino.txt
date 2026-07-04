@@ -1,0 +1,11 @@
+Name: Quentin Tarantino
+Email: quentin.t@email.com
+Experience: 6 years
+Skills: Project Management, Agile, Scrum, Jira, Confluence, Product Roadmap, Budgeting
+
+Projects:
+- Team Coordination: Managed schedules and sprint planning meetings for a 10-person engineering team.
+- Client Engagement: Gathered client requirements and wrote user stories.
+
+Education:
+- Bachelor of Business Administration, Cinema University, 2020.

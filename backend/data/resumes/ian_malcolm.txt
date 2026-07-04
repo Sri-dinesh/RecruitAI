@@ -1,0 +1,11 @@
+Name: Ian Malcolm
+Email: ian.m@email.com
+Experience: 7 years
+Skills: React, TypeScript, Node.js, PostgreSQL, HTML5, CSS3, Redux, Sass
+
+Projects:
+- Frontend UI Kit: Developed a reusable component library in React and TypeScript for standardizing web design layouts.
+- Content Management System: Built a CMS dashboard with Node.js and PostgreSQL.
+
+Education:
+- Bachelor of Arts in Graphic Design, Arts University, 2019.

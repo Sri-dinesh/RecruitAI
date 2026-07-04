@@ -1,0 +1,11 @@
+Name: Evan Wright
+Email: evan.wright@email.com
+Experience: 9 years
+Skills: Node.js, React, TypeScript, Python, PostgreSQL, AWS CloudFormation, Redis, Serverless, Jest
+
+Projects:
+- FinTech Application: Built secure APIs using Python and Node.js. Used React and TypeScript for transaction tracking screens. Deployed on AWS.
+- Distributed Caching: Managed caching layers with Redis, improving database response times for PostgreSQL queries.
+
+Education:
+- Bachelor of Science in Computer Science, City University, 2017.

@@ -1,0 +1,11 @@
+Name: Charlie Brown
+Email: charlie.brown@email.com
+Experience: 5 years
+Skills: React, TypeScript, Node.js, Python, PostgreSQL, AWS S3/EC2, GraphQL, Redis
+
+Projects:
+- E-Commerce Engine: Engineered a high-traffic shopping platform using React on the frontend and Node.js/Python on the backend, deployed on AWS.
+- Real-time Notifications: Implemented a WebSocket notification system backed by Redis and PostgreSQL.
+
+Education:
+- Bachelor of Technology in Information Technology, University of Engineering, 2021.

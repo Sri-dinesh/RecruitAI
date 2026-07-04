@@ -1,0 +1,11 @@
+Name: Kevin Bacon
+Email: kevin.b@email.com
+Experience: 5 years
+Skills: Java, Spring Boot, React, PostgreSQL, AWS, Maven, Hibernate
+
+Projects:
+- Banking Portal: Developed backend microservices using Java/Spring Boot. Connected components with PostgreSQL.
+- User Profile Dashboard: Rendered user details in a React dashboard.
+
+Education:
+- Bachelor of Science in Information Systems, National University, 2021.

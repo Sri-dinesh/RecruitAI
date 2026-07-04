@@ -1,0 +1,11 @@
+Name: Laura Croft
+Email: laura.croft@email.com
+Experience: 8 years
+Skills: PHP, Laravel, Vue.js, MySQL, AWS, JavaScript, Bootstrap
+
+Projects:
+- Legacy Rewrite: Migrated a legacy system to Laravel and Vue.js on AWS.
+- Database Admin: Optimized MySQL indexes and slow queries.
+
+Education:
+- Bachelor of Science in Information Technology, Coast College, 2018.
