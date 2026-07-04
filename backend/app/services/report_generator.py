@@ -111,15 +111,21 @@ def generate_recruitment_report(jd: dict, shortlist: list, interview_questions: 
     # 2. Section 1: Active Job Description
     story.append(Paragraph("1. Position Target Requirements", section_title_style))
     
-    role = jd.get("role", "N/A") if jd else "N/A"
-    exp = f"{jd.get('experience_years', 'N/A')}+ years" if jd else "N/A"
-    tone = jd.get("tone", "N/A") if jd else "N/A"
-    skills = ", ".join(jd.get("required_skills", [])) if jd else "N/A"
+    role = (jd.get("role") or "N/A") if jd else "N/A"
+    
+    exp_val = jd.get("experience_years") if jd else None
+    exp = f"{exp_val}+ years" if exp_val is not None else "N/A"
+    
+    tone_val = jd.get("tone") if jd else None
+    tone = str(tone_val).capitalize() if tone_val is not None else "N/A"
+    
+    skills_list = jd.get("required_skills") if jd else None
+    skills = ", ".join(skills_list) if skills_list else "N/A"
     
     jd_data = [
         [Paragraph("<b>Target Role:</b>", body_style), Paragraph(markdown_to_html(role), body_style)],
         [Paragraph("<b>Target Experience:</b>", body_style), Paragraph(markdown_to_html(exp), body_style)],
-        [Paragraph("<b>Job Tone & Culture:</b>", body_style), Paragraph(markdown_to_html(tone.capitalize()), body_style)],
+        [Paragraph("<b>Job Tone & Culture:</b>", body_style), Paragraph(markdown_to_html(tone), body_style)],
         [Paragraph("<b>Core Skills List:</b>", body_style), Paragraph(markdown_to_html(skills), body_style)]
     ]
     
