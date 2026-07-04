@@ -6,7 +6,7 @@ from langchain_groq import ChatGroq
 from app.core.config import GEMINI_API_KEY, GROQ_API_KEY
 
 PROVIDERS = ["gemini", "groq"]
-_provider_counter = 0
+_preferred_provider = "gemini"
 
 class AllProvidersFailedError(Exception):
     pass
@@ -18,13 +18,13 @@ def call_llm(
     json_mode: bool = False
 ) -> Tuple[str, str, float]:
     """
-    Calls Gemini or Groq using round-robin distribution, wrapped via LangChain's
-    ChatGoogleGenerativeAI and ChatGroq classes.
-    If the chosen provider fails, it attempts the other provider automatically.
+    Calls Gemini or Groq using active sticky-failover distribution.
+    If the preferred provider fails, it immediately switches preference to the other
+    provider for subsequent calls and retries the request on the new provider.
     Returns (response_text, provider_used, latency_ms).
     Raises AllProvidersFailedError if both fail.
     """
-    global _provider_counter
+    global _preferred_provider
     
     gemini_active = bool(GEMINI_API_KEY) and "your_gemini" not in GEMINI_API_KEY
     groq_active = bool(GROQ_API_KEY) and "your_groq" not in GROQ_API_KEY
@@ -37,8 +37,7 @@ def call_llm(
         secondary = "groq" if provider_override == "gemini" else "gemini"
         order = [provider_override, secondary]
     else:
-        primary = PROVIDERS[_provider_counter % 2]
-        _provider_counter += 1
+        primary = _preferred_provider
         secondary = "groq" if primary == "gemini" else "gemini"
         order = [primary, secondary]
         
@@ -79,11 +78,16 @@ def call_llm(
                 response_text = str(response.content)
                 
             latency_ms = (time.time() - start_time) * 1000
+            
+            # Sticky routing: make this successfully-responding provider preferred for subsequent calls
+            _preferred_provider = provider
             return response_text, provider, latency_ms
             
         except Exception as e:
             errors.append(f"{provider}: {str(e)}")
             print(f"[{provider}] call failed: {str(e)}. Retrying next provider...")
+            # Switch preferred provider to the other one since this one is failing
+            _preferred_provider = "groq" if provider == "gemini" else "gemini"
             continue
             
     raise AllProvidersFailedError(f"All LLM providers failed. Details: {'; '.join(errors)}")
