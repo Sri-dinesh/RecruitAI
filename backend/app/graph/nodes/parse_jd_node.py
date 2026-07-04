@@ -97,6 +97,11 @@ def parse_jd_node(state: RecruitState) -> dict:
             json_mode=True
         )
         data = parse_json_safely(response_text)
+        if not isinstance(data, dict):
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                data = {}
     except Exception as e:
         return {
             "conversation_history": history + [{

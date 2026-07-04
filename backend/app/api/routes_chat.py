@@ -129,6 +129,8 @@ async def chat_endpoint(req: ChatRequest):
             session_id=req.session_id
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error in FastAPI chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
