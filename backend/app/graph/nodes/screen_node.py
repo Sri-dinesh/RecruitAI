@@ -7,11 +7,13 @@ from app.rag.embeddings import embed_text
 from app.rag.vector_store import query_top_k
 from app.schemas.candidate_schema import Candidate
 
+from app.rag.advanced_rag import expand_query, rerank_chunks
+
 def screen_node(state: RecruitState) -> dict:
     """
-    RAG-based screening node.
-    Retrieves candidate resume chunks using cosine similarity against the JD,
-    evaluates candidates in a single batched LLM call, and ranks them.
+    Advanced RAG-based screening node.
+    Expands the search query, retrieves candidate resume chunks from pgvector,
+    reranks chunks using LLM relevance scoring, and evaluates candidates in a batch.
     """
     history = state.get("conversation_history", [])
     jd = state.get("jd_structured")
@@ -39,7 +41,14 @@ def screen_node(state: RecruitState) -> dict:
     # Build retrieval query from JD required skills + role
     retrieval_query = f"Role: {jd.role}. Required skills: {', '.join(jd.required_skills)}. Required Experience: {jd.experience_years} years."
     try:
-        query_embedding = embed_text(retrieval_query)
+        # Advanced RAG: Expand Query
+        jd_dict = {
+            "role": jd.role,
+            "required_skills": jd.required_skills,
+            "experience_years": jd.experience_years
+        }
+        expanded_query = expand_query(retrieval_query, jd_dict)
+        query_embedding = embed_text(expanded_query)
     except Exception as e:
         return {
             "conversation_history": history + [{
@@ -50,10 +59,13 @@ def screen_node(state: RecruitState) -> dict:
         
     candidate_contexts = []
     for index, candidate in enumerate(resumes):
-        # Retrieve top 3 chunks for this specific candidate
+        # Retrieve top 5 chunks for this specific candidate
         try:
-            chunks = query_top_k(query_embedding, k=3, candidate_id=candidate.candidate_id)
-            chunks_text = "\n\n".join([c["chunk_text"] for c in chunks])
+            # Fetch 5 chunks to allow reranker selection
+            chunks = query_top_k(query_embedding, k=5, candidate_id=candidate.candidate_id)
+            # Advanced RAG: Rerank chunks based on relevance
+            reranked_chunks = rerank_chunks(expanded_query, chunks, top_n=3)
+            chunks_text = "\n\n".join([c["chunk_text"] for c in reranked_chunks])
         except Exception as e:
             # Fallback to candidate raw text if DB search fails
             print(f"pgvector query failed for {candidate.name}: {e}. Falling back to raw text.")
