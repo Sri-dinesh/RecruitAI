@@ -53,7 +53,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
                 if c:
                     committed_names.append(c.name)
                     
-            content = f"✅ **Shortlist Finalized**: Locked in {len(committed_names)} candidates: {', '.join(committed_names)}."
+            content = f"[SUCCESS] **Shortlist Finalized**: Locked in {len(committed_names)} candidates: {', '.join(committed_names)}."
             return {
                 "pending_confirmation": None,
                 "conversation_history": history + [{
@@ -65,7 +65,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
         elif action == "replace_jd":
             from app.schemas.jd_schema import JobDescription
             new_jd = JobDescription(**payload)
-            content = f"✅ **Job Description Updated**: Successfully set active JD to **{new_jd.role}**."
+            content = f"[SUCCESS] **Job Description Updated**: Successfully set active JD to **{new_jd.role}**."
             return {
                 "jd_structured": new_jd,
                 "pending_confirmation": None,
@@ -77,7 +77,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
             
     # 2.2 User rejects "no"
     elif user_msg in ["no", "cancel", "n", "discard"]:
-        content = f"❌ **Cancelled**: Proposed changes for '{action}' have been discarded."
+        content = f"[CANCELLED]: Proposed changes for '{action}' have been discarded."
         return {
             "pending_confirmation": None,
             "conversation_history": history + [{

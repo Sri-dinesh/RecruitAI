@@ -79,4 +79,4 @@ def search_salary_data(role: str, location: str = "India") -> Tuple[str, bool]:
         print(f"Error reading fallback salary data: {e}")
         
     # Final generic fallback if even JSON read fails
-    return f"Estimated salary range for '{role}' in {location}: ₹1,200,000 - ₹2,500,000 INR per annum.", False
+    return f"Estimated salary range for '{role}' in {location}: 1,200,000 - 2,500,000 INR per annum.", False

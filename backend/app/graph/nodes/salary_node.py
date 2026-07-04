@@ -43,7 +43,7 @@ def salary_node(state: RecruitState) -> dict:
     result_text, is_live = search_salary_data(role, location)
     
     # 4. Format status indicator per Section 6.3
-    status_tag = "🟢 **[LIVE DATA - TAVILY REAL-TIME SEARCH]**" if is_live else "⚠️ **[OFFLINE DATA - CACHED FALLBACK]**"
+    status_tag = "**[LIVE DATA - TAVILY REAL-TIME SEARCH]**" if is_live else "**[OFFLINE DATA - CACHED FALLBACK]**"
     
     response = (
         f"### Salary Benchmark: **{role}** ({location})\n"
