@@ -1,8 +1,9 @@
 import time
-import google.generativeai as genai
-from groq import Groq
-from app.core.config import GEMINI_API_KEY, GROQ_API_KEY
 from typing import Optional, Tuple
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from app.core.config import GEMINI_API_KEY, GROQ_API_KEY
 
 PROVIDERS = ["gemini", "groq"]
 _provider_counter = 0
@@ -17,7 +18,8 @@ def call_llm(
     json_mode: bool = False
 ) -> Tuple[str, str, float]:
     """
-    Calls Gemini or Groq using round-robin distribution.
+    Calls Gemini or Groq using round-robin distribution, wrapped via LangChain's
+    ChatGoogleGenerativeAI and ChatGroq classes.
     If the chosen provider fails, it attempts the other provider automatically.
     Returns (response_text, provider_used, latency_ms).
     Raises AllProvidersFailedError if both fail.
@@ -32,7 +34,8 @@ def call_llm(
         
     # Determine execution order
     if provider_override:
-        order = [provider_override]
+        secondary = "groq" if provider_override == "gemini" else "gemini"
+        order = [provider_override, secondary]
     else:
         primary = PROVIDERS[_provider_counter % 2]
         _provider_counter += 1
@@ -46,38 +49,34 @@ def call_llm(
     for provider in order:
         start_time = time.time()
         try:
+            # Build messages in LangChain format
+            messages = []
+            if system_instruction:
+                messages.append(SystemMessage(content=system_instruction))
+            messages.append(HumanMessage(content=prompt))
+            
             if provider == "gemini":
-                genai.configure(api_key=GEMINI_API_KEY)
-                model_name = "gemini-2.5-flash-lite"
-                
-                generation_config = {}
-                if json_mode:
-                    generation_config["response_mime_type"] = "application/json"
-                    
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=system_instruction
+                # Initialize LangChain ChatGoogleGenerativeAI
+                model = ChatGoogleGenerativeAI(
+                    model="gemini-2.5-flash",
+                    google_api_key=GEMINI_API_KEY,
+                    temperature=0.0,
+                    response_mime_type="application/json" if json_mode else None
                 )
-                response = model.generate_content(prompt, generation_config=generation_config)
-                response_text = response.text
+                response = model.invoke(messages)
+                response_text = str(response.content)
                 
             elif provider == "groq":
-                client = Groq(api_key=GROQ_API_KEY)
-                messages = []
-                if system_instruction:
-                    messages.append({"role": "system", "content": system_instruction})
-                messages.append({"role": "user", "content": prompt})
-                
-                kwargs = {
-                    "model": "llama-3.1-8b-instant",
-                    "messages": messages,
-                    "temperature": 0.0
-                }
-                if json_mode:
-                    kwargs["response_format"] = {"type": "json_object"}
-                    
-                completion = client.chat.completions.create(**kwargs)
-                response_text = completion.choices[0].message.content
+                # Initialize LangChain ChatGroq
+                model_kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+                model = ChatGroq(
+                    model="llama-3.1-8b-instant",
+                    groq_api_key=GROQ_API_KEY,
+                    temperature=0.0,
+                    model_kwargs=model_kwargs
+                )
+                response = model.invoke(messages)
+                response_text = str(response.content)
                 
             latency_ms = (time.time() - start_time) * 1000
             return response_text, provider, latency_ms

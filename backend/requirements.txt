@@ -17,3 +17,6 @@ reportlab
 pypdf
 python-docx
 python-multipart
+langchain-core
+langchain-google-genai
+langchain-groq
