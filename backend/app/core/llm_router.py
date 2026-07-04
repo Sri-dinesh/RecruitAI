@@ -91,3 +91,28 @@ def call_llm(
             continue
             
     raise AllProvidersFailedError(f"All LLM providers failed. Details: {'; '.join(errors)}")
+
+
+import re
+import ast
+from typing import Any
+
+def parse_json_safely(text: str) -> Any:
+    """
+    Safely cleans markdown wrappers and parses JSON from LLM response text,
+    falling back to Python ast.literal_eval if single quotes are used.
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
+        if m:
+            cleaned = m.group(1).strip()
+            
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        try:
+            return ast.literal_eval(cleaned)
+        except Exception:
+            raise ValueError(f"Failed to parse text as valid JSON: {text}")
+

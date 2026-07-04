@@ -99,11 +99,30 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
 
     return None
 
-def llm_classify(query: str) -> Tuple[str, float, str, float]:
+def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str, float, str, float]:
     """
     Calls LLM to classify the intent of the query.
     Returns (intent, confidence, provider, latency_ms).
     """
+    context = ""
+    if state:
+        jd = state.get("jd_structured")
+        resumes = state.get("resumes", [])
+        history = state.get("conversation_history", [])
+        
+        context = "Current Application State:\n"
+        if jd:
+            context += f"- Active JD Role: {jd.role}\n"
+        if resumes:
+            context += f"- Loaded Candidates: {', '.join([c.name for c in resumes])}\n"
+        context += "\n"
+        
+        if len(history) > 1:
+            context += "Recent conversation history:\n"
+            for msg in history[-4:-1]:
+                context += f"{msg['role'].upper()}: {msg['content']}\n"
+            context += "\n"
+
     system_instruction = (
         "You are the routing and classification node for a recruitment agent. "
         "Classify the user's query into one of the following intents:\n"
@@ -122,7 +141,11 @@ def llm_classify(query: str) -> Tuple[str, float, str, float]:
         "Return a JSON object: {\"intent\": \"<intent>\", \"confidence\": <float_0_to_1>}."
     )
 
-    prompt = f"User Query: \"{query}\"\n\nJSON Response:"
+    prompt = (
+        f"{context}"
+        f"User Query: \"{query}\"\n\n"
+        "JSON Response:"
+    )
 
     valid_intents = [
         "load_context", "screen", "rewrite_jd", "interview_questions", "salary",
@@ -130,14 +153,13 @@ def llm_classify(query: str) -> Tuple[str, float, str, float]:
     ]
 
     try:
+        from app.core.llm_router import call_llm, parse_json_safely
         response_text, provider, latency_ms = call_llm(
             prompt=prompt,
             system_instruction=system_instruction,
             json_mode=True
         )
-
-        # Parse JSON output
-        data = json.loads(response_text.strip())
+        data = parse_json_safely(response_text)
         intent = data.get("intent", "other")
         confidence = float(data.get("confidence", 0.5))
 
@@ -203,7 +225,7 @@ def route_and_log(query: str, state: RecruitState) -> Tuple[str, float, Optional
         return intent, confidence, resolved_candidate
         
     # Step 2: LLM Classification
-    intent, confidence, provider, latency_ms = llm_classify(query)
+    intent, confidence, provider, latency_ms = llm_classify(query, state)
     log_event(intent, confidence, provider, latency_ms, "router_node")
     
     # Step 3: Handle low confidence

@@ -90,12 +90,13 @@ def parse_jd_node(state: RecruitState) -> dict:
     )
     
     try:
+        from app.core.llm_router import parse_json_safely
         response_text, provider, latency_ms = call_llm(
             prompt=prompt,
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text.strip())
+        data = parse_json_safely(response_text)
     except Exception as e:
         return {
             "conversation_history": history + [{
