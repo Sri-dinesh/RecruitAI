@@ -46,3 +46,41 @@ def ingest_resumes_pipeline(directory_path: str) -> List[Candidate]:
     print(f"Ingestion complete. Ingested {len(candidates)} candidates.")
     
     return candidates
+
+def ingest_single_candidate_text(candidate_id: str, name: str, raw_text: str) -> Candidate:
+    """
+    Ingests a single candidate's resume: chunks it, embeds it, and
+    upserts it to Supabase pgvector without clearing other candidates.
+    """
+    # 1. Chunk resume
+    chunks = chunk_resume(raw_text, candidate_id, name)
+    if not chunks:
+        return Candidate(
+            candidate_id=candidate_id,
+            name=name,
+            raw_text=raw_text,
+            match_score=0,
+            matched_skills=[],
+            gaps=[]
+        )
+        
+    # 2. Embed chunks
+    texts_to_embed = [c["chunk_text"] for c in chunks]
+    embeddings = embed_texts(texts_to_embed)
+    
+    # 3. Attach embeddings
+    for chunk, embedding in zip(chunks, embeddings):
+        chunk["embedding"] = embedding
+        
+    # 4. Upsert into Supabase
+    upsert_chunks(chunks)
+    
+    return Candidate(
+        candidate_id=candidate_id,
+        name=name,
+        raw_text=raw_text,
+        match_score=0,
+        matched_skills=[],
+        gaps=[]
+    )
+

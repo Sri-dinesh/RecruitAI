@@ -48,7 +48,7 @@ def call_llm(
         try:
             if provider == "gemini":
                 genai.configure(api_key=GEMINI_API_KEY)
-                model_name = "gemini-1.5-flash"
+                model_name = "gemini-2.5-flash-lite"
                 
                 generation_config = {}
                 if json_mode:
