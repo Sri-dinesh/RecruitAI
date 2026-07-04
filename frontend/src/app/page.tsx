@@ -80,6 +80,13 @@ export default function Home() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
 
   // Auto-scroll chat
   useEffect(() => {
@@ -275,6 +282,9 @@ export default function Home() {
     const userMsg: Message = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const res = await fetch('http://127.0.0.1:8000/api/chat', {
         method: 'POST',
@@ -288,7 +298,8 @@ export default function Home() {
           pending_confirmation: pendingConfirmation,
           last_intent: lastIntent,
           scheduled_interviews: scheduledInterviews
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!res.ok) throw new Error('API server returned an error');
@@ -304,14 +315,22 @@ export default function Home() {
       setScheduledInterviews(data.scheduled_interviews || []);
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the FastAPI server is running on `http://127.0.0.1:8000`." 
-      }]);
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: "🛑 **Task Cancelled**: The user stopped the current query execution." 
+        }]);
+      } else {
+        console.error(err);
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the FastAPI server is running on `http://127.0.0.1:8000`." 
+        }]);
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -712,13 +731,25 @@ export default function Home() {
               className="flex-1 bg-transparent px-3 py-2 text-sm border-none outline-none focus:ring-0 text-slate-200 placeholder-slate-600"
               disabled={loading}
             />
-            <button 
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-lg px-4 py-2 transition shrink-0 shadow-md flex items-center justify-center font-bold"
-            >
-              <Send className="w-4.5 h-4.5" />
-            </button>
+            {loading ? (
+              <button 
+                type="button"
+                onClick={handleStop}
+                className="bg-rose-750 hover:bg-rose-650 text-white rounded-lg px-4 py-2 transition shrink-0 shadow-md flex items-center justify-center font-bold gap-1 text-xs"
+                title="Stop execution"
+              >
+                <X className="w-4 h-4" />
+                <span>Stop</span>
+              </button>
+            ) : (
+              <button 
+                type="submit"
+                disabled={!input.trim()}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-lg px-4 py-2 transition shrink-0 shadow-md flex items-center justify-center font-bold"
+              >
+                <Send className="w-4.5 h-4.5" />
+              </button>
+            )}
           </form>
         </div>
       </section>
