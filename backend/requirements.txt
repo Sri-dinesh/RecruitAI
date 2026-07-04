@@ -13,3 +13,4 @@ pytest
 fastapi
 uvicorn
 httpx
+reportlab

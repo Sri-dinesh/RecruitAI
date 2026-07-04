@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_chat import router as chat_router
+from app.api.routes_reports import router as reports_router
 
 app = FastAPI(title="RecruitAI API Server", version="2.0")
 
@@ -16,6 +17,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(chat_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 
 @app.get("/")
 def read_root():
