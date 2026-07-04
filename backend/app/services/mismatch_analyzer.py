@@ -1,0 +1,95 @@
+import json
+import re
+from typing import List, Dict, Any, Optional
+from app.schemas.candidate_schema import Candidate
+from app.core.llm_router import call_llm
+
+def extract_candidate_experience(candidate: Candidate) -> float:
+    """
+    Extracts the candidate's total years of experience as a float from their resume.
+    Uses LLM parsing with clean JSON formatting.
+    """
+    # Quick pre-check: check if experience is already parsed in __dict__ to avoid extra LLM call
+    if hasattr(candidate, "experience_years") and candidate.experience_years is not None:
+        return candidate.experience_years
+        
+    system_instruction = (
+        "You are an AI resume parser. Analyze the candidate's resume and extract their total years "
+        "of professional working experience. Respond with a JSON object containing "
+        "\"experience_years\": float. If it is less than a year or internship only, return a decimal value like 0.5. "
+        "Output ONLY valid JSON. No other text."
+    )
+    prompt = f"Resume Content:\n{candidate.raw_text}"
+    
+    try:
+        response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
+        data = json.loads(response_text)
+        exp = float(data.get("experience_years", 0.0))
+        # Store on candidate object for caching
+        candidate.__dict__["experience_years"] = exp
+        return exp
+    except Exception as e:
+        print(f"Error extracting experience years for {candidate.name}: {e}")
+        return 0.0
+
+def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate]) -> Dict[str, Any]:
+    """
+    Computes experience distribution, compares it with JD target experience,
+    and returns mismatch analysis and actionable suggestions.
+    """
+    if not candidates:
+        return {
+            "has_mismatch": False,
+            "message": "No candidates loaded to analyze experience mismatch."
+        }
+        
+    experiences = [extract_candidate_experience(c) for c in candidates]
+    avg_exp = sum(experiences) / len(experiences)
+    
+    underqualified = [exp for exp in experiences if exp < jd_experience]
+    mismatch_percentage = (len(underqualified) / len(candidates)) * 100
+    
+    has_mismatch = mismatch_percentage >= 50.0
+    
+    message_lines = [
+        f"Average experience of loaded candidates: **{avg_exp:.1f} years** (Target JD: **{jd_experience} years**)."
+    ]
+    
+    if has_mismatch:
+        message_lines.append(
+            f"\n> [!WARNING]\n"
+            f"> **Experience Mismatch Alert**: **{mismatch_percentage:.0f}%** of the candidates have less than the "
+            f"required {jd_experience} years of experience. Consider lowering the required experience to **3 years** "
+            f"to capture more of the applicant pool, or source candidates with more senior profiles."
+        )
+    else:
+        message_lines.append("\nCandidate experience distribution aligns well with the job description requirements.")
+        
+    return {
+        "has_mismatch": has_mismatch,
+        "average_experience": avg_exp,
+        "mismatch_percentage": mismatch_percentage,
+        "message": "\n".join(message_lines)
+    }
+
+def suggest_jd_improvements(jd_raw_text: str) -> List[str]:
+    """
+    Analyzes the job description raw text and returns a list of suggested improvements
+    such as missing salary ranges, location parameters, or benefits details.
+    """
+    system_instruction = (
+        "You are an AI recruitment editor. Inspect the job description text and identify missing standard fields "
+        "such as Compensation/Salary details, Job Location/Work Mode (Remote, Hybrid, Onsite), "
+        "Company Benefits/Perks, or Reporting structure. "
+        "Output a JSON object containing a list of strings: {\"suggestions\": [\"string\"]}. "
+        "If all fields are present, return an empty list."
+    )
+    prompt = f"Job Description:\n{jd_raw_text}"
+    
+    try:
+        response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
+        data = json.loads(response_text)
+        return data.get("suggestions", [])
+    except Exception as e:
+        print(f"Error checking JD improvements: {e}")
+        return []

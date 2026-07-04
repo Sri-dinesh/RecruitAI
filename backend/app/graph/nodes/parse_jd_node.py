@@ -153,11 +153,25 @@ def parse_jd_node(state: RecruitState) -> dict:
             }]
         }
         
+    from app.services.mismatch_analyzer import analyze_experience_mismatch, suggest_jd_improvements
+    
+    mismatch_result = analyze_experience_mismatch(experience_years, candidates)
+    jd_improvements = suggest_jd_improvements(raw_jd_text)
+    
     success_msg = (
         f"Successfully loaded and parsed Job Description for **{role}** "
         f"({experience_years}+ years experience, skills: {', '.join(skills)}).\n"
-        f"Ingested {len(candidates)} resumes from '{resume_dir}' into the pgvector database."
+        f"Ingested {len(candidates)} resumes from '{resume_dir}' into the pgvector database.\n\n"
+        f"### JD & Candidate Diagnostics:\n"
+        f"{mismatch_result.get('message', '')}\n"
     )
+    
+    if jd_improvements:
+        success_msg += (
+            f"\n> [!NOTE]\n"
+            f"> **Job Description Enhancements**:\n"
+            + "\n".join([f"> - {s}" for s in jd_improvements])
+        )
     
     return {
         "jd_structured": jd_structured,
