@@ -15,3 +15,17 @@ create table if not exists resume_chunks (
 create index if not exists resume_chunks_embedding_idx 
 on resume_chunks 
 using ivfflat (embedding vector_cosine_ops);
+
+-- Create the chat_sessions table for conversation state persistence
+create table if not exists chat_sessions (
+    id uuid primary key default gen_random_uuid(),
+    title text not null default 'New Chat',
+    jd_structured jsonb,
+    resumes jsonb default '[]'::jsonb,
+    last_shortlist jsonb,
+    pending_confirmation jsonb,
+    last_intent text,
+    scheduled_interviews jsonb default '[]'::jsonb,
+    conversation_history jsonb default '[]'::jsonb,
+    created_at timestamp default now()
+);

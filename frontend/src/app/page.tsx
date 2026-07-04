@@ -53,6 +53,11 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [candidateFilter, setCandidateFilter] = useState('');
+
+  // Chat session states
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Recruitment states synchronized from backend
   const [jd, setJd] = useState<JobDescription | null>(null);
@@ -62,6 +67,95 @@ export default function Home() {
   const [lastIntent, setLastIntent] = useState<string | null>(null);
   const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([]);
+
+  const handleLoadSessionsList = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/sessions');
+      if (res.ok) {
+        const list = await res.json();
+        setSessions(list);
+        return list;
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    return [];
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    localStorage.setItem('recruitai_session_id', sessionId);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      
+      setJd(data.jd_structured);
+      setCandidates(data.resumes || []);
+      setLastShortlist(data.last_shortlist);
+      setPendingConfirmation(data.pending_confirmation);
+      setLastIntent(data.last_intent);
+      setScheduledInterviews(data.scheduled_interviews || []);
+      
+      setRouterLogs([]);
+      setSelectedCandidates(new Set());
+      setEmailStatus(null);
+      setDraftBody("");
+      setDraftSubject("");
+      setDraftRecipient("");
+
+      if (data.conversation_history && data.conversation_history.length > 0) {
+        setMessages(data.conversation_history);
+      } else {
+        setMessages([
+          {
+            role: 'assistant',
+            content: "Hello! I am **RecruitAI**, your AI recruiting assistant. Start by loading a job description and candidate resumes, or select one of the quick start options below."
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateSession = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+      if (res.ok) {
+        const newSession = await res.json();
+        setSessions(prev => [newSession, ...prev]);
+        handleSelectSession(newSession.id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const list = sessions.filter(s => s.id !== sessionId);
+        setSessions(list);
+        if (activeSessionId === sessionId) {
+          if (list.length > 0) {
+            handleSelectSession(list[0].id);
+          } else {
+            const newRes = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+            if (newRes.ok) {
+              const newS = await newRes.json();
+              setSessions([newS]);
+              handleSelectSession(newS.id);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Right Workspace Navigation & Selections
   const [activeTab, setActiveTab] = useState<'diagnostics' | 'comparison' | 'scheduler' | 'email'>('diagnostics');
@@ -93,7 +187,7 @@ export default function Home() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Test backend connection on mount
+  // Test backend connection and load sessions on mount
   useEffect(() => {
     const checkConnection = async () => {
       try {
@@ -106,6 +200,35 @@ export default function Home() {
     checkConnection();
     const interval = setInterval(checkConnection, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const initSessions = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/sessions');
+        if (!res.ok) return;
+        const list = await res.json();
+        setSessions(list);
+
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId && list.some((s: any) => s.id === storedId)) {
+          handleSelectSession(storedId);
+        } else if (list.length > 0) {
+          handleSelectSession(list[0].id);
+        } else {
+          // Create default first session
+          const newSessionRes = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+          if (newSessionRes.ok) {
+            const newSession = await newSessionRes.json();
+            setSessions([newSession]);
+            handleSelectSession(newSession.id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize sessions:", err);
+      }
+    };
+    initSessions();
   }, []);
 
   // Intercept messages to dynamically switch tabs and prepopulate widgets
@@ -297,7 +420,8 @@ export default function Home() {
           last_shortlist: lastShortlist,
           pending_confirmation: pendingConfirmation,
           last_intent: lastIntent,
-          scheduled_interviews: scheduledInterviews
+          scheduled_interviews: scheduledInterviews,
+          session_id: activeSessionId
         }),
         signal: controller.signal
       });
@@ -315,6 +439,7 @@ export default function Home() {
       setScheduledInterviews(data.scheduled_interviews || []);
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      handleLoadSessionsList();
     } catch (err: any) {
       if (err.name === 'AbortError') {
         setMessages(prev => [...prev, { 
@@ -410,7 +535,73 @@ export default function Home() {
   );
 
   return (
-    <main className="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
+    <main className="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative">
+      
+      {/* SESSIONS SIDEBAR (FAR LEFT) */}
+      {isSidebarOpen && (
+        <aside className="w-[220px] border-r border-slate-800 bg-slate-950 flex flex-col shrink-0">
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-400">Conversations</span>
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="text-slate-500 hover:text-slate-300 transition"
+              title="Close sidebar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          
+          <div className="p-3">
+            <button
+              onClick={handleCreateSession}
+              className="w-full bg-slate-900 border border-slate-800 hover:border-zinc-700 text-slate-200 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>New Campaign</span>
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-1">
+            {sessions.map(s => {
+              const isActive = s.id === activeSessionId;
+              return (
+                <div 
+                  key={s.id}
+                  onClick={() => handleSelectSession(s.id)}
+                  className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer transition text-xs ${
+                    isActive ? 'bg-zinc-800 text-emerald-400 border border-zinc-700 font-semibold' : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <Bot className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
+                    <span className="truncate">{s.title || 'New Chat'}</span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteSession(s.id, e)}
+                    className="text-slate-600 hover:text-rose-400 transition p-1 opacity-0 group-hover:opacity-100 shrink-0"
+                    title="Delete Campaign"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+      )}
+
+      {/* Sidebar toggle button when closed */}
+      {!isSidebarOpen && (
+        <div className="absolute left-3 top-3.5 z-40">
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 bg-slate-900/90 border border-slate-800 hover:border-zinc-700 text-slate-300 rounded-lg shadow-lg transition"
+            title="Open Conversations"
+          >
+            <Bot className="w-4 h-4 text-emerald-400" />
+          </button>
+        </div>
+      )}
       
       {/* 1. LEFT WORKSPACE PANEL */}
       <section className="w-80 border-r border-slate-800 bg-slate-950/45 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text">
@@ -608,7 +799,7 @@ export default function Home() {
 
       {/* 2. CHAT PANEL (CENTER) */}
       <section className="flex-1 flex flex-col bg-slate-950 relative select-text">
-        <header className="h-16 border-b border-slate-800 px-6 flex items-center justify-between bg-slate-950/40 backdrop-blur-md sticky top-0 z-10">
+        <header className={`h-16 border-b border-slate-800 px-6 flex items-center justify-between bg-slate-950/40 backdrop-blur-md sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
           <div className="flex items-center gap-3">
             <Cpu className="w-6 h-6 text-emerald-500 animate-pulse" />
             <div>
