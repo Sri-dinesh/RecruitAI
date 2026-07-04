@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, END
 from app.graph.state import RecruitState
 from app.graph.router_node import route_and_log
 
-# Import nodes
+# Import handler logic
 from app.graph.nodes.parse_jd_node import parse_jd_node
 from app.graph.nodes.count_node import count_node
 from app.graph.nodes.screen_node import screen_node
@@ -11,15 +11,16 @@ from app.graph.nodes.interview_qgen_node import interview_qgen_node
 from app.graph.nodes.salary_node import salary_node
 from app.graph.nodes.hitl_confirm_node import hitl_confirm_node
 
-def router_entry_node(state: RecruitState) -> dict:
+def supervisor_agent_node(state: RecruitState) -> dict:
     """
-    Graph entry point.
-    Runs routing classification, or forces HITL if there is a pending confirmation.
+    Supervisor Agent.
+    Coordinates incoming user requests, classifies intents via LLM router,
+    and forwards tasks to the appropriate specialized sub-agent.
     """
     history = state.get("conversation_history", [])
     user_msg = history[-1]["content"] if history else ""
     
-    # Bypasses router if there is a pending confirmation (HITL node handles confirmations)
+    # Bypass routing if there is a pending human-in-the-loop confirmation
     if state.get("pending_confirmation") is not None:
         intent = "finalize_shortlist"
     else:
@@ -29,10 +30,45 @@ def router_entry_node(state: RecruitState) -> dict:
         "last_intent": intent
     }
 
+def jd_agent_node(state: RecruitState) -> dict:
+    """
+    Specialized JD Agent.
+    Handles job description loading, parsing, and context rewriting.
+    """
+    intent = state.get("last_intent")
+    if intent == "load_context":
+        return parse_jd_node(state)
+    elif intent == "rewrite_jd":
+        return jd_rewrite_node(state)
+    return {}
+
+def screening_agent_node(state: RecruitState) -> dict:
+    """
+    Specialized Screening & RAG Agent.
+    Manages candidate count computations and advanced RAG screening matches.
+    """
+    intent = state.get("last_intent")
+    if intent == "screen":
+        return screen_node(state)
+    elif intent == "count":
+        return count_node(state)
+    return {}
+
+def interview_salary_agent_node(state: RecruitState) -> dict:
+    """
+    Specialized Interview & Salary Agent.
+    Generates technical prep questions and retrieves live salary metrics.
+    """
+    intent = state.get("last_intent")
+    if intent == "interview_questions":
+        return interview_qgen_node(state)
+    elif intent == "salary":
+        return salary_node(state)
+    return {}
+
 def fallback_node(state: RecruitState) -> dict:
     """
-    Fallback node for unclassified, greetings, or ambiguous queries.
-    Returns a polite clarifying question.
+    Fallback Agent for out-of-scope or unclassified user turns.
     """
     history = state.get("conversation_history", [])
     content = (
@@ -53,68 +89,53 @@ def fallback_node(state: RecruitState) -> dict:
         }]
     }
 
-# Assemble LangGraph
+# Build LangGraph StateGraph
 builder = StateGraph(RecruitState)
 
-# Add all nodes
-builder.add_node("router", router_entry_node)
-builder.add_node("parse_jd", parse_jd_node)
-builder.add_node("count", count_node)
-builder.add_node("screen", screen_node)
-builder.add_node("jd_rewrite", jd_rewrite_node)
-builder.add_node("interview_qgen", interview_qgen_node)
-builder.add_node("salary", salary_node)
+# Add Multi-Agent Nodes
+builder.add_node("supervisor_agent", supervisor_agent_node)
+builder.add_node("jd_agent", jd_agent_node)
+builder.add_node("screening_agent", screening_agent_node)
+builder.add_node("interview_salary_agent", interview_salary_agent_node)
 builder.add_node("hitl_confirm", hitl_confirm_node)
 builder.add_node("fallback", fallback_node)
 
-builder.set_entry_point("router")
+builder.set_entry_point("supervisor_agent")
 
-def route_next(state: RecruitState) -> str:
+def route_to_subagent(state: RecruitState) -> str:
     """
-    Conditional routing edge resolver.
+    Supervisor conditional routing logic.
     """
     intent = state.get("last_intent")
     
-    if intent == "load_context":
-        return "parse_jd"
-    elif intent == "count":
-        return "count"
-    elif intent == "screen":
-        return "screen"
-    elif intent == "rewrite_jd":
-        return "jd_rewrite"
-    elif intent == "interview_questions":
-        return "interview_qgen"
-    elif intent == "salary":
-        return "salary"
+    if intent in ["load_context", "rewrite_jd"]:
+        return "jd_agent"
+    elif intent in ["screen", "count"]:
+        return "screening_agent"
+    elif intent in ["interview_questions", "salary"]:
+        return "interview_salary_agent"
     elif intent == "finalize_shortlist":
         return "hitl_confirm"
     else:
         return "fallback"
 
-# Link entry point with conditional transitions
+# Conditional routing links
 builder.add_conditional_edges(
-    "router",
-    route_next,
+    "supervisor_agent",
+    route_to_subagent,
     {
-        "parse_jd": "parse_jd",
-        "count": "count",
-        "screen": "screen",
-        "jd_rewrite": "jd_rewrite",
-        "interview_qgen": "interview_qgen",
-        "salary": "salary",
+        "jd_agent": "jd_agent",
+        "screening_agent": "screening_agent",
+        "interview_salary_agent": "interview_salary_agent",
         "hitl_confirm": "hitl_confirm",
         "fallback": "fallback"
     }
 )
 
-# Connect all handler nodes to the END
-builder.add_edge("parse_jd", END)
-builder.add_edge("count", END)
-builder.add_edge("screen", END)
-builder.add_edge("jd_rewrite", END)
-builder.add_edge("interview_qgen", END)
-builder.add_edge("salary", END)
+# Connect sub-agents to the END node
+builder.add_edge("jd_agent", END)
+builder.add_edge("screening_agent", END)
+builder.add_edge("interview_salary_agent", END)
 builder.add_edge("hitl_confirm", END)
 builder.add_edge("fallback", END)
 
