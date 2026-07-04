@@ -744,7 +744,7 @@ export default function Home() {
                     )}
 
                     <div className="text-[10px] text-slate-400 flex flex-col gap-0.5">
-                      {c.experience_years !== undefined && (
+                      {c.experience_years != null && (
                         <div>Exp: <strong className="text-slate-300">{c.experience_years.toFixed(1)} years</strong></div>
                       )}
                       {c.matched_skills && c.matched_skills.length > 0 && (
