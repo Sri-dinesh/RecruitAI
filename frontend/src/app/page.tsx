@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   Send, User, Bot, Briefcase, Users, Database, 
-  Cpu, Activity, Clock, Terminal, FileText
+  Cpu, Activity, Clock, Terminal, FileText, Paperclip
 } from 'lucide-react';
 import MarkdownText from '../components/MarkdownText';
 
@@ -61,6 +61,68 @@ export default function Home() {
   const [reportSalary, setReportSalary] = useState("");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // File upload state & handlers
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+    
+    // Add optimistic status message to conversation history
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for document parsing and vector embedding.`
+    }]);
+    
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/ingest/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Resume upload ingestion failed');
+      }
+      
+      const newCandidates = await res.json();
+      
+      // Update local state, skipping candidates that are already present
+      setCandidates(prev => {
+        const existingIds = new Set(prev.map(c => c.candidate_id));
+        const filteredNew = newCandidates.filter((c: any) => !existingIds.has(c.candidate_id));
+        return [...prev, ...filteredNew];
+      });
+      
+      const names = newCandidates.map((c: any) => c.name).join(', ');
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `✅ **Ingestion Success**: Successfully parsed and embedded ${newCandidates.length} candidate(s): **${names}**.`
+        }
+      ]);
+    } catch (err: any) {
+      console.error(err);
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `❌ **Ingestion Failed**: ${err.message || 'An error occurred during file upload.'}`
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const openReportPreview = () => {
     let interviewQs = "";
@@ -413,6 +475,23 @@ export default function Home() {
             onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
             className="flex gap-2 relative bg-slate-950 border border-slate-800 focus-within:border-emerald-500/50 rounded-xl p-1.5 transition shadow-inner"
           >
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              multiple
+              accept=".pdf,.docx,.txt"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className="text-slate-400 hover:text-slate-200 disabled:opacity-50 p-2.5 transition shrink-0 hover:bg-slate-900 rounded-lg"
+              title="Upload PDF, DOCX or TXT resumes"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
             <input 
               type="text" 
               value={input}
