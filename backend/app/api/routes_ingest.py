@@ -1,46 +1,20 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from typing import List
 from pathlib import Path
-import io
-import pypdf
-import docx
 
 from app.schemas.candidate_schema import Candidate
 from app.services.ingestion_service import ingest_single_candidate_text
+from app.services.resume_api import parse_resume_via_api
 
 router = APIRouter()
-
-def parse_pdf(file_bytes: bytes) -> str:
-    """
-    Extracts plain text from PDF bytes using pypdf.
-    """
-    try:
-        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-        return text.strip()
-    except Exception as e:
-        raise ValueError(f"Failed to parse PDF file: {e}")
-
-def parse_docx(file_bytes: bytes) -> str:
-    """
-    Extracts plain text from DOCX bytes using python-docx.
-    """
-    try:
-        doc = docx.Document(io.BytesIO(file_bytes))
-        paragraphs_text = [p.text for p in doc.paragraphs if p.text]
-        return "\n".join(paragraphs_text).strip()
-    except Exception as e:
-        raise ValueError(f"Failed to parse DOCX file: {e}")
 
 @router.post("/ingest/upload", response_model=List[Candidate])
 async def upload_resumes_endpoint(files: List[UploadFile] = File(...)):
     """
     POST endpoint to upload PDF, DOCX, or TXT candidate resumes.
-    Parses documents, generates embeddings, and upserts them to Supabase.
+    Integrates live resume parsing API (APILayer Resume Parser) and falls back
+    to local PDF/DOCX/TXT extraction.
+    Generates embeddings and upserts them to Supabase.
     """
     ingested_candidates = []
     
@@ -49,35 +23,28 @@ async def upload_resumes_endpoint(files: List[UploadFile] = File(...)):
         file_path = Path(filename)
         extension = file_path.suffix.lower()
         
+        if extension not in [".pdf", ".docx", ".txt", ".text"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file format '{extension}'. Only PDF, DOCX, and TXT are supported."
+            )
+            
         # Read file bytes
         file_bytes = await file.read()
         
         try:
-            # 1. Parse text based on file format
-            if extension == ".pdf":
-                text = parse_pdf(file_bytes)
-            elif extension == ".docx":
-                text = parse_docx(file_bytes)
-            elif extension in [".txt", ".text"]:
-                text = file_bytes.decode("utf-8", errors="ignore").strip()
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unsupported file format '{extension}'. Only PDF, DOCX, and TXT are supported."
-                )
-                
-            if not text:
+            # 1. Parse resume using the APILayer CV Parser or fallback
+            candidate_parsed = parse_resume_via_api(file_bytes, filename)
+            
+            if not candidate_parsed.raw_text or candidate_parsed.raw_text == "Empty Resume":
                 raise ValueError("No text content could be extracted from the file.")
                 
-            # 2. Resolve Candidate Name and ID
-            # e.g., "Alice_Smith.pdf" -> name="Alice Smith", candidate_id="alice_smith"
-            name = file_path.stem.replace("_", " ").replace("-", " ").strip()
-            # Title case candidate name
-            name = " ".join([word.capitalize() for word in name.split()])
-            candidate_id = name.lower().replace(" ", "_")
-            
-            # 3. Chunk, embed, and upload using ingestion service
-            candidate = ingest_single_candidate_text(candidate_id, name, text)
+            # 2. Chunk, embed, and upload using ingestion service
+            candidate = ingest_single_candidate_text(
+                candidate_parsed.candidate_id,
+                candidate_parsed.name,
+                candidate_parsed.raw_text
+            )
             ingested_candidates.append(candidate)
             
         except HTTPException as http_err:
