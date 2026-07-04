@@ -56,6 +56,7 @@ def redflags_node(state: RecruitState) -> dict:
     )
 
     return {
+        "resumes": resumes,
         "conversation_history": history + [{
             "role": "assistant",
             "content": "\n".join(report_lines)

@@ -8,3 +8,5 @@ class Candidate(BaseModel):
     match_score: Optional[float] = None
     matched_skills: Optional[List[str]] = None
     gaps: Optional[List[str]] = None
+    experience_years: Optional[float] = None
+    red_flags: Optional[List[str]] = None

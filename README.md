@@ -7,6 +7,11 @@
 - Generate JDs, technical/behavioral interview questions, and live salary benchmarks.
 - Finalise a short‑list with human‑in‑the‑loop confirmation.
 - Generate and download styled corporate recruitment PDF reports and previews.
+- **Diagnostics & JD Enhancements:** Spot experience mismatches and missing JD fields (location, salary, benefits).
+- **Candidate Comparison Matrix:** View side-by-side matrices comparing experience, scores, matching skills, gaps, and flags.
+- **Email Outreach Drafter:** Review, edit, and send invite, rejection, or offer emails using a custom LangChain `@tool`.
+- **Visual Scheduler:** Book slots dynamically on an interactive calendar grid.
+- **Resume Red-Flag Auditor:** Audit resumes automatically for timeline gaps (>6 months) and job-hopping.
 
 The system is built on **LangChain** and **LangGraph**, utilizing a **Multi-Agent Supervisor** delegation pattern.
 
@@ -29,10 +34,10 @@ The system is built on **LangChain** and **LangGraph**, utilizing a **Multi-Agen
 RecruitAI uses a state-of-the-art **Multi-Agent Supervisor** architecture implemented in LangGraph:
 
 - **Supervisor Agent:** Acts as the entrance hub. It analyzes conversation history, classifies user intent, and delegates control to the correct specialized worker.
-- **JD Agent:** Manages Job Description loading, parsing, and context rewriting.
-- **RAG Screening Agent:** Handles semantic resume search (pgvector), candidate ranking, and plain candidate counting.
-- **Interview & Salary Agent:** Generates custom technical/behavioral prep questions and queries market salary benchmarks.
-- **Human-in-the-Loop Node:** Restricts candidate shortlist finalization behind explicit user yes/no confirmation.
+- **JD Agent:** Manages Job Description loading, parsing, context rewriting, and live job description fetching via SerpApi/IndianAPI.
+- **RAG Screening Agent:** Handles semantic resume search (pgvector), candidate ranking, plain candidate counting, side-by-side candidate comparisons, and resume red-flag detection.
+- **Interview & Salary Agent:** Generates custom technical/behavioral prep questions, queries market salary benchmarks, schedules interview calendar slots, and drafts recruiter emails.
+- **Human-in-the-Loop Node:** Restricts candidate shortlist finalization and interview booking behind explicit user confirmation.
 
 ### Workflow Visualization Diagram
 
@@ -57,7 +62,7 @@ graph TD;
 
 Instead of a basic semantic vector query, RecruitAI implements an **Advanced RAG** pipeline:
 
-1. **Query Expansion:** Expands the user's screening prompt with synonyms, alternative terms, and related skills using LLM translation to improve recall.
+1. **Query Translation:** Expands the user's screening prompt with synonyms, alternative terms, and related skills using LLM translation to improve recall.
 2. **Dense Retrieval:** Retrieves the top 5 chunks per candidate from Supabase pgvector using cosine similarity.
 3. **LLM Reranking:** Evaluates retrieved chunks, scoring each 1-10 on relevance. Retains only the top 3 most relevant chunks to eliminate noise and save LLM token usage during candidate evaluations.
 
@@ -70,12 +75,11 @@ Instead of a basic semantic vector query, RecruitAI implements an **Advanced RAG
 | Orchestration       | **LangGraph** (Python)                       | Multi-Agent state machines and transitions    |
 | LLM Framework       | **LangChain** (`langchain-core`)             | Standardized models, messages, and runnables  |
 | Model Integrations  | **Gemini** (`ChatGoogleGenerativeAI`) + **Groq** (`ChatGroq`) | Round-robin distribution with automatic failover |
-| Document Parsing    | `pypdf` + `python-docx`                      | Dynamic PDF, DOCX, and TXT parsing            |
+| Document Parsing    | `pypdf` + `python-docx` + **APILayer CV Parser** | Dynamic PDF, DOCX, and TXT parsing            |
 | Embeddings          | `sentence‑transformers` – `all‑MiniLM‑L6‑v2` | 384‑dim vector embedding generation           |
 | Vector Store        | **Supabase** (Postgres + pgVector)           | Cosine similarity candidate vector database   |
-| Web Search          | **Tavily**                                   | Lightweight salary search tool                |
+| Web Search          | **Tavily**                                   | Lightweight salary & technology trends search |
 | Report Generation   | **ReportLab**                                | Styled recruitment summary PDF compilation     |
-| Config              | **python‑dotenv**                            | Environment variables in `.env`               |
 | UI Frontend         | **Next.js 16** (App Router) + **Tailwind**   | Slate-themed dashboard, logs trace timeline   |
 
 ---
@@ -97,6 +101,10 @@ Instead of a basic semantic vector query, RecruitAI implements an **Advanced RAG
    TAVILY_API_KEY=your_tavily_key
    SUPABASE_URL=your_supabase_url
    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   
+   # Phase 11 Real API Integrations
+   SERPAPI_API_KEY=your_serpapi_key
+   APILAYER_API_KEY=your_apilayer_cv_parser_key
    ```
 3. **Initialize Supabase table**:
    - Run the DDL provided in `backend/scripts/init_db.sql` via psql or your Supabase SQL editor.
@@ -118,7 +126,7 @@ Choose:
 cd frontend
 npm run dev
 ```
-Open `http://localhost:3000` to interact with the dashboard: upload resumes, chat with the multi-agent system, trace classifications, and download styled reports.
+Open `http://localhost:3000` to interact with the dashboard: upload resumes, chat with the multi-agent system, compare candidates, schedule slots, trace agent hops, and download styled reports.
 
 ---
 
@@ -130,14 +138,15 @@ RecruitAI/
 │  ├─ app/                     # FastAPI style package
 │  │  ├─ core/                 # config, logging, LLM router (LangChain wrappers)
 │  │  ├─ graph/                # LangGraph state, Multi-Agent Supervisor nodes
+│  │  │  ├─ nodes/             # graph nodes (parse, count, screen, redflags, schedule, email)
 │  │  ├─ rag/                  # chunking, embeddings, vector store, Advanced RAG
-│  │  ├─ services/             # resume loader, report generator (ReportLab)
+│  │  ├─ services/             # resume loader, report generator, live API services (job_desc_api, resume_api)
 │  │  ├─ schemas/              # Pydantic models (JobDescription, Candidate)
-│  │  ├─ tools/                # Tavily salary search tool
+│  │  ├─ tools/                # Tavily salary search tool, custom email tool, trend tool
 │  │  ├─ api/                  # HTTP endpoints (chat, reports, ingestion)
 │  │  └─ cli.py                # REPL entry point
 │  ├─ data/                    # Sample JD, resumes, salary fallback
-│  ├─ tests/                   # pytest suite covering nodes, RAG, failovers
+│  ├─ tests/                   # pytest suite covering nodes, RAG, failovers, Phase 10 & 11 features
 │  ├─ scripts/                 # DB init script
 │  └─ requirements.txt         # Dependency list
 ├─ frontend/                    # Next.js 16 dashboard UI
@@ -164,3 +173,5 @@ Includes:
 - File uploads (`tests/test_upload.py`)
 - Query expansion & Reranking (`tests/test_advanced_rag.py`)
 - LLM Round-Robin Failover (`tests/test_failover.py`)
+- Phase 10 Features (Comparison, Scheduler, Email Tool, Red Flags, Trends) (`tests/test_phase10.py`)
+- Phase 11 Live APIs & Fallbacks (`tests/test_real_api.py`)

@@ -63,8 +63,8 @@ def compare_node(state: RecruitState) -> dict:
         score = f"{c.match_score:.0f}/100" if c.match_score is not None else "N/A"
         skills = ", ".join(c.matched_skills) if c.matched_skills else "—"
         gaps = ", ".join(c.gaps) if c.gaps else "—"
-        # Try to get experience_years from candidate's __dict__ (may have been set by mismatch_analyzer)
-        exp_years = c.__dict__.get("experience_years")
+        # Get experience_years from candidate's model property (set by mismatch_analyzer)
+        exp_years = c.experience_years
         experience = f"{exp_years:.1f} yrs" if exp_years is not None else "N/A"
 
         table_lines.append(

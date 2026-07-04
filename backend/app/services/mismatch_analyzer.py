@@ -26,7 +26,7 @@ def extract_candidate_experience(candidate: Candidate) -> float:
         data = json.loads(response_text)
         exp = float(data.get("experience_years", 0.0))
         # Store on candidate object for caching
-        candidate.__dict__["experience_years"] = exp
+        candidate.experience_years = exp
         return exp
     except Exception as e:
         print(f"Error extracting experience years for {candidate.name}: {e}")
@@ -121,9 +121,9 @@ def detect_red_flags(candidate: Candidate) -> List[str]:
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
         data = json.loads(response_text)
-        flags = data.get("red_flags", [])
-        # Ensure all items are strings
-        return [str(f) for f in flags if f]
+        flags = [str(f) for f in data.get("red_flags", []) if f]
+        candidate.red_flags = flags
+        return flags
     except Exception as e:
         print(f"Error detecting red flags for {candidate.name}: {e}")
         return []

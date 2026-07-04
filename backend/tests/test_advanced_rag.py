@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from app.rag.advanced_rag import expand_query, rerank_chunks
 
 def test_query_expansion():
@@ -9,10 +10,12 @@ def test_query_expansion():
         "required_skills": ["React", "TypeScript"],
         "experience_years": 3
     }
-    expanded = expand_query(query, jd)
-    assert expanded is not None
-    assert "React" in expanded or "developer" in expanded
-    assert len(expanded) >= len(query)
+    with patch("app.rag.advanced_rag.call_llm", return_value=("frontend typescript experience", "mock", 0.1)):
+        expanded = expand_query(query, jd)
+        assert expanded is not None
+        assert "React" in expanded or "developer" in expanded
+        assert "frontend" in expanded
+        assert len(expanded) >= len(query)
 
 def test_rerank_chunks():
     # Test that the LLM reranker scores and filters chunks based on semantic relevance
@@ -22,9 +25,17 @@ def test_rerank_chunks():
         {"chunk_text": "Professional content copywriter, marketing campaign strategist, and blogging expert."}
     ]
     
-    # Rerank and request the single most relevant chunk
-    reranked = rerank_chunks(query, chunks, top_n=1)
-    assert len(reranked) == 1
-    assert "rerank_score" in reranked[0]
-    # The Python/FastAPI chunk should be selected over the marketing chunk
-    assert "Python" in reranked[0]["chunk_text"]
+    # Mocking call_llm response to return relevance scores for each chunk
+    # We use side_effect to return high score for Python, low score for copywriting
+    mock_responses = [
+        ('{"relevance_score": 9}', "mock", 0.1),
+        ('{"relevance_score": 2}', "mock", 0.1)
+    ]
+    with patch("app.rag.advanced_rag.call_llm", side_effect=mock_responses):
+        # Rerank and request the single most relevant chunk
+        reranked = rerank_chunks(query, chunks, top_n=1)
+        assert len(reranked) == 1
+        assert "rerank_score" in reranked[0]
+        assert reranked[0]["rerank_score"] == 9.0
+        # The Python/FastAPI chunk should be selected over the marketing chunk
+        assert "Python" in reranked[0]["chunk_text"]

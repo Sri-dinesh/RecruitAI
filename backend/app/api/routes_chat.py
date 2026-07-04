@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     last_shortlist: Optional[List[Dict[str, Any]]] = None
     pending_confirmation: Optional[Dict[str, Any]] = None
     last_intent: Optional[str] = None
+    scheduled_interviews: Optional[List[Dict[str, Any]]] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -29,6 +30,7 @@ class ChatResponse(BaseModel):
     last_intent: Optional[str] = None
     conversation_history: List[ChatMessage]
     router_logs: List[Dict[str, Any]] = []
+    scheduled_interviews: Optional[List[Dict[str, Any]]] = None
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
@@ -64,7 +66,8 @@ async def chat_endpoint(req: ChatRequest):
             "conversation_history": history_dicts,
             "last_shortlist": shortlist_objs,
             "pending_confirmation": req.pending_confirmation,
-            "last_intent": req.last_intent
+            "last_intent": req.last_intent,
+            "scheduled_interviews": req.scheduled_interviews
         }
         
         # Execute the LangGraph
@@ -90,7 +93,8 @@ async def chat_endpoint(req: ChatRequest):
             pending_confirmation=result["pending_confirmation"],
             last_intent=result["last_intent"],
             conversation_history=res_history,
-            router_logs=logs
+            router_logs=logs,
+            scheduled_interviews=result.get("scheduled_interviews")
         )
     except Exception as e:
         print(f"Error in FastAPI chat endpoint: {e}")
