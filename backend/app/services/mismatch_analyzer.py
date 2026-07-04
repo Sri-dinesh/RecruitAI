@@ -4,14 +4,44 @@ from typing import List, Dict, Any, Optional
 from app.schemas.candidate_schema import Candidate
 from app.core.llm_router import call_llm
 
+def extract_experience_via_regex(text: str) -> Optional[float]:
+    """
+    Extracts total years of experience using regex heuristics.
+    Looks for phrases like '7+ years', '5 years of experience', '8 yrs', etc.
+    """
+    patterns = [
+        r"(?:\b|^)(?P<years>\d+(?:\.\d+)?)\s*\+?\s*years?\b(?:\s*of\s*experience|\s*experience|\s*in|\s*as)?",
+        r"(?:\b|^)(?P<years>\d+(?:\.\d+)?)\s*\+?\s*yrs?\b"
+    ]
+    
+    matches = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            try:
+                val = float(match.group("years"))
+                if 0.5 <= val <= 40.0:
+                    matches.append(val)
+            except ValueError:
+                continue
+                
+    if matches:
+        return max(matches)
+    return None
+
 def extract_candidate_experience(candidate: Candidate) -> float:
     """
     Extracts the candidate's total years of experience as a float from their resume.
-    Uses LLM parsing with clean JSON formatting.
+    Uses regex heuristics first, falling back to LLM parsing if regex fails.
     """
-    # Quick pre-check: check if experience is already parsed in __dict__ to avoid extra LLM call
+    # Quick pre-check: check if experience is already parsed to avoid extra LLM call
     if hasattr(candidate, "experience_years") and candidate.experience_years is not None:
         return candidate.experience_years
+        
+    # Fast regex heuristic extraction
+    regex_exp = extract_experience_via_regex(candidate.raw_text)
+    if regex_exp is not None:
+        candidate.experience_years = regex_exp
+        return regex_exp
         
     system_instruction = (
         "You are an AI resume parser. Analyze the candidate's resume and extract their total years "
@@ -101,6 +131,10 @@ def detect_red_flags(candidate: Candidate) -> List[str]:
     Returns a list of strings (each string = one red flag description).
     If no red flags, returns an empty list [].
     """
+    # Quick pre-check: check if red_flags is already parsed to avoid extra LLM call
+    if hasattr(candidate, "red_flags") and candidate.red_flags is not None:
+        return candidate.red_flags
+
     system_instruction = (
         "You are an expert resume analyst specializing in detecting red flags in candidate resumes. "
         "Carefully analyze the resume for: timeline gaps (unexplained periods of 6+ months), "
