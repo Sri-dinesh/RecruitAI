@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { 
   Send, User, Bot, Briefcase, Users, Database, 
   Cpu, Activity, Clock, Terminal, FileText, Paperclip,
-  Calendar, Mail, AlertTriangle, CheckCircle, HelpCircle,
-  TrendingUp, Trash2, ArrowRight, Check, X, ShieldAlert,
+  Calendar, Mail, AlertTriangle, CheckCircle,
+  Trash2, ArrowRight, Check, X,
   Sliders, Search, Sparkles
 } from 'lucide-react';
 import MarkdownText from '../components/MarkdownText';
@@ -42,6 +42,33 @@ interface RouterLog {
   latency_ms: number;
 }
 
+interface PendingConfirmation {
+  action: string;
+  candidate_name?: string;
+  role?: string;
+  slots?: { slot_number: number; label: string }[];
+  payload?: any;
+}
+
+interface ScheduledInterview {
+  candidate_name: string;
+  slot: string;
+  booked_at?: string;
+}
+
+interface Session {
+  id: string;
+  title: string;
+  created_at?: string;
+  jd_structured?: JobDescription | null;
+  resumes?: Candidate[];
+  last_shortlist?: Candidate[] | null;
+  pending_confirmation?: PendingConfirmation | null;
+  last_intent?: string | null;
+  scheduled_interviews?: ScheduledInterview[] | null;
+  conversation_history?: Message[] | null;
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -55,7 +82,7 @@ export default function Home() {
   const [candidateFilter, setCandidateFilter] = useState('');
 
   // Chat session states
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
@@ -63,10 +90,10 @@ export default function Home() {
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [lastShortlist, setLastShortlist] = useState<Candidate[] | null>(null);
-  const [pendingConfirmation, setPendingConfirmation] = useState<any>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [lastIntent, setLastIntent] = useState<string | null>(null);
   const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
-  const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([]);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
 
   const handleLoadSessionsList = async () => {
     try {
@@ -193,7 +220,7 @@ export default function Home() {
       try {
         const res = await fetch('http://127.0.0.1:8000/');
         if (res.ok) setApiConnected(true);
-      } catch (err) {
+      } catch {
         setApiConnected(false);
       }
     };
@@ -211,7 +238,7 @@ export default function Home() {
         setSessions(list);
 
         const storedId = localStorage.getItem('recruitai_session_id');
-        if (storedId && list.some((s: any) => s.id === storedId)) {
+        if (storedId && list.some((s: Session) => s.id === storedId)) {
           handleSelectSession(storedId);
         } else if (list.length > 0) {
           handleSelectSession(list[0].id);
@@ -237,36 +264,40 @@ export default function Home() {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role !== 'assistant') return;
 
-    // 1. Detect Email draft
-    if (lastMsg.content.includes('✉️ Email Draft:')) {
-      const codeBlockMatch = lastMsg.content.match(/```([\s\S]*?)```/);
-      if (codeBlockMatch) {
-        const draftText = codeBlockMatch[1].trim();
-        const subjectMatch = draftText.match(/^Subject:\s*(.*)$/m);
-        const subject = subjectMatch ? subjectMatch[1] : "Interview Invitation";
-        const body = draftText.replace(/^Subject:\s*.*$/m, '').trim();
-        
-        setDraftSubject(subject);
-        setDraftBody(body);
-        
-        // Extract recipient email
-        const nameMatch = lastMsg.content.match(/\*\*([A-Za-z\s]+)\*\*/);
-        const name = nameMatch ? nameMatch[1] : "Candidate";
-        setDraftRecipient(name.toLowerCase().replace(/\s+/g, '_') + "@example.com");
-        setEmailStatus(null);
-        setActiveTab('email');
+    const timer = setTimeout(() => {
+      // 1. Detect Email draft
+      if (lastMsg.content.includes('✉️ Email Draft:')) {
+        const codeBlockMatch = lastMsg.content.match(/```([\s\S]*?)```/);
+        if (codeBlockMatch) {
+          const draftText = codeBlockMatch[1].trim();
+          const subjectMatch = draftText.match(/^Subject:\s*(.*)$/m);
+          const subject = subjectMatch ? subjectMatch[1] : "Interview Invitation";
+          const body = draftText.replace(/^Subject:\s*.*$/m, '').trim();
+          
+          setDraftSubject(subject);
+          setDraftBody(body);
+          
+          // Extract recipient email
+          const nameMatch = lastMsg.content.match(/\*\*([A-Za-z\s]+)\*\*/);
+          const name = nameMatch ? nameMatch[1] : "Candidate";
+          setDraftRecipient(name.toLowerCase().replace(/\s+/g, '_') + "@example.com");
+          setEmailStatus(null);
+          setActiveTab('email');
+        }
       }
-    }
 
-    // 2. Detect Schedule slots
-    if (lastMsg.content.includes('📅 Interview Slots') || lastMsg.content.includes('Interview Slots for')) {
-      setActiveTab('scheduler');
-    }
+      // 2. Detect Schedule slots
+      if (lastMsg.content.includes('📅 Interview Slots') || lastMsg.content.includes('Interview Slots for')) {
+        setActiveTab('scheduler');
+      }
 
-    // 3. Detect Comparison Table
-    if (lastMsg.content.includes('📊 Candidate Comparison Table') || lastMsg.content.includes('Candidate Comparison Table')) {
-      setActiveTab('comparison');
-    }
+      // 3. Detect Comparison Table
+      if (lastMsg.content.includes('📊 Candidate Comparison Table') || lastMsg.content.includes('Candidate Comparison Table')) {
+        setActiveTab('comparison');
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [messages]);
 
   // File upload state & handlers
@@ -275,55 +306,138 @@ export default function Home() {
     if (!files || files.length === 0) return;
     
     setLoading(true);
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i]);
-    }
     
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for live parsing and pgvector vector storage.`
-    }]);
+    const firstFileName = files[0].name.toLowerCase();
+    const isJdUpload = files.length === 1 && (
+      firstFileName.includes('jd') || 
+      firstFileName.includes('job') || 
+      firstFileName.includes('description')
+    );
     
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/ingest/upload', {
-        method: 'POST',
-        body: formData
-      });
+    if (isJdUpload) {
+      const formData = new FormData();
+      formData.append('file', files[0]);
       
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Resume upload ingestion failed');
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⏳ **Ingesting Job Description...** parsing raw file and structuring schema fields.`
+      }]);
+      
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/ingest/upload-jd', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Job Description upload ingestion failed');
+        }
+        
+        const structuredJd = await res.json();
+        setJd(structuredJd);
+        
+        const successMsg = {
+          role: 'assistant' as const,
+          content: `✅ **JD Ingestion Success**: Loaded Job Description for **${structuredJd.role}** (${structuredJd.experience_years}+ years experience, skills: ${structuredJd.required_skills.join(', ')}).`
+        };
+        
+        setMessages(prev => [...prev.slice(0, -1), successMsg]);
+        
+        // Persist JD to session
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId) {
+          await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jd_structured: structuredJd,
+              title: `Hiring: ${structuredJd.role}`,
+              conversation_history: [...messages, successMsg]
+            })
+          });
+          handleLoadSessionsList();
+        }
+      } catch (err) {
+        console.error(err);
+        const error = err as Error;
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: 'assistant',
+            content: `❌ **JD Ingestion Failed**: ${error.message || 'An error occurred during JD upload.'}`
+          }
+        ]);
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    } else {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
       }
       
-      const newCandidates = await res.json();
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for live parsing and pgvector vector storage.`
+      }]);
       
-      setCandidates(prev => {
-        const existingIds = new Set(prev.map(c => c.candidate_id));
-        const filteredNew = newCandidates.filter((c: any) => !existingIds.has(c.candidate_id));
-        return [...prev, ...filteredNew];
-      });
-      
-      const names = newCandidates.map((c: any) => c.name).join(', ');
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        {
-          role: 'assistant',
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/ingest/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Resume upload ingestion failed');
+        }
+        
+        const newCandidates = await res.json();
+        
+        let updatedCandidates: Candidate[] = [];
+        setCandidates(prev => {
+          const existingIds = new Set(prev.map(c => c.candidate_id));
+          const filteredNew = newCandidates.filter((c: Candidate) => !existingIds.has(c.candidate_id));
+          updatedCandidates = [...prev, ...filteredNew];
+          return updatedCandidates;
+        });
+        
+        const names = newCandidates.map((c: Candidate) => c.name).join(', ');
+        const successMsg = {
+          role: 'assistant' as const,
           content: `✅ **Ingestion Success**: Successfully parsed and embedded ${newCandidates.length} candidate(s): **${names}**.`
+        };
+        
+        setMessages(prev => [...prev.slice(0, -1), successMsg]);
+        
+        // Persist updated candidate list and conversation history to session
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId) {
+          await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              resumes: updatedCandidates,
+              conversation_history: [...messages, successMsg]
+            })
+          });
         }
-      ]);
-    } catch (err: any) {
-      console.error(err);
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        {
-          role: 'assistant',
-          content: `❌ **Ingestion Failed**: ${err.message || 'An error occurred during file upload.'}`
-        }
-      ]);
-    } finally {
-      setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (err) {
+        console.error(err);
+        const error = err as Error;
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: 'assistant',
+            content: `❌ **Ingestion Failed**: ${error.message || 'An error occurred during file upload.'}`
+          }
+        ]);
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -440,8 +554,9 @@ export default function Home() {
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
       handleLoadSessionsList();
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err) {
+      const error = err as Error;
+      if (error.name === 'AbortError') {
         setMessages(prev => [...prev, { 
           role: 'assistant', 
           content: "🛑 **Task Cancelled**: The user stopped the current query execution." 
@@ -495,12 +610,13 @@ export default function Home() {
         role: 'assistant',
         content: `✉️ **Email Outreach Dispatch Output**:\n\n${data.status}`
       }]);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
+      const error = err as Error;
       setEmailStatus("Failed to send email draft.");
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `❌ **Failed to send email outreach**: ${err.message || 'Server error'}`
+        content: `❌ **Failed to send email outreach**: ${error.message || 'Server error'}`
       }]);
     } finally {
       setLoading(false);
@@ -637,7 +753,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="text-xs text-slate-500 italic py-2">
-              No Job Description loaded. Let's try:
+              No Job Description loaded. Let&apos;s try:
               <button 
                 onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt")} 
                 className="mt-1 text-emerald-400 font-semibold underline block hover:text-emerald-300 text-left text-[11px]"
@@ -1197,7 +1313,7 @@ export default function Home() {
 
                   <div className="flex flex-col gap-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Available time slots:</span>
-                    {pendingConfirmation.slots?.map((slot: any) => (
+                    {pendingConfirmation.slots?.map((slot: { slot_number: number; label: string }) => (
                       <button
                         key={slot.slot_number}
                         onClick={() => handleSelectSlot(slot.slot_number)}
@@ -1223,7 +1339,7 @@ export default function Home() {
                   <div className="p-4 border border-slate-800/80 bg-slate-900/20 rounded-xl flex flex-col gap-2 items-center justify-center text-center py-10">
                     <Calendar className="w-10 h-10 text-slate-700 mb-2 animate-pulse" />
                     <h4 className="text-xs font-bold text-slate-300">No Booking Active</h4>
-                    <p className="text-[11px] text-slate-500 max-w-[200px] mt-0.5">Select "Schedule" action on a candidate card to trigger the booking flow.</p>
+                    <p className="text-[11px] text-slate-500 max-w-[200px] mt-0.5">Select &quot;Schedule&quot; action on a candidate card to trigger the booking flow.</p>
                   </div>
                   
                   {scheduledInterviews.length > 0 && (

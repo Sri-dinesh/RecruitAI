@@ -28,19 +28,31 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     history = state.get("conversation_history", [])
     user_msg = history[-1]["content"] if history else ""
     
-    # Bypass routing if there is a pending confirmation
+    # 1. Pre-classify the user query to see if it's a new task
+    intent, confidence, resolved_candidate = route_and_log(user_msg, state)
+    
     pending = state.get("pending_confirmation")
+    
+    # 2. Check if the user is replying to the confirmation or starting a brand new task
+    import re
+    cleaned_msg = user_msg.lower().strip()
+    is_confirmation_reply = cleaned_msg in ["yes", "confirm", "y", "go ahead", "sure", "no", "cancel", "n", "discard", "edit"] or \
+                             re.match(r"^(?:slot|option|number|pick|choose|select|go with)?\s*\d+\b", cleaned_msg)
+                             
+    if pending is not None and not is_confirmation_reply and confidence >= 0.85:
+        # User explicitly issued a new command. Discard the old pending confirmation.
+        pending = None
+        
     if pending is not None:
         action = pending.get("action")
         if action == "schedule_interview":
             intent = "schedule"
         else:
             intent = "finalize_shortlist"
-    else:
-        intent, confidence, resolved_candidate = route_and_log(user_msg, state)
-        
+            
     return {
-        "last_intent": intent
+        "last_intent": intent,
+        "pending_confirmation": pending
     }
 
 def jd_agent_node(state: RecruitState) -> dict:

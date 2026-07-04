@@ -45,3 +45,27 @@ def test_upload_unsupported_format(mock_ingest):
     assert response.status_code == 400
     assert "Unsupported file format" in response.json()["detail"]
     assert mock_ingest.call_count == 0
+
+
+@patch("app.api.routes_ingest.call_llm")
+def test_upload_jd_txt(mock_call_llm):
+    # Mock LLM response for parsed JD
+    mock_call_llm.return_value = (
+        '{"role": "Senior Fullstack Engineer", "required_skills": ["Python", "React"], "experience_years": 6}',
+        "mock_provider",
+        15
+    )
+    
+    file_content = b"We are looking for a Senior Fullstack Engineer skilled in Python and React."
+    files = {"file": ("jd.txt", file_content, "text/plain")}
+    
+    response = client.post("/api/ingest/upload-jd", files=files)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["role"] == "Senior Fullstack Engineer"
+    assert data["required_skills"] == ["Python", "React"]
+    assert data["experience_years"] == 6
+    assert "Python and React" in data["raw_text"]
+    mock_call_llm.assert_called_once()
+

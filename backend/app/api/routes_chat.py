@@ -203,3 +203,19 @@ async def delete_session_endpoint(session_id: str):
         print(f"Database error in delete_session ({session_id}): {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
+@router.patch("/sessions/{session_id}")
+async def patch_session_endpoint(session_id: str, payload: dict):
+    client = get_supabase_client()
+    try:
+        res = client.table("chat_sessions").update(payload).eq("id", session_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return res.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Database error in patch_session ({session_id}): {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+

@@ -50,6 +50,11 @@ def test_session_lifecycle():
     updated_details = get_res_2.json()
     assert len(updated_details["conversation_history"]) > 0
     
+    # 5b. Patch session directly
+    patch_res = client.patch(f"/api/sessions/{session_id}", json={"title": "Patched Campaign Name"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["title"] == "Patched Campaign Name"
+    
     # 6. Delete session
     delete_res = client.delete(f"/api/sessions/{session_id}")
     assert delete_res.status_code == 200

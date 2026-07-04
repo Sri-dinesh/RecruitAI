@@ -42,6 +42,9 @@ def parse_jd_node(state: RecruitState) -> dict:
         resolved_jd_path = Path(jd_path)
         if not resolved_jd_path.exists():
             resolved_jd_path = Path("backend") / jd_path
+        if not resolved_jd_path.exists() and jd_path.startswith("backend/"):
+            resolved_jd_path = Path(jd_path.replace("backend/", "", 1))
+            
         if resolved_jd_path.exists() and resolved_jd_path.is_file():
             with open(resolved_jd_path, "r", encoding="utf-8") as f:
                 raw_jd_text = f.read()
@@ -53,6 +56,8 @@ def parse_jd_node(state: RecruitState) -> dict:
         else:
             # Search for sample JD files as fallback
             jds_dir = Path("backend/data/jds")
+            if not jds_dir.exists():
+                jds_dir = Path("data/jds")
             jd_files = list(jds_dir.glob("*.txt"))
             if jd_files:
                 with open(jd_files[0], "r", encoding="utf-8") as f:
@@ -123,6 +128,8 @@ def parse_jd_node(state: RecruitState) -> dict:
     resolved_resumes_dir = Path(resume_dir)
     if not resolved_resumes_dir.exists():
         resolved_resumes_dir = Path("backend") / resume_dir
+    if not resolved_resumes_dir.exists() and resume_dir.startswith("backend/"):
+        resolved_resumes_dir = Path(resume_dir.replace("backend/", "", 1))
         
     if not resolved_resumes_dir.exists() or not resolved_resumes_dir.is_dir():
         return {
