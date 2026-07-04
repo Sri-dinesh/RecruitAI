@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
   Send, User, Bot, Briefcase, Users, Database, 
-  Cpu, Activity, Clock, Terminal
+  Cpu, Activity, Clock, Terminal, FileText
 } from 'lucide-react';
 import MarkdownText from '../components/MarkdownText';
 
@@ -54,8 +54,81 @@ export default function Home() {
   const [pendingConfirmation, setPendingConfirmation] = useState<any>(null);
   const [lastIntent, setLastIntent] = useState<string | null>(null);
   const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
+  
+  // PDF & In-App Report States
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportQs, setReportQs] = useState("");
+  const [reportSalary, setReportSalary] = useState("");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const openReportPreview = () => {
+    let interviewQs = "";
+    let salaryInfo = "";
+    
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === 'assistant') {
+        if (!interviewQs && (msg.content.includes("Interview Prep Questions") || msg.content.includes("interview_questions") || msg.content.includes("Interview questions") || msg.content.includes("Interview prep questions"))) {
+          interviewQs = msg.content;
+        }
+        if (!salaryInfo && (msg.content.includes("Salary Benchmark") || msg.content.includes("salary range") || msg.content.includes("Salary expectations") || msg.content.includes("salary benchmark"))) {
+          salaryInfo = msg.content;
+        }
+      }
+    }
+    setReportQs(interviewQs || "No interview questions generated yet. Ask: 'Generate prep questions for the top candidate'.");
+    setReportSalary(salaryInfo || "No salary benchmark queries performed. Ask: 'What is the average salary range for this role?'.");
+    setShowReportModal(true);
+  };
+
+  const downloadPdfReport = async () => {
+    try {
+      setLoading(true);
+      let interviewQs = "";
+      let salaryInfo = "";
+      
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === 'assistant') {
+          if (!interviewQs && (msg.content.includes("Interview Prep Questions") || msg.content.includes("interview_questions") || msg.content.includes("Interview questions") || msg.content.includes("Interview prep questions"))) {
+            interviewQs = msg.content;
+          }
+          if (!salaryInfo && (msg.content.includes("Salary Benchmark") || msg.content.includes("salary range") || msg.content.includes("Salary expectations") || msg.content.includes("salary benchmark"))) {
+            salaryInfo = msg.content;
+          }
+        }
+      }
+      
+      const res = await fetch('http://127.0.0.1:8000/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jd: jd,
+          shortlist: lastShortlist || candidates,
+          interview_questions: interviewQs || "No questions generated.",
+          salary_data: salaryInfo || "No salary data benchmarks available."
+        })
+      });
+
+      if (!res.ok) throw new Error("Report generation failed");
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Recruitment_Report_${jd?.role || 'Position'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to download PDF report. Make sure the backend server is running.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Auto-scroll chat
   useEffect(() => {
@@ -241,6 +314,12 @@ export default function Home() {
               <span className="text-slate-300 font-medium">{apiConnected ? 'API Connected' : 'API Offline'}</span>
             </div>
             <button 
+              onClick={openReportPreview}
+              className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg transition"
+            >
+              Report Preview
+            </button>
+            <button 
               onClick={clearChat}
               className="text-[10px] border border-slate-800 hover:border-slate-700 bg-slate-950 text-slate-400 hover:text-white px-3 py-1 rounded-lg transition"
             >
@@ -409,6 +488,110 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {/* 4. IN-APP REPORT PREVIEW MODAL */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-100">Recruitment Summary Report</h3>
+              </div>
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="text-slate-400 hover:text-white transition text-xs font-semibold px-2 py-1 bg-slate-800/60 rounded"
+              >
+                Close Preview
+              </button>
+            </div>
+            
+            {/* Modal Content (In-App Preview) */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-slate-300">
+              {/* Position Info */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">1. Position target requirements</h4>
+                {jd ? (
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div><span className="text-slate-500">Target Role:</span> <strong className="text-slate-100">{jd.role}</strong></div>
+                    <div><span className="text-slate-500">Experience Required:</span> <strong className="text-slate-100">{jd.experience_years}+ years</strong></div>
+                    <div><span className="text-slate-500">JD Tone & Culture:</span> <strong className="text-slate-100 capitalize">{jd.tone}</strong></div>
+                    <div><span className="text-slate-500">Core Skills:</span> <strong className="text-slate-100">{jd.required_skills?.join(', ') || 'None'}</strong></div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">No Position target loaded.</p>
+                )}
+              </div>
+
+              {/* Candidates Table */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">2. Shortlist Assessment</h4>
+                {(lastShortlist || candidates).length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 bg-slate-900/30">
+                          <th className="py-2 px-3 font-semibold">Candidate Name</th>
+                          <th className="py-2 px-3 font-semibold">Match Score</th>
+                          <th className="py-2 px-3 font-semibold">Matched Skills</th>
+                          <th className="py-2 px-3 font-semibold">Gaps Identified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(lastShortlist || candidates).map((c, idx) => {
+                          const scoreColor = c.match_score >= 80 ? 'text-emerald-400 font-bold' : 
+                                             c.match_score >= 50 ? 'text-amber-400 font-bold' : 
+                                             'text-rose-400 font-bold';
+                          return (
+                            <tr key={idx} className="border-b border-slate-900/60 hover:bg-slate-900/20">
+                              <td className="py-2.5 px-3 text-slate-200">{c.name}</td>
+                              <td className={`py-2.5 px-3 ${scoreColor}`}>{c.match_score}/100</td>
+                              <td className="py-2.5 px-3 text-slate-400">{c.matched_skills?.join(', ') || 'None'}</td>
+                              <td className="py-2.5 px-3 text-slate-400">{c.gaps?.join(', ') || 'None'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">No candidates screened or shortlisted yet.</p>
+                )}
+              </div>
+
+              {/* Salary Data */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">3. Market Salary expectations</h4>
+                <MarkdownText text={reportSalary} />
+              </div>
+
+              {/* Interview prep questions */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">4. Interview prep questions</h4>
+                <MarkdownText text={reportQs} />
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-950/50">
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="text-xs border border-slate-800 hover:border-slate-700 bg-slate-950 text-slate-400 hover:text-white px-4 py-2 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={downloadPdfReport}
+                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5 rotate-90" />
+                Download PDF Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </main>
   );
