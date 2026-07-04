@@ -349,16 +349,34 @@ export default function Home() {
   };
 
   const handleSendEmailSimulation = async () => {
+    if (!draftRecipient || !draftBody) return;
     setLoading(true);
+    setEmailStatus(null);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setEmailStatus(`Successfully sent email draft to ${draftRecipient}!`);
+      const res = await fetch('http://127.0.0.1:8000/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_draft: `Subject: ${draftSubject}\n\n${draftBody}`,
+          recipient_email: draftRecipient
+        })
+      });
+
+      if (!res.ok) throw new Error('Failed to send email outreach');
+
+      const data = await res.json();
+      setEmailStatus(data.status);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `✉️ **Email Dispatched**: Simulation successful. Recruiter email drafted and logged to SMTP stub for **${draftRecipient}**.`
+        content: `✉️ **Email Outreach Dispatch Output**:\n\n${data.status}`
       }]);
-    } catch (err) {
+    } catch (err: any) {
+      console.error(err);
       setEmailStatus("Failed to send email draft.");
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `❌ **Failed to send email outreach**: ${err.message || 'Server error'}`
+      }]);
     } finally {
       setLoading(false);
     }

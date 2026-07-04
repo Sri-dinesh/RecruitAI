@@ -28,9 +28,14 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     history = state.get("conversation_history", [])
     user_msg = history[-1]["content"] if history else ""
     
-    # Bypass routing if there is a pending human-in-the-loop confirmation
-    if state.get("pending_confirmation") is not None:
-        intent = "finalize_shortlist"
+    # Bypass routing if there is a pending confirmation
+    pending = state.get("pending_confirmation")
+    if pending is not None:
+        action = pending.get("action")
+        if action == "schedule_interview":
+            intent = "schedule"
+        else:
+            intent = "finalize_shortlist"
     else:
         intent, confidence, resolved_candidate = route_and_log(user_msg, state)
         

@@ -99,3 +99,24 @@ async def chat_endpoint(req: ChatRequest):
     except Exception as e:
         print(f"Error in FastAPI chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class EmailRequest(BaseModel):
+    email_draft: str
+    recipient_email: str
+
+class EmailResponse(BaseModel):
+    status: str
+
+@router.post("/email/send", response_model=EmailResponse)
+async def send_email_endpoint(req: EmailRequest):
+    from app.tools.email_tool import send_email_draft
+    try:
+        res = send_email_draft.invoke({
+            "email_draft": req.email_draft,
+            "recipient_email": req.recipient_email
+        })
+        return EmailResponse(status=res)
+    except Exception as e:
+        print(f"Error in FastAPI send email endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
