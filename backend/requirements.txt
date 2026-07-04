@@ -1,0 +1,12 @@
+langgraph
+langchain-core
+google-generativeai
+groq
+sentence-transformers
+supabase
+pydantic>=2.0
+tavily-python
+python-dotenv
+rich
+numpy
+pytest
