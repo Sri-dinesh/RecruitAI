@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
-  Send, User, Bot, Briefcase, Users, FileText, Database, 
-  ShieldAlert, Cpu, Activity, Clock, Terminal, CheckCircle2, XCircle
+  Send, User, Bot, Briefcase, Users, Database, 
+  Cpu, Activity, Clock, Terminal
 } from 'lucide-react';
 import MarkdownText from '../components/MarkdownText';
 
@@ -171,7 +171,7 @@ export default function Home() {
               <p className="text-xs text-slate-400">Experience: <span className="text-slate-200 font-medium">{jd.experience_years}+ years</span></p>
               <p className="text-xs text-slate-400">Tone: <span className="text-slate-200 font-medium capitalize">{jd.tone}</span></p>
               <div className="flex flex-wrap gap-1 mt-1">
-                {jd.required_skills.map((skill, idx) => (
+                {jd.required_skills && jd.required_skills.map((skill, idx) => (
                   <span key={idx} className="bg-emerald-950/80 text-emerald-300 text-[10px] px-1.5 py-0.5 rounded border border-emerald-800/40">
                     {skill}
                   </span>
@@ -203,12 +203,12 @@ export default function Home() {
                         {c.match_score}/100
                       </span>
                     </div>
-                    {c.matched_skills.length > 0 && (
+                    {c.matched_skills && c.matched_skills.length > 0 && (
                       <p className="text-[10px] text-slate-400 truncate">
                         Matches: <span className="text-emerald-400">{c.matched_skills.join(', ')}</span>
                       </p>
                     )}
-                    {c.gaps.length > 0 && (
+                    {c.gaps && c.gaps.length > 0 && (
                       <p className="text-[10px] text-slate-400 truncate">
                         Gaps: <span className="text-rose-400">{c.gaps.join(', ')}</span>
                       </p>

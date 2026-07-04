@@ -1,4 +1,3 @@
-import React from 'react';
 
 export default function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
