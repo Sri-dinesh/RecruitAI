@@ -4,7 +4,7 @@ import json
 from typing import Optional
 from app.core.config import INDIANAPI_JOBS_KEY, SERPAPI_API_KEY
 from app.schemas.jd_schema import JobDescription
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 
 def get_mock_jd(query: str) -> JobDescription:
     """
@@ -130,7 +130,7 @@ def map_raw_job_to_jd(job_data: dict, source_name: str) -> JobDescription:
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         return JobDescription(
             role=data.get("role", title),
             required_skills=data.get("required_skills", []),

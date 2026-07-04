@@ -1,7 +1,7 @@
 import json
 from typing import List
 from app.graph.state import RecruitState
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 from app.core.logging import log_event
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import query_top_k
@@ -120,7 +120,7 @@ def screen_node(state: RecruitState) -> dict:
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text.strip())
+        data = parse_json_safely(response_text)
         evaluations = data.get("evaluations", [])
     except Exception as e:
         return {

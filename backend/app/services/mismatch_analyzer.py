@@ -2,7 +2,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional
 from app.schemas.candidate_schema import Candidate
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 
 def extract_experience_via_regex(text: str) -> Optional[float]:
     """
@@ -53,7 +53,7 @@ def extract_candidate_experience(candidate: Candidate) -> float:
     
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         exp = float(data.get("experience_years", 0.0))
         # Store on candidate object for caching
         candidate.experience_years = exp
@@ -118,7 +118,7 @@ def suggest_jd_improvements(jd_raw_text: str) -> List[str]:
     
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         return data.get("suggestions", [])
     except Exception as e:
         print(f"Error checking JD improvements: {e}")
@@ -154,7 +154,7 @@ def detect_red_flags(candidate: Candidate) -> List[str]:
 
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         flags = [str(f) for f in data.get("red_flags", []) if f]
         candidate.red_flags = flags
         return flags

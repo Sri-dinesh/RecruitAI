@@ -1,7 +1,7 @@
 import json
 from app.graph.state import RecruitState
 from app.services.job_desc_api import fetch_live_job_description
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 from app.schemas.jd_schema import JobDescription
 
 def fetch_jd_api_node(state: RecruitState) -> dict:
@@ -30,7 +30,7 @@ def fetch_jd_api_node(state: RecruitState) -> dict:
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         query = data.get("query") or query
         location = data.get("location")
     except Exception as e:

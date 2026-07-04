@@ -3,7 +3,7 @@ import json
 from typing import Optional
 from app.core.config import APILAYER_API_KEY
 from app.schemas.candidate_schema import Candidate
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 from app.services.document_parser import parse_pdf, parse_docx
 
 def get_mock_parsed_resume(filename: str, raw_text: str) -> Candidate:
@@ -27,7 +27,7 @@ def get_mock_parsed_resume(filename: str, raw_text: str) -> Candidate:
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text)
+        data = parse_json_safely(response_text)
         extracted_name = data.get("name", name)
     except Exception:
         extracted_name = name

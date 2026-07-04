@@ -7,7 +7,7 @@ from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
 from app.services.ingestion_service import ingest_single_candidate_text
 from app.services.resume_api import parse_resume_via_api
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 
 router = APIRouter()
 
@@ -123,7 +123,13 @@ async def upload_jd_endpoint(file: UploadFile = File(...)):
             system_instruction=system_instruction,
             json_mode=True
         )
-        data = json.loads(response_text.strip())
+        data = parse_json_safely(response_text)
+        # Defensively coerce if the model returned a list instead of a dict
+        if not isinstance(data, dict):
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                data = {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse JD via LLM: {str(e)}")
         

@@ -1,6 +1,6 @@
 import json
 from typing import List, Dict, Any, Optional
-from app.core.llm_router import call_llm
+from app.core.llm_router import call_llm, parse_json_safely
 
 def expand_query(query: str, jd: Optional[Dict[str, Any]] = None) -> str:
     """
@@ -50,7 +50,7 @@ def rerank_chunks(query: str, chunks: List[Dict[str, Any]], top_n: int = 3) -> L
         
         try:
             response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
-            data = json.loads(response_text)
+            data = parse_json_safely(response_text)
             score = float(data.get("relevance_score", 1.0))
         except Exception as e:
             # Fallback score
