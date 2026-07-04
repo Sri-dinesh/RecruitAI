@@ -49,6 +49,7 @@ def run_repl():
         "[bold green]RecruitAI MVP conversational REPL[/bold green]\n\n"
         "Interface with the agent using natural language:\n"
         "- Load context: [italic]'load JD and resumes'[/italic]\n"
+        "- Fetch live JD: [italic]'fetch JD for Frontend Developer via API'[/italic]\n"
         "- Count: [italic]'how many applicants do we have?'[/italic]\n"
         "- Screen: [italic]'screen candidate matching'[/italic]\n"
         "- Rewrite: [italic]'rewrite this JD for a startup'[/italic]\n"

@@ -17,7 +17,8 @@ INTENT_PLAIN_MAP = {
     "email": "drafting or sending a recruiter email to a candidate",
     "trend": "analyzing trending skills and market demand for a role",
     "schedule": "scheduling or booking an interview time slot",
-    "redflags": "detecting red flags, timeline gaps, or inconsistencies in resumes"
+    "redflags": "detecting red flags, timeline gaps, or inconsistencies in resumes",
+    "fetch_jd_api": "fetching job descriptions from live APIs"
 }
 
 def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
@@ -55,7 +56,11 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     if re.search(r"\b(red flag|gap|inconsistent|suspicious|resume issue)\b", q):
         return "redflags", 1.0
 
-    # 8. simple greeting or fallback check
+    # 8. fetch live jd check
+    if re.search(r"\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b.*\b(api|internet|web|online|live|indianapi|serpapi)\b", q) or re.search(r"\b(api|internet|web|online|live|indianapi|serpapi)\b.*\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b", q):
+        return "fetch_jd_api", 1.0
+
+    # 9. simple greeting or fallback check
     if q in ["hi", "hello", "hey", "who are you", "help"]:
         return "other", 1.0
 
@@ -79,6 +84,7 @@ def llm_classify(query: str) -> Tuple[str, float, str, float]:
         "- trend: Analyze trending skills or market demand (e.g. 'what skills are trending for Python developers', 'skill trends for this role')\n"
         "- schedule: Schedule or book an interview slot (e.g. 'schedule an interview with Alice', 'book a meeting with the top candidate')\n"
         "- redflags: Detect red flags or issues in resumes (e.g. 'check for red flags', 'any gaps in resumes', 'resume issues')\n"
+        "- fetch_jd_api: Fetch live job descriptions from external APIs (e.g. 'fetch JD for Frontend Developer via API', 'get job description for python from internet')\n"
         "- other: Greetings, chit-chat, clarify, or unclassified queries.\n\n"
         "Return a JSON object: {\"intent\": \"<intent>\", \"confidence\": <float_0_to_1>}."
     )
@@ -87,7 +93,7 @@ def llm_classify(query: str) -> Tuple[str, float, str, float]:
 
     valid_intents = [
         "load_context", "screen", "rewrite_jd", "interview_questions", "salary",
-        "compare", "email", "trend", "schedule", "redflags", "other"
+        "compare", "email", "trend", "schedule", "redflags", "fetch_jd_api", "other"
     ]
 
     try:

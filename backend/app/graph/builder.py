@@ -10,6 +10,7 @@ from app.graph.nodes.jd_rewrite_node import jd_rewrite_node
 from app.graph.nodes.interview_qgen_node import interview_qgen_node
 from app.graph.nodes.salary_node import salary_node
 from app.graph.nodes.hitl_confirm_node import hitl_confirm_node
+from app.graph.nodes.fetch_jd_api_node import fetch_jd_api_node
 
 # Phase 10 nodes
 from app.graph.nodes.compare_node import compare_node
@@ -40,13 +41,15 @@ def supervisor_agent_node(state: RecruitState) -> dict:
 def jd_agent_node(state: RecruitState) -> dict:
     """
     Specialized JD Agent.
-    Handles job description loading, parsing, and context rewriting.
+    Handles job description loading, parsing, context rewriting, and live JD fetching.
     """
     intent = state.get("last_intent")
     if intent == "load_context":
         return parse_jd_node(state)
     elif intent == "rewrite_jd":
         return jd_rewrite_node(state)
+    elif intent == "fetch_jd_api":
+        return fetch_jd_api_node(state)
     return {}
 
 def screening_agent_node(state: RecruitState) -> dict:
@@ -127,7 +130,7 @@ def route_to_subagent(state: RecruitState) -> str:
     """
     intent = state.get("last_intent")
 
-    if intent in ["load_context", "rewrite_jd"]:
+    if intent in ["load_context", "rewrite_jd", "fetch_jd_api"]:
         return "jd_agent"
     elif intent in ["screen", "count", "compare", "redflags"]:
         return "screening_agent"
