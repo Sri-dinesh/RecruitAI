@@ -18,6 +18,13 @@ SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 APILAYER_API_KEY = os.getenv("APILAYER_API_KEY")
 INDIANAPI_JOBS_KEY = os.getenv("INDIANAPI_JOBS_KEY")
 
+# SMTP Configuration
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_SENDER = os.getenv("SMTP_SENDER", SMTP_USERNAME)
+
 def get_missing_keys():
     missing = []
     if not GEMINI_API_KEY:

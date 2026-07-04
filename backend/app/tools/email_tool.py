@@ -1,10 +1,10 @@
-"""
-Task 10.3 - Email Tool (LangChain @tool decorator)
-Provides draft_recruiter_email and send_email_draft tools.
-"""
 import sys
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from langchain_core.tools import tool
 from app.core.llm_router import call_llm
+from app.core.config import SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_SENDER
 
 
 @tool
@@ -61,16 +61,57 @@ def draft_recruiter_email(candidate_name: str, role: str, action: str) -> str:
 @tool
 def send_email_draft(email_draft: str, recipient_email: str = "candidate@example.com") -> str:
     """
-    Send/log an email draft (SMTP stub for demo purposes).
+    Send an email draft using SMTP. If SMTP username and password are not configured,
+    falls back to logging/simulating the send to stdout.
 
     Args:
         email_draft: The full email text to send.
         recipient_email: The recipient's email address.
 
     Returns:
-        A confirmation message string.
+        A confirmation message string detailing success or fallback status.
     """
-    # SMTP stub: log to stdout only (environment-dependent for real SMTP)
+    if SMTP_USERNAME and SMTP_PASSWORD:
+        try:
+            # Parse subject and body from the email draft
+            subject = "RecruitAI Outreach"
+            body = email_draft
+
+            lines = email_draft.split("\n")
+            # Look for "Subject: ..." or "subject: ..."
+            subject_line = next((l for l in lines if l.lower().startswith("subject:")), None)
+            if subject_line:
+                subject = subject_line[len("subject:"):].strip()
+                # Exclude subject line from body
+                body = "\n".join([l for l in lines if not l.lower().startswith("subject:")])
+                body = body.strip()
+
+            # Construct MIME message
+            msg = MIMEMultipart()
+            msg['From'] = SMTP_SENDER or SMTP_USERNAME
+            msg['To'] = recipient_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+
+            # Dispatch email
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.sendmail(SMTP_SENDER or SMTP_USERNAME, recipient_email, msg.as_string())
+
+            return (
+                f"✅ **Email sent successfully via SMTP!**\n"
+                f"Recipient: `{recipient_email}`\n"
+                f"Subject: `{subject}`\n"
+                f"Server: `{SMTP_SERVER}:{SMTP_PORT}`"
+            )
+        except Exception as e:
+            return (
+                f"❌ **Failed to send email via SMTP:** {str(e)}\n"
+                f"Recipient: `{recipient_email}`"
+            )
+
+    # SMTP fallback log stub: log to stdout
     separator = "=" * 60
     print(f"\n{separator}", file=sys.stdout)
     print(f"[EMAIL STUB] Sending to: {recipient_email}", file=sys.stdout)
@@ -79,7 +120,7 @@ def send_email_draft(email_draft: str, recipient_email: str = "candidate@example
     print(separator, file=sys.stdout)
 
     return (
-        f"✅ **Email logged successfully** (SMTP demo mode).\n"
+        f"⚠️ **SMTP credentials not set in .env. Logged to console instead.**\n"
         f"Recipient: `{recipient_email}`\n"
-        f"Status: Would be sent via SMTP in production."
+        f"Status: Logged successfully (SMTP simulation mode)."
     )
