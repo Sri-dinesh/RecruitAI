@@ -10,3 +10,6 @@ python-dotenv
 rich
 numpy
 pytest
+fastapi
+uvicorn
+httpx
