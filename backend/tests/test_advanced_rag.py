@@ -25,13 +25,9 @@ def test_rerank_chunks():
         {"chunk_text": "Professional content copywriter, marketing campaign strategist, and blogging expert."}
     ]
     
-    # Mocking call_llm response to return relevance scores for each chunk
-    # We use side_effect to return high score for Python, low score for copywriting
-    mock_responses = [
-        ('{"relevance_score": 9}', "mock", 0.1),
-        ('{"relevance_score": 2}', "mock", 0.1)
-    ]
-    with patch("app.rag.advanced_rag.call_llm", side_effect=mock_responses):
+    # Mocking call_llm response to return relevance scores for each chunk in a single batch format
+    mock_response = ('{"scores": [{"id": 0, "relevance_score": 9}, {"id": 1, "relevance_score": 2}]}', "mock", 0.1)
+    with patch("app.rag.advanced_rag.call_llm", return_value=mock_response):
         # Rerank and request the single most relevant chunk
         reranked = rerank_chunks(query, chunks, top_n=1)
         assert len(reranked) == 1

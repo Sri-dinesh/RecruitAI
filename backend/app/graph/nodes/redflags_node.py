@@ -26,6 +26,18 @@ def redflags_node(state: RecruitState) -> dict:
             }]
         }
 
+    from concurrent.futures import ThreadPoolExecutor
+
+    def process_candidate_flags(c):
+        try:
+            c_flags = detect_red_flags(c)
+        except Exception as e:
+            c_flags = [f"Could not analyze due to error: {e}"]
+        return c, c_flags
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(process_candidate_flags, resumes))
+
     report_lines = [
         "### 🔍 Resume Red-Flag Detection Report\n",
         f"Analyzed **{len(resumes)}** candidate(s) for timeline gaps, "
@@ -33,12 +45,7 @@ def redflags_node(state: RecruitState) -> dict:
         "---\n"
     ]
 
-    for candidate in resumes:
-        try:
-            flags = detect_red_flags(candidate)
-        except Exception as e:
-            flags = [f"Could not analyze due to error: {e}"]
-
+    for candidate, flags in results:
         report_lines.append(f"#### 👤 {candidate.name}")
 
         if flags:

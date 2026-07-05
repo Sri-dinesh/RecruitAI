@@ -73,7 +73,9 @@ def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate])
             "message": "No candidates loaded to analyze experience mismatch."
         }
         
-    experiences = [extract_candidate_experience(c) for c in candidates]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        experiences = list(executor.map(extract_candidate_experience, candidates))
     avg_exp = sum(experiences) / len(experiences)
     
     underqualified = [exp for exp in experiences if exp < jd_experience]

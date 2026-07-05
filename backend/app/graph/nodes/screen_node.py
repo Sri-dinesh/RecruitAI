@@ -1,5 +1,6 @@
 import json
 from typing import List
+from concurrent.futures import ThreadPoolExecutor
 from app.graph.state import RecruitState
 from app.core.llm_router import call_llm, parse_json_safely
 from app.core.logging import log_event
@@ -57,9 +58,8 @@ def screen_node(state: RecruitState) -> dict:
             }]
         }
         
-    candidate_contexts = []
-    for index, candidate in enumerate(resumes):
-        # Retrieve top 5 chunks for this specific candidate
+    def process_candidate(item):
+        index, candidate = item
         try:
             # Fetch 5 chunks to allow reranker selection
             chunks = query_top_k(query_embedding, k=5, candidate_id=candidate.candidate_id)
@@ -71,12 +71,15 @@ def screen_node(state: RecruitState) -> dict:
             print(f"pgvector query failed for {candidate.name}: {e}. Falling back to raw text.")
             chunks_text = candidate.raw_text
             
-        candidate_contexts.append({
+        return {
             "candidate_id": candidate.candidate_id,
             "name": candidate.name,
             "original_index": index, # for stable tie-breaker
             "text": chunks_text
-        })
+        }
+        
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        candidate_contexts = list(executor.map(process_candidate, enumerate(resumes)))
         
     # 4. Formulate the single batched prompt for LLM evaluation
     system_instruction = (

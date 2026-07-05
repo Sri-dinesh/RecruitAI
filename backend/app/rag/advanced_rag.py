@@ -31,31 +31,40 @@ def expand_query(query: str, jd: Optional[Dict[str, Any]] = None) -> str:
 def rerank_chunks(query: str, chunks: List[Dict[str, Any]], top_n: int = 3) -> List[Dict[str, Any]]:
     """
     Performs LLM-based relevance filtering of retrieved candidate resume chunks.
-    Assigns a relevance score (1-10) to each chunk and retains only the top_n.
+    Assigns a relevance score (1-10) to each chunk in a single batch call and retains only the top_n.
     """
     if not chunks:
         return []
         
     system_instruction = (
-        "You are an AI recruitment ranker. Evaluate the relevance of the following resume snippet "
-        "relative to the query. Assign a relevance score from 1 to 10. "
-        "Output a JSON object exactly like: {\"relevance_score\": X} where X is an integer. "
-        "Do not include any other text."
+        "You are an AI recruitment ranker. Evaluate the relevance of the following resume snippets "
+        "relative to the query. Assign a relevance score from 1 to 10 for each snippet. "
+        "Output a JSON object containing a list of scores, exactly like: "
+        "{\"scores\": [{\"id\": 0, \"relevance_score\": X}, {\"id\": 1, \"relevance_score\": Y}, ...]} "
+        "where id matches the index of the snippet. Do not include any other text."
     )
     
-    scored_chunks = []
-    for chunk in chunks:
+    snippets = []
+    for idx, chunk in enumerate(chunks):
         chunk_text = chunk.get("chunk_text", "")
-        prompt = f"Query: {query}\nResume Snippet: {chunk_text}"
+        snippets.append(f"Snippet ID: {idx}\nText: {chunk_text}")
         
-        try:
-            response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
-            data = parse_json_safely(response_text)
-            score = float(data.get("relevance_score", 1.0))
-        except Exception as e:
-            # Fallback score
-            score = 1.0
-            
+    prompt = f"Query: {query}\n\n" + "\n---\n".join(snippets)
+    
+    try:
+        response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
+        data = parse_json_safely(response_text)
+        scores_list = data.get("scores", [])
+        
+        # Build index lookup map
+        scores_map = {int(item.get("id")): float(item.get("relevance_score", 1.0)) for item in scores_list if "id" in item}
+    except Exception as e:
+        print(f"Error in batch reranking: {e}. Falling back to default scores.")
+        scores_map = {}
+        
+    scored_chunks = []
+    for idx, chunk in enumerate(chunks):
+        score = scores_map.get(idx, 1.0)
         chunk_copy = dict(chunk)
         chunk_copy["rerank_score"] = score
         scored_chunks.append(chunk_copy)

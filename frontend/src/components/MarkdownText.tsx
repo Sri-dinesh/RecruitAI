@@ -1,125 +1,166 @@
+import React from 'react';
 
 export default function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
-  
-  // Split content by code blocks first
-  const parts = text.split(/(```[\s\S]*?```)/g);
-  
-  return (
-    <div className="space-y-1.5 text-sm leading-relaxed whitespace-pre-wrap">
-      {parts.map((part, index) => {
-        if (part.startsWith('```')) {
-          const lines = part.split('\n');
-          const codeLines = lines.slice(1, -1).join('\n');
-          return (
-            <pre key={index} className="bg-slate-950 text-slate-200 p-3 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto my-2 shadow-inner">
-              <code>{codeLines}</code>
-            </pre>
-          );
-        }
-        
-        // Custom block compiler for headers, lists, and paragraphs
-        const lines = part.split('\n');
-        const elements: React.ReactNode[] = [];
-        
-        let currentListType: 'ul' | 'ol' | null = null;
-        let currentListItems: React.ReactNode[] = [];
-        let listKey = 0;
-        
-        const flushList = () => {
-          if (!currentListType) return;
-          const Tag = currentListType;
-          const className = currentListType === 'ul' 
-            ? 'list-disc list-inside ml-4 my-2 text-slate-300 space-y-1' 
-            : 'list-decimal list-inside ml-4 my-2 text-slate-300 space-y-1';
-          elements.push(
-            <Tag key={`list-${listKey++}`} className={className}>
-              {currentListItems}
-            </Tag>
-          );
-          currentListType = null;
-          currentListItems = [];
-        };
-        
-        lines.forEach((line, lIdx) => {
-          const trimmed = line.trim();
-          
-          // Bullet lists
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            if (currentListType !== 'ul') {
-              flushList();
-              currentListType = 'ul';
-            }
-            const content = line.replace(/^\s*[-*]\s/, '');
-            currentListItems.push(<li key={lIdx}>{parseInlineMarkdown(content)}</li>);
-            return;
-          }
-          
-          // Numbered lists
-          if (/^\d+\.\s/.test(trimmed)) {
-            if (currentListType !== 'ol') {
-              flushList();
-              currentListType = 'ol';
-            }
-            const content = line.replace(/^\s*\d+\.\s/, '');
-            currentListItems.push(<li key={lIdx}>{parseInlineMarkdown(content)}</li>);
-            return;
-          }
-          
-          // If we reach here, it's not a list item. Flush any active list.
-          flushList();
-          
-          // Heading 3
-          if (trimmed.startsWith('### ')) {
-            elements.push(<h3 key={lIdx} className="text-xs font-extrabold text-slate-100 mt-3 mb-1 tracking-tight">{trimmed.slice(4)}</h3>);
-            return;
-          }
-          // Heading 2
-          if (trimmed.startsWith('## ')) {
-            elements.push(<h2 key={lIdx} className="text-sm font-black text-slate-100 mt-4 mb-2 tracking-tight border-b border-slate-800/60 pb-0.5">{trimmed.slice(3)}</h2>);
-            return;
-          }
-          // Heading 1
-          if (trimmed.startsWith('# ')) {
-            elements.push(<h1 key={lIdx} className="text-base font-black text-slate-100 mt-5 mb-2.5 tracking-tight">{trimmed.slice(2)}</h1>);
-            return;
-          }
-          
-          // Horizontal rule
-          if (trimmed === '---') {
-            elements.push(<hr key={lIdx} className="border-slate-800 my-3" />);
-            return;
-          }
-          
-          // Normal paragraph
-          if (trimmed) {
-            elements.push(<p key={lIdx} className="text-slate-300 my-0.5">{parseInlineMarkdown(line)}</p>);
-          } else {
-            // Spacer for empty lines
-            elements.push(<div key={lIdx} className="h-1.5" />);
-          }
-        });
-        
-        flushList();
-        return <div key={index} className="space-y-0.5">{elements}</div>;
-      })}
-    </div>
-  );
-}
 
-function parseInlineMarkdown(text: string) {
-  // Simple bold, code, and italic format parser
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
-  return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="font-semibold text-emerald-400">{part.slice(2, -2)}</strong>;
+  const compileMarkdownToHtml = (markdown: string): string => {
+    if (!markdown) return '';
+    
+    // 1. Separate code blocks to avoid compiling markdown inside code
+    const codeBlocks: string[] = [];
+    let processed = markdown.replace(/```([\s\S]*?)```/g, (match, code) => {
+      const id = `__CODE_BLOCK_${codeBlocks.length}__`;
+      // Escape inside code block
+      const escapedCode = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      codeBlocks.push(`<pre class="bg-obsidian-950 text-slate-200 p-3.5 rounded-xl border border-obsidian-800 font-mono text-[11px] overflow-x-auto my-3 shadow-inner"><code>${escapedCode}</code></pre>`);
+      return id;
+    });
+
+    // Escape HTML in the rest of the text
+    processed = processed
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 2. Parse Headings
+    processed = processed.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-black uppercase text-brand-primary tracking-wider mt-4 mb-2">$1</h3>');
+    processed = processed.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-extrabold text-slate-100 mt-5 mb-2.5 pb-1 border-b border-obsidian-800">$1</h2>');
+    processed = processed.replace(/^# (.*?)$/gm, '<h1 class="text-base font-black text-slate-100 mt-6 mb-3">$1</h1>');
+
+    // 3. Parse Horizontal Rules
+    processed = processed.replace(/^---$/gm, '<hr class="border-obsidian-800 my-4" />');
+
+    // 4. Parse Tables
+    const lines = processed.split('\n');
+    let inTable = false;
+    let tableHtml = '';
+    const newLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('|') && line.endsWith('|')) {
+        if (!inTable) {
+          inTable = true;
+          tableHtml = '<div class="overflow-x-auto my-4 rounded-xl border border-obsidian-800 bg-obsidian-900/30"><table class="w-full text-left border-collapse text-xs">';
+          const cols = line.split('|').slice(1, -1).map(c => c.trim());
+          tableHtml += '<thead class="bg-obsidian-950/60 border-b border-obsidian-800"><tr class="text-slate-400 font-bold">';
+          cols.forEach(col => {
+            tableHtml += `<th class="py-2.5 px-3.5 font-bold">${col}</th>`;
+          });
+          tableHtml += '</tr></thead><tbody>';
+          
+          if (i + 1 < lines.length && lines[i + 1].trim().startsWith('|') && lines[i + 1].includes('-')) {
+            i++; // Skip alignment row
+          }
+        } else {
+          const cols = line.split('|').slice(1, -1).map(c => c.trim());
+          tableHtml += '<tr class="border-b border-obsidian-850 hover:bg-obsidian-900/10">';
+          cols.forEach(col => {
+            const cellHtml = compileInline(col);
+            tableHtml += `<td class="py-2 px-3.5 text-slate-350 font-medium">${cellHtml}</td>`;
+          });
+          tableHtml += '</tr>';
+        }
+      } else {
+        if (inTable) {
+          inTable = false;
+          tableHtml += '</tbody></table></div>';
+          newLines.push(tableHtml);
+          tableHtml = '';
+        }
+        newLines.push(lines[i]);
+      }
     }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={index} className="bg-slate-950 text-rose-400 px-1 py-0.5 rounded font-mono text-xs border border-slate-800/80">{part.slice(1, -1)}</code>;
+    if (inTable) {
+      tableHtml += '</tbody></table></div>';
+      newLines.push(tableHtml);
     }
-    if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={index} className="italic text-slate-300">{part.slice(1, -1)}</em>;
+    processed = newLines.join('\n');
+
+    // Inline elements compiler
+    function compileInline(text: string): string {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-brand-primary">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em class="italic text-slate-300">$1</em>')
+        .replace(/`(.*?)`/g, '<code class="bg-obsidian-950 text-brand-accent px-1.5 py-0.5 rounded font-mono text-[11px] border border-obsidian-800/80">$1</code>')
+        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline">$1</a>');
     }
-    return part;
-  });
+
+    // 5. Parse Lists
+    const finalLines = processed.split('\n');
+    let inUl = false;
+    let inOl = false;
+    const outputLines: string[] = [];
+
+    for (let i = 0; i < finalLines.length; i++) {
+      const line = finalLines[i];
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        if (inOl) {
+          outputLines.push('</ol>');
+          inOl = false;
+        }
+        if (!inUl) {
+          outputLines.push('<ul class="list-disc list-inside ml-4 my-2 text-slate-300 space-y-1">');
+          inUl = true;
+        }
+        const content = trimmed.replace(/^[-*]\s+/, '');
+        outputLines.push(`<li>${compileInline(content)}</li>`);
+        continue;
+      }
+
+      if (/^\d+\.\s+/.test(trimmed)) {
+        if (inUl) {
+          outputLines.push('</ul>');
+          inUl = false;
+        }
+        if (!inOl) {
+          outputLines.push('<ol class="list-decimal list-inside ml-4 my-2 text-slate-300 space-y-1">');
+          inOl = true;
+        }
+        const content = trimmed.replace(/^\d+\.\s+/, '');
+        outputLines.push(`<li>${compileInline(content)}</li>`);
+        continue;
+      }
+
+      if (inUl) {
+        outputLines.push('</ul>');
+        inUl = false;
+      }
+      if (inOl) {
+        outputLines.push('</ol>');
+        inOl = false;
+      }
+
+      // Paragraph wrapper
+      if (trimmed && !trimmed.startsWith('<h') && !trimmed.startsWith('<div') && !trimmed.startsWith('<table') && !trimmed.startsWith('<tr') && !trimmed.startsWith('<td') && !trimmed.startsWith('<th') && !trimmed.startsWith('<hr') && !trimmed.startsWith('<thead') && !trimmed.startsWith('<tbody') && !trimmed.startsWith('__CODE_BLOCK_')) {
+        outputLines.push(`<p class="text-slate-300 my-1">${compileInline(line)}</p>`);
+      } else {
+        outputLines.push(line);
+      }
+    }
+
+    if (inUl) outputLines.push('</ul>');
+    if (inOl) outputLines.push('</ol>');
+
+    let finalHtml = outputLines.join('\n');
+
+    // Restore separated code blocks
+    codeBlocks.forEach((codeBlock, idx) => {
+      finalHtml = finalHtml.replace(`__CODE_BLOCK_${idx}__`, codeBlock);
+    });
+
+    return finalHtml;
+  };
+
+  return (
+    <div 
+      className="space-y-1.5 text-sm leading-relaxed select-text"
+      dangerouslySetInnerHTML={{ __html: compileMarkdownToHtml(text) }}
+    />
+  );
 }

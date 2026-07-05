@@ -47,7 +47,7 @@ interface PendingConfirmation {
   candidate_name?: string;
   role?: string;
   slots?: { slot_number: number; label: string }[];
-  payload?: any;
+  payload?: unknown;
 }
 
 interface ScheduledInterview {
@@ -81,10 +81,13 @@ export default function Home() {
   const [apiConnected, setApiConnected] = useState(false);
   const [candidateFilter, setCandidateFilter] = useState('');
 
-  // Chat session states
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
+  // Mobile responsive layout states
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   
   // Recruitment states synchronized from backend
   const [jd, setJd] = useState<JobDescription | null>(null);
@@ -707,7 +710,7 @@ export default function Home() {
     setRouterLogs([]);
     setScheduledInterviews([]);
     setSelectedCandidates(new Set());
-    setEmailStatus(null);
+  setEmailStatus(null);
   };
 
   const filteredCandidates = candidates.filter(c => 
@@ -716,59 +719,71 @@ export default function Home() {
   );
 
   return (
-    <main className="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative">
+    <main className="flex h-screen w-screen bg-transparent text-foreground overflow-hidden font-sans select-none relative">
       
       {/* SESSIONS SIDEBAR (FAR LEFT) */}
       {isSidebarOpen && (
-        <aside className="w-[220px] border-r border-slate-800 bg-slate-950 flex flex-col shrink-0">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-400">Conversations</span>
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="text-slate-500 hover:text-slate-300 transition"
-              title="Close sidebar"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          
-          <div className="p-3">
-            <button
-              onClick={handleCreateSession}
-              className="w-full bg-slate-900 border border-slate-800 hover:border-zinc-700 text-slate-200 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span>New Campaign</span>
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-1">
-            {sessions.map(s => {
-              const isActive = s.id === activeSessionId;
-              return (
-                <div 
-                  key={s.id}
-                  onClick={() => handleSelectSession(s.id)}
-                  className={`group flex items-center justify-between p-2 rounded-lg cursor-pointer transition text-xs ${
-                    isActive ? 'bg-zinc-800 text-emerald-400 border border-zinc-700 font-semibold' : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate pr-2">
-                    <Bot className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
-                    <span className="truncate">{s.title || 'New Chat'}</span>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteSession(s.id, e)}
-                    className="text-slate-600 hover:text-rose-400 transition p-1 opacity-0 group-hover:opacity-100 shrink-0"
-                    title="Delete Campaign"
+        <>
+          {/* Backdrop on mobile/tablet */}
+          <div 
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 w-[230px] border-r border-obsidian-800/80 bg-obsidian-900/85 backdrop-blur-xl flex flex-col shrink-0 lg:relative lg:translate-x-0">
+            <div className="p-4 border-b border-obsidian-800/80 flex items-center justify-between">
+              <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-400">Conversations</span>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="text-slate-500 hover:text-slate-350 transition p-1 hover:bg-obsidian-800 rounded-lg animate-in fade-in"
+                title="Close sidebar"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <div className="p-3">
+              <button
+                onClick={handleCreateSession}
+                className="w-full bg-brand-primary hover:bg-[#ff8000] text-obsidian-950 py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-[0_4px_15px_rgba(255,107,0,0.15)] hover:shadow-[0_4px_22px_rgba(255,107,0,0.3)] hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-obsidian-950" />
+                <span>New Campaign</span>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-1">
+              {sessions.map(s => {
+                const isActive = s.id === activeSessionId;
+                return (
+                  <div 
+                    key={s.id}
+                    onClick={() => {
+                      handleSelectSession(s.id);
+                      if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                    }}
+                    className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
+                      isActive 
+                        ? 'bg-obsidian-900 border-brand-primary/20 text-white font-semibold shadow-sm' 
+                        : 'border-transparent text-slate-400 hover:bg-obsidian-900/50 hover:text-slate-200'
+                    }`}
                   >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </aside>
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <Bot className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-brand-accent' : 'text-slate-500'}`} />
+                      <span className="truncate">{s.title || 'New Chat'}</span>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteSession(s.id, e)}
+                      className="text-slate-600 hover:text-brand-rose transition p-1 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-obsidian-800 rounded"
+                      title="Delete Campaign"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+        </>
       )}
 
       {/* Sidebar toggle button when closed */}
@@ -776,32 +791,48 @@ export default function Home() {
         <div className="absolute left-3 top-3.5 z-40">
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="p-2 bg-slate-900/90 border border-slate-800 hover:border-zinc-700 text-slate-300 rounded-lg shadow-lg transition"
+            className="p-2.5 bg-obsidian-900/90 border border-obsidian-800 hover:border-obsidian-700 text-slate-300 rounded-xl shadow-lg transition-all"
             title="Open Conversations"
           >
-            <Bot className="w-4 h-4 text-emerald-400" />
+            <Bot className="w-4 h-4 text-brand-accent" />
           </button>
         </div>
       )}
       
       {/* 1. LEFT WORKSPACE PANEL */}
-      <section className="w-80 border-r border-slate-800 bg-slate-950/45 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text">
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-          <Database className="w-5 h-5 text-emerald-500" />
-          <h2 className="font-black text-xs uppercase tracking-wider text-slate-400">Workspace Data</h2>
+      {isLeftPanelOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+          onClick={() => setIsLeftPanelOpen(false)}
+        />
+      )}
+      <section className={`fixed inset-y-0 left-0 z-45 w-80 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text glass-panel transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto lg:border-y-0 lg:border-l-0 lg:border-r lg:border-brand-primary/10 ${
+        isLeftPanelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <div className="flex items-center justify-between border-b border-obsidian-800/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Database className="w-4.5 h-4.5 text-brand-primary" />
+            <h2 className="font-black text-xs uppercase tracking-wider text-slate-300">Workspace Data</h2>
+          </div>
+          <button 
+            onClick={() => setIsLeftPanelOpen(false)}
+            className="lg:hidden text-slate-400 hover:text-white p-1 hover:bg-obsidian-800 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* ACTIVE JOB DESCRIPTION */}
-        <div className="bg-slate-900/60 border border-zinc-800 rounded-xl p-3.5 shadow-md flex flex-col gap-2.5 backdrop-blur-sm">
-          <div className="flex items-center justify-between text-emerald-400 font-bold text-xs uppercase tracking-wider">
+        <div className="glass-card rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+          <div className="flex items-center justify-between text-brand-accent font-bold text-xs uppercase tracking-wider">
             <div className="flex items-center gap-2">
-              <Briefcase className="w-3.5 h-3.5" />
+              <Briefcase className="w-3.5 h-3.5 text-brand-accent" />
               <span>Active Position</span>
             </div>
           </div>
           {jd ? (
             <div className="flex flex-col gap-1.5">
-              <h3 className="font-black text-slate-100 text-sm">{jd.role}</h3>
+              <h3 className="font-bold text-slate-100 text-sm tracking-tight">{jd.role}</h3>
               <div className="flex justify-between text-xs text-slate-400 pt-0.5">
                 <span>Experience target:</span>
                 <span className="text-slate-200 font-semibold">{jd.experience_years}+ years</span>
@@ -810,9 +841,9 @@ export default function Home() {
                 <span>Format / Tone:</span>
                 <span className="text-slate-200 font-semibold capitalize">{jd.tone}</span>
               </div>
-              <div className="flex flex-wrap gap-1 mt-1.5">
+              <div className="flex flex-wrap gap-1 mt-2">
                 {jd.required_skills && jd.required_skills.map((skill, idx) => (
-                  <span key={idx} className="bg-emerald-950/40 text-emerald-300 text-[10px] px-2 py-0.5 rounded border border-emerald-800/40 font-medium">
+                  <span key={idx} className="bg-brand-primary/10 text-slate-200 text-[10px] px-2 py-0.5 rounded-lg border border-brand-primary/25 font-medium">
                     {skill}
                   </span>
                 ))}
@@ -823,32 +854,32 @@ export default function Home() {
               No Job Description loaded. Let&apos;s try:
               <button 
                 onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt")} 
-                className="mt-1 text-emerald-400 font-semibold underline block hover:text-emerald-300 text-left text-[11px]"
+                className="mt-2 text-brand-accent font-semibold flex items-center gap-1 hover:underline text-left text-[11px]"
               >
-                📁 Load Sample JD file
+                📂 Load Sample JD file
               </button>
             </div>
           )}
 
-          <div className="pt-2.5 border-t border-slate-800/80 mt-1 flex flex-col gap-1.5">
+          <div className="pt-3 border-t border-obsidian-800/80 mt-1 flex flex-col gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Custom JD</span>
-            <div className="relative border border-dashed border-slate-800 hover:border-emerald-600/80 rounded-lg p-2.5 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-950/20 group">
+            <div className="relative border border-dashed border-obsidian-700 hover:border-brand-accent/50 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-obsidian-950/40 group">
               <input 
                 type="file" 
                 accept=".txt,.pdf,.doc,.docx"
                 onChange={handleJdUpload} 
                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
               />
-              <Paperclip className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 mb-1 transition-colors" />
-              <span className="text-[10px] text-slate-400 group-hover:text-slate-200 transition-colors">Choose JD text/PDF file</span>
+              <Paperclip className="w-4 h-4 text-slate-550 group-hover:text-brand-accent mb-1 transition-colors" />
+              <span className="text-[10px] text-slate-400 group-hover:text-slate-200 transition-colors">Choose JD file</span>
             </div>
           </div>
         </div>
 
         {/* SCREENED CANDIDATES */}
-        <div className="flex-1 bg-slate-900/60 border border-zinc-800 rounded-xl p-3.5 shadow-md flex flex-col gap-2.5 backdrop-blur-sm min-h-[250px] overflow-hidden">
+        <div className="flex-1 glass-card rounded-2xl p-4 shadow-lg flex flex-col gap-3 min-h-[250px] overflow-hidden">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-brand-accent font-bold text-xs uppercase tracking-wider">
               <Users className="w-3.5 h-3.5" />
               <span>Candidates ({filteredCandidates.length})</span>
             </div>
@@ -861,7 +892,7 @@ export default function Home() {
                     setSelectedCandidates(new Set(candidates.map(c => c.candidate_id)));
                   }
                 }}
-                className="text-[10px] text-slate-400 hover:text-emerald-400 font-semibold transition"
+                className="text-[10px] text-slate-400 hover:text-brand-accent font-semibold transition-colors"
               >
                 {selectedCandidates.size === candidates.length ? 'Clear Select' : 'Select All'}
               </button>
@@ -870,13 +901,13 @@ export default function Home() {
 
           {candidates.length > 0 && (
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-slate-550 absolute left-2.5 top-2.5" />
               <input 
                 type="text"
                 placeholder="Search candidates/skills..."
                 value={candidateFilter}
                 onChange={e => setCandidateFilter(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 pl-7 pr-3 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-zinc-700"
+                className="w-full glass-input rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-500"
               />
             </div>
           )}
@@ -886,16 +917,23 @@ export default function Home() {
               {filteredCandidates.map((c) => {
                 const isSelected = selectedCandidates.has(c.candidate_id);
                 const score = c.match_score || 0;
-                const scoreColor = score >= 80 ? 'text-emerald-400 border-emerald-950 bg-emerald-950/20' : 
-                                   score >= 50 ? 'text-amber-400 border-amber-950 bg-amber-950/20' : 
-                                   score > 0 ? 'text-rose-400 border-rose-950 bg-rose-950/20' :
-                                   'text-slate-400 border-slate-800 bg-slate-900/30';
+                const scoreColor = score >= 80 ? 'text-brand-emerald border-brand-emerald/30 bg-brand-emerald/10' : 
+                                   score >= 50 ? 'text-brand-primary border-brand-primary/30 bg-brand-primary/10' : 
+                                   score > 0 ? 'text-brand-rose border-brand-rose/30 bg-brand-rose/10' :
+                                   'text-slate-400 border-obsidian-800 bg-obsidian-900/30';
                 
                 return (
                   <div 
                     key={c.candidate_id} 
-                    className={`p-2.5 border rounded-lg flex flex-col gap-1.5 hover:border-zinc-600/80 transition-all ${
-                      isSelected ? 'bg-zinc-800/20 border-zinc-700' : 'bg-slate-950/40 border-slate-800/80'
+                    className={`p-3 border rounded-xl flex flex-col gap-2.5 transition-all duration-200 hover:scale-[1.01] ${
+                      isSelected 
+                        ? 'bg-brand-primary/10 border-brand-primary/45 shadow-sm shadow-brand-primary/5' 
+                        : 'bg-obsidian-900/40 border-obsidian-800 hover:border-obsidian-600/50 hover:bg-obsidian-900/80 shadow-md'
+                    } ${
+                      score >= 80 ? 'border-l-3 border-l-brand-emerald' :
+                      score >= 50 ? 'border-l-3 border-l-brand-primary' :
+                      score > 0 ? 'border-l-3 border-l-brand-rose' :
+                      'border-l-3 border-l-slate-700'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-1">
@@ -904,24 +942,24 @@ export default function Home() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleCandidateSelect(c.candidate_id)}
-                          className="w-3.5 h-3.5 rounded border-slate-700 accent-emerald-500 cursor-pointer"
+                          className="w-3.5 h-3.5 rounded border-obsidian-750 accent-brand-primary cursor-pointer shrink-0"
                         />
-                        <span className="font-bold text-slate-200 text-xs truncate cursor-pointer" onClick={() => toggleCandidateSelect(c.candidate_id)}>
+                        <span className="font-bold text-slate-100 text-xs truncate cursor-pointer hover:text-brand-accent transition-colors" onClick={() => toggleCandidateSelect(c.candidate_id)}>
                           {c.name}
                         </span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {c.red_flags && c.red_flags.length > 0 && (
                           <span 
-                            title={`${c.red_flags.length} Red flag(s) detected! Hover/click to view.`}
-                            className="text-rose-500 animate-bounce cursor-help"
+                            title={`${c.red_flags.length} Red flag(s) detected!`}
+                            className="text-brand-rose animate-pulse cursor-help shrink-0"
                           >
-                            <AlertTriangle className="w-3.5 h-3.5 fill-rose-950/10" />
+                            <AlertTriangle className="w-3.5 h-3.5" />
                           </span>
                         )}
                         {score > 0 && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${scoreColor}`}>
-                            {score.toFixed(0)}/100
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-lg border font-mono font-bold shrink-0 ${scoreColor}`}>
+                            {score.toFixed(0)}% Match
                           </span>
                         )}
                       </div>
@@ -929,10 +967,13 @@ export default function Home() {
 
                     {/* Expandable red flags */}
                     {c.red_flags && c.red_flags.length > 0 && (
-                      <div className="bg-rose-950/10 border border-rose-950/30 rounded p-1.5 text-[9px] text-rose-300/90 leading-tight space-y-1">
-                        <span className="font-bold uppercase tracking-wider text-[8px] text-rose-400">⚠️ Flag Details:</span>
+                      <div className="bg-brand-rose/5 border border-brand-rose/20 rounded-xl p-2 text-[9px] text-brand-rose leading-tight space-y-1 animate-in slide-in-from-top-1">
+                        <span className="font-bold uppercase tracking-wider text-[8px] text-brand-rose/90 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Flag Details:
+                        </span>
                         {c.red_flags.map((flag, idx) => (
-                          <div key={idx} className="flex gap-1">
+                          <div key={idx} className="flex gap-1 pl-1">
                             <span>•</span>
                             <span>{flag}</span>
                           </div>
@@ -940,26 +981,49 @@ export default function Home() {
                       </div>
                     )}
 
-                    <div className="text-[10px] text-slate-400 flex flex-col gap-0.5">
+                    <div className="text-[10px] text-slate-400 space-y-1">
                       {c.experience_years != null && (
-                        <div>Exp: <strong className="text-slate-300">{c.experience_years.toFixed(1)} years</strong></div>
+                        <div className="flex items-center justify-between border-b border-obsidian-800/40 pb-1">
+                          <span>Experience:</span>
+                          <strong className="text-slate-200">{c.experience_years.toFixed(1)} years</strong>
+                        </div>
                       )}
                       {c.matched_skills && c.matched_skills.length > 0 && (
-                        <div className="truncate">Matches: <span className="text-emerald-400">{c.matched_skills.join(', ')}</span></div>
+                        <div className="pt-0.5">
+                          <span className="text-[9px] text-slate-500 block mb-1">Matched Skills:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {c.matched_skills.slice(0, 4).map((skill, sIdx) => (
+                              <span key={sIdx} className="bg-brand-primary/10 text-slate-300 text-[8px] px-1.5 py-0.5 rounded border border-brand-primary/15 font-mono">
+                                {skill}
+                              </span>
+                            ))}
+                            {c.matched_skills.length > 4 && (
+                              <span className="text-[8px] text-slate-500 font-semibold pl-0.5 self-center">
+                                +{c.matched_skills.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
 
                     {/* Candidate actions */}
-                    <div className="flex gap-1.5 border-t border-slate-800/60 pt-1.5 mt-0.5 justify-end">
+                    <div className="flex gap-1.5 border-t border-obsidian-800/60 pt-2 mt-1 justify-end">
                       <button
-                        onClick={() => handleSend(`draft email for ${c.name}`)}
-                        className="text-[9px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 hover:border-zinc-700 text-slate-300 font-semibold"
+                        onClick={() => {
+                          handleSend(`draft email for ${c.name}`);
+                          setIsLeftPanelOpen(false);
+                        }}
+                        className="text-[9px] px-2 py-1 rounded-lg bg-obsidian-900 border border-obsidian-800 hover:border-obsidian-650 text-slate-355 hover:text-white font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]"
                       >
                         ✉️ Email
                       </button>
                       <button
-                        onClick={() => handleSend(`schedule an interview with ${c.name}`)}
-                        className="text-[9px] px-2 py-0.5 rounded bg-emerald-950/30 border border-emerald-900/60 text-emerald-400 hover:bg-emerald-950/50 font-semibold"
+                        onClick={() => {
+                          handleSend(`schedule an interview with ${c.name}`);
+                          setIsLeftPanelOpen(false);
+                        }}
+                        className="text-[9px] px-2 py-1 rounded-lg bg-brand-primary/15 border border-brand-primary/30 text-slate-200 hover:text-white hover:bg-brand-primary/25 font-semibold transition-all hover:scale-[1.03] active:scale-[0.97] shadow-sm shadow-brand-primary/5"
                       >
                         📅 Schedule
                       </button>
@@ -974,17 +1038,17 @@ export default function Home() {
         </div>
 
         {/* BOOKED INTERVIEWS */}
-        <div className="bg-slate-900/60 border border-zinc-800 rounded-xl p-3.5 shadow-md flex flex-col gap-2.5 backdrop-blur-sm">
-          <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+        <div className="glass-card rounded-2xl p-4 shadow-lg flex flex-col gap-2.5">
+          <div className="flex items-center gap-2 text-brand-accent font-bold text-xs uppercase tracking-wider">
             <Calendar className="w-3.5 h-3.5" />
             <span>Scheduled Interviews ({scheduledInterviews.length})</span>
           </div>
           {scheduledInterviews.length > 0 ? (
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[160px] custom-scrollbar pr-1">
               {scheduledInterviews.map((item, idx) => (
-                <div key={idx} className="p-2 border border-slate-800 bg-slate-950/60 rounded-lg flex flex-col gap-0.5">
+                <div key={idx} className="p-2.5 border border-obsidian-800 bg-obsidian-950/60 rounded-xl flex flex-col gap-0.5">
                   <div className="font-bold text-slate-200 text-xs truncate">{item.candidate_name}</div>
-                  <div className="text-[10px] text-emerald-400 font-mono font-medium">{item.slot}</div>
+                  <div className="text-[10px] text-brand-accent font-mono font-bold">{item.slot}</div>
                 </div>
               ))}
             </div>
@@ -995,35 +1059,60 @@ export default function Home() {
       </section>
 
       {/* 2. CHAT PANEL (CENTER) */}
-      <section className="flex-1 flex flex-col bg-slate-950 relative select-text">
-        <header className={`h-16 border-b border-slate-800 px-6 flex items-center justify-between bg-slate-950/40 backdrop-blur-md sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
-          <div className="flex items-center gap-3">
-            <Cpu className="w-6 h-6 text-emerald-500 animate-pulse" />
+      <section className="flex-1 flex flex-col bg-transparent relative select-text">
+        <header className={`h-16 border-b border-obsidian-800/80 px-4 sm:px-6 flex items-center justify-between bg-obsidian-950/30 backdrop-blur-md sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-brand-primary/10 rounded-xl border border-brand-primary/25 hidden xs:block">
+              <Cpu className="w-5 h-5 text-brand-primary animate-pulse" />
+            </div>
             <div>
-              <h1 className="font-extrabold text-sm tracking-tight text-white uppercase flex items-center gap-1.5">
-                RecruitAI Agent Dashboard
-                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">v2.0</span>
+              <h1 className="font-black text-xs sm:text-sm tracking-tight uppercase flex items-center gap-1.5">
+                <span className="gradient-text-purple">RecruitAI</span>
+                <span className="text-[9px] bg-gradient-to-r from-brand-primary to-brand-accent text-obsidian-950 px-2 py-0.5 rounded-full font-bold font-mono shadow-[0_0_10px_rgba(0,242,254,0.35)]">v2.0</span>
               </h1>
-              <p className="text-[10px] text-slate-400">Advanced Multi-Agent Supervisor Workspace</p>
+              <p className="text-[9px] sm:text-[10px] text-slate-400">Agent Supervisor</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-slate-900/60 px-2.5 py-1 rounded-full border border-slate-800 text-[10px]">
-              <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="text-slate-300 font-medium font-mono">{apiConnected ? 'FASTAPI: ACTIVE' : 'FASTAPI: OFFLINE'}</span>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Mobile Toggles for Panels */}
+            <button
+              onClick={() => {
+                setIsLeftPanelOpen(true);
+                setIsRightPanelOpen(false);
+              }}
+              className="lg:hidden p-2 bg-obsidian-900 border border-obsidian-800 hover:border-obsidian-700 text-slate-350 hover:text-white rounded-xl transition"
+              title="Workspace Data"
+            >
+              <Database className="w-4 h-4 text-brand-primary" />
+            </button>
+            <button
+              onClick={() => {
+                setIsRightPanelOpen(true);
+                setIsLeftPanelOpen(false);
+              }}
+              className="lg:hidden p-2 bg-obsidian-900 border border-obsidian-800 hover:border-obsidian-700 text-slate-350 hover:text-white rounded-xl transition"
+              title="Widgets & Reports"
+            >
+              <Sliders className="w-4 h-4 text-brand-accent" />
+            </button>
+
+            <div className="hidden md:flex items-center gap-1.5 bg-obsidian-900/60 px-3 py-1 rounded-full border border-obsidian-805 text-[10px]">
+              <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-brand-emerald animate-pulse' : 'bg-brand-rose'}`} />
+              <span className="text-slate-305 font-bold font-mono">{apiConnected ? 'API: ONLINE' : 'API: OFFLINE'}</span>
             </div>
+            
             <button 
               onClick={openReportPreview}
-              className="text-[10px] bg-slate-900 border border-slate-800 hover:border-zinc-700 text-slate-200 px-3 py-1.5 rounded-lg transition font-bold"
+              className="text-[10px] bg-obsidian-900 border border-brand-primary/30 hover:border-brand-primary/60 text-slate-200 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-sm hover:shadow-[0_0_10px_rgba(255,107,0,0.1)]"
             >
-              📄 Report Preview
+              📄 <span className="hidden sm:inline">Report Preview</span><span className="sm:hidden">Report</span>
             </button>
             <button 
               onClick={clearChat}
-              className="text-[10px] border border-slate-800 hover:border-rose-900/40 bg-slate-950 text-slate-400 hover:text-rose-400 px-3 py-1.5 rounded-lg transition"
+              className="text-[10px] border border-obsidian-800 hover:border-brand-rose/25 bg-obsidian-950 text-slate-405 hover:text-brand-rose px-2.5 py-1.5 rounded-xl transition-all hidden xs:block"
             >
-              Reset Session
+              Reset
             </button>
           </div>
         </header>
@@ -1035,18 +1124,18 @@ export default function Home() {
             return (
               <div 
                 key={idx} 
-                className={`flex gap-3 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-200 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                className={`flex gap-3 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-205 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${
-                  isUser ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-400' : 'bg-slate-900 border-zinc-800 text-slate-400'
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                  isUser ? 'bg-obsidian-900 border border-brand-primary/30 text-brand-primary' : 'bg-obsidian-900 border border-obsidian-800 text-slate-450'
                 }`}>
-                  {isUser ? <User className="w-4.5 h-4.5" /> : <Bot className="w-4.5 h-4.5" />}
+                  {isUser ? <User className="w-4 h-4 text-brand-primary" /> : <Bot className="w-4 h-4 text-slate-400" />}
                 </div>
 
-                <div className={`p-4 rounded-xl border ${
+                <div className={`p-4 rounded-2xl border text-sm leading-relaxed ${
                   isUser 
-                    ? 'bg-emerald-950/15 border-emerald-900/40 text-emerald-100 rounded-tr-none' 
-                    : 'bg-zinc-900/30 border-zinc-800/70 text-slate-200 rounded-tl-none shadow-md backdrop-blur-sm'
+                    ? 'bg-obsidian-900/85 border-brand-primary/25 text-slate-100 rounded-tr-none shadow-sm' 
+                    : 'bg-obsidian-900/40 border-obsidian-800/80 text-slate-200 rounded-tl-none shadow-lg backdrop-blur-md'
                 }`}>
                   <MarkdownText text={msg.content} />
                 </div>
@@ -1056,13 +1145,13 @@ export default function Home() {
           
           {loading && (
             <div className="flex gap-3 max-w-[85%]">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-slate-900 border border-zinc-800 text-slate-400">
-                <Bot className="w-4.5 h-4.5" />
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-obsidian-900 border border-obsidian-800 text-slate-400">
+                <Bot className="w-4 h-4" />
               </div>
-              <div className="p-4 rounded-xl border border-zinc-800/60 bg-zinc-900/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="p-4 rounded-2xl border border-obsidian-805 bg-obsidian-900/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           )}
@@ -1070,47 +1159,63 @@ export default function Home() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* INPUT ACTIONS & FORM */}
-        <div className="border-t border-slate-800 bg-slate-900/10 backdrop-blur-md p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
-          
+        <div className="border-t border-obsidian-800 bg-obsidian-950/10 backdrop-blur-md p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
           {/* Action Chips */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt and resumes from backend/data/resumes")}
-              className="text-[10px] bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-zinc-700 text-slate-300 px-2.5 py-1 rounded-full transition flex items-center gap-1 font-semibold"
+              className="text-xs bg-brand-primary/10 hover:bg-brand-primary/20 border border-brand-primary/25 hover:border-brand-primary/45 text-slate-100 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-primary/5"
             >
               🚀 Ingest Sample Files
             </button>
             <button 
               onClick={() => handleSuggestion("fetch JD for Frontend Developer via API")}
-              className="text-[10px] bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-zinc-700 text-slate-300 px-2.5 py-1 rounded-full transition flex items-center gap-1"
+              className="text-xs bg-brand-secondary/10 hover:bg-brand-secondary/20 border border-brand-secondary/25 hover:border-brand-secondary/45 text-slate-100 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-secondary/5"
             >
               🌐 Fetch Job via API
             </button>
             <button 
               onClick={() => handleSuggestion("Screen candidates matching the job description")}
-              className="text-[10px] bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-zinc-700 text-slate-300 px-2.5 py-1 rounded-full transition flex items-center gap-1"
+              className="text-xs bg-brand-primary/15 hover:bg-brand-primary/25 border border-brand-primary/35 hover:border-brand-primary/55 text-slate-100 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-primary/10"
             >
               🔍 Screen Candidates
             </button>
             <button 
               onClick={() => handleSuggestion("compare top candidates")}
-              className="text-[10px] bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-zinc-700 text-slate-300 px-2.5 py-1 rounded-full transition flex items-center gap-1"
+              className="text-xs bg-brand-accent/10 hover:bg-brand-accent/20 border border-brand-accent/25 hover:border-brand-accent/45 text-slate-100 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-accent/5"
             >
-              📊 Side-by-side Table
+              📊 Compare Side-by-Side
             </button>
             <button 
               onClick={() => handleSuggestion("check resumes for red flags")}
-              className="text-[10px] bg-slate-900/60 hover:bg-slate-800 border border-slate-800 hover:border-zinc-700 text-slate-300 px-2.5 py-1 rounded-full transition flex items-center gap-1 text-rose-300/80"
+              className="text-xs bg-brand-rose/10 hover:bg-brand-rose/20 border border-brand-rose/25 hover:border-brand-rose/45 text-brand-rose px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-rose/5"
             >
               ⚠️ Red Flags Check
+            </button>
+            <button 
+              onClick={() => handleSuggestion("generate interview prep questions for the job description")}
+              className="text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 hover:border-amber-500/45 text-amber-250 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-amber-500/5"
+            >
+              📋 Prep Questions
+            </button>
+            <button 
+              onClick={() => handleSuggestion("draft outreach email templates for top candidates")}
+              className="text-xs bg-brand-emerald/10 hover:bg-brand-emerald/20 border border-brand-emerald/25 hover:border-brand-emerald/45 text-brand-emerald px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-emerald/5"
+            >
+              ✉️ Outreach Draft
+            </button>
+            <button 
+              onClick={() => handleSuggestion("clear recruitment workspace context")}
+              className="text-xs bg-slate-800/60 hover:bg-slate-800/80 border border-slate-700 hover:border-slate-500 text-slate-300 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            >
+              🧹 Reset Workspace
             </button>
           </div>
 
           {/* Form */}
           <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
-            className="flex gap-2 bg-slate-950 border border-slate-800 focus-within:border-zinc-700 rounded-xl p-1.5 transition-all shadow-inner"
+            className="flex gap-2 bg-obsidian-900/80 border border-obsidian-800/80 focus-within:border-brand-primary/60 rounded-2xl p-2 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_18px_rgba(139,92,246,0.18)]"
           >
             <input 
               type="file"
@@ -1124,24 +1229,24 @@ export default function Home() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={loading}
-              className="text-slate-400 hover:text-slate-200 disabled:opacity-50 p-2.5 transition hover:bg-slate-900 rounded-lg shrink-0"
+              className="text-slate-400 hover:text-brand-accent disabled:opacity-50 p-3 transition hover:bg-obsidian-800 rounded-xl shrink-0"
               title="Attach PDF/DOCX Resumes"
             >
-              <Paperclip className="w-4 h-4" />
+              <Paperclip className="w-4.5 h-4.5" />
             </button>
             <input 
               type="text" 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type command or query for the Agent..."
-              className="flex-1 bg-transparent px-3 py-2 text-sm border-none outline-none focus:ring-0 text-slate-200 placeholder-slate-600"
+              className="flex-1 bg-transparent px-4 py-2 text-sm border-none outline-none focus:ring-0 text-slate-205 placeholder-slate-600"
               disabled={loading}
             />
             {loading ? (
               <button 
                 type="button"
                 onClick={handleStop}
-                className="bg-rose-750 hover:bg-rose-650 text-white rounded-lg px-4 py-2 transition shrink-0 shadow-md flex items-center justify-center font-bold gap-1 text-xs"
+                className="bg-brand-rose hover:bg-brand-rose/90 text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-[0_4px_12px_rgba(244,63,94,0.25)] hover:shadow-[0_4px_18px_rgba(244,63,94,0.4)] flex items-center justify-center font-bold gap-1 text-xs hover:scale-[1.02] active:scale-[0.98]"
                 title="Stop execution"
               >
                 <X className="w-4 h-4" />
@@ -1151,9 +1256,9 @@ export default function Home() {
               <button 
                 type="submit"
                 disabled={!input.trim()}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-lg px-4 py-2 transition shrink-0 shadow-md flex items-center justify-center font-bold"
+                className="bg-brand-primary hover:bg-[#ff8000] disabled:bg-obsidian-900 disabled:text-slate-650 disabled:shadow-none text-obsidian-950 rounded-xl px-5 py-2.5 transition shrink-0 shadow-[0_4px_12px_rgba(255,107,0,0.2)] hover:shadow-[0_4px_18px_rgba(255,107,0,0.35)] flex items-center justify-center font-black hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
               >
-                <Send className="w-4.5 h-4.5" />
+                <Send className="w-4 h-4 text-obsidian-950" />
               </button>
             )}
           </form>
@@ -1161,14 +1266,30 @@ export default function Home() {
       </section>
 
       {/* 3. RIGHT WORKSPACE PANEL (VISUAL WIDGETS) */}
-      <section className="w-[380px] border-l border-slate-800 bg-slate-950/45 flex flex-col overflow-hidden shrink-0">
+      {isRightPanelOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+          onClick={() => setIsRightPanelOpen(false)}
+        />
+      )}
+      <section className={`fixed inset-y-0 right-0 z-45 w-full max-w-[380px] flex flex-col overflow-hidden shrink-0 glass-panel transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto lg:border-y-0 lg:border-r-0 lg:border-l lg:border-brand-primary/10 ${
+        isRightPanelOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+      }`}>
         
         {/* Workspace Nav Header */}
-        <div className="flex border-b border-slate-800 bg-slate-900/30 p-2 gap-1 shrink-0">
+        <div className="flex border-b border-obsidian-800/60 bg-obsidian-900/30 p-2 gap-1 shrink-0 items-center">
+          <button 
+            onClick={() => setIsRightPanelOpen(false)}
+            className="lg:hidden text-slate-400 hover:text-white p-2 hover:bg-obsidian-800 rounded-xl shrink-0 mr-1 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
           <button
             onClick={() => setActiveTab('diagnostics')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all ${
-              activeTab === 'diagnostics' ? 'bg-zinc-800 text-emerald-400 border border-zinc-700' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+              activeTab === 'diagnostics' 
+                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-[0_0_12px_rgba(139,92,246,0.15)]' 
+                : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-obsidian-800/40'
             }`}
           >
             <Activity className="w-4 h-4" />
@@ -1177,8 +1298,10 @@ export default function Home() {
           
           <button
             onClick={() => setActiveTab('comparison')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all ${
-              activeTab === 'comparison' ? 'bg-zinc-800 text-emerald-400 border border-zinc-700' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+              activeTab === 'comparison' 
+                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-[0_0_12px_rgba(139,92,246,0.15)]' 
+                : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-obsidian-800/40'
             }`}
           >
             <Sliders className="w-4 h-4" />
@@ -1187,8 +1310,10 @@ export default function Home() {
 
           <button
             onClick={() => setActiveTab('scheduler')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all ${
-              activeTab === 'scheduler' ? 'bg-zinc-800 text-emerald-400 border border-zinc-700' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+              activeTab === 'scheduler' 
+                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-[0_0_12px_rgba(139,92,246,0.15)]' 
+                : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-obsidian-800/40'
             }`}
           >
             <Calendar className="w-4 h-4" />
@@ -1197,8 +1322,10 @@ export default function Home() {
 
           <button
             onClick={() => setActiveTab('email')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all ${
-              activeTab === 'email' ? 'bg-zinc-800 text-emerald-400 border border-zinc-700' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+              activeTab === 'email' 
+                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-[0_0_12px_rgba(139,92,246,0.15)]' 
+                : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-obsidian-800/40'
             }`}
           >
             <Mail className="w-4 h-4" />
@@ -1207,13 +1334,13 @@ export default function Home() {
         </div>
 
         {/* TAB WORKSPACE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 select-text custom-scrollbar bg-slate-955/20">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 select-text custom-scrollbar bg-obsidian-950/20">
           
           {/* TAB 1: DIAGNOSTIC TRACE */}
           {activeTab === 'diagnostics' && (
             <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
-                <Terminal className="w-4 h-4 text-emerald-500" />
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-350 tracking-wider">
+                <Terminal className="w-4 h-4 text-brand-primary" />
                 <span>Real-Time Route Diagnostics</span>
               </div>
               
@@ -1223,19 +1350,19 @@ export default function Home() {
                     const isGoogle = log.provider?.toLowerCase().includes('gemini');
                     const isGroq = log.provider?.toLowerCase().includes('groq');
                     const providerLogo = isGoogle ? 'GEMINI' : isGroq ? 'GROQ' : 'RULES';
-                    const providerColor = isGoogle ? 'bg-indigo-950/30 text-indigo-300 border-indigo-900/40' : 
-                                            isGroq ? 'bg-orange-950/20 text-orange-400 border-orange-950/50' : 
-                                            'bg-slate-900 text-slate-400 border-slate-800';
+                    const providerColor = isGoogle ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/25' : 
+                                            isGroq ? 'bg-brand-secondary/10 text-brand-secondary border-brand-secondary/25' : 
+                                            'bg-obsidian-900 text-slate-400 border-obsidian-800';
 
                     return (
                       <div 
                         key={idx} 
-                        className="bg-slate-900/60 border border-zinc-800 rounded-xl p-3.5 shadow-md flex flex-col gap-2 hover:border-zinc-700/80 transition-all"
+                        className="glass-card rounded-2xl p-4 shadow-lg flex flex-col gap-2.5"
                       >
                         {/* Header */}
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                          <span className="text-xs font-black text-emerald-400 uppercase font-mono">Turn {log.turn}</span>
-                          <span className="text-[10px] text-slate-500 font-semibold font-mono bg-slate-950 px-2 py-0.5 rounded border border-slate-800">{log.node}</span>
+                        <div className="flex items-center justify-between border-b border-obsidian-800 pb-2">
+                          <span className="text-xs font-black text-brand-accent uppercase font-mono">Turn {log.turn}</span>
+                          <span className="text-[10px] text-slate-400 font-semibold font-mono bg-obsidian-950 px-2 py-0.5 rounded-lg border border-obsidian-800">{log.node}</span>
                         </div>
                         
                         {/* Router Metrics */}
@@ -1244,7 +1371,7 @@ export default function Home() {
                           <div className="text-slate-100 font-bold text-right capitalize">{log.intent}</div>
                           
                           <div>Confidence Score:</div>
-                          <div className="font-mono text-amber-400 font-bold text-right">{(log.confidence * 100).toFixed(0)}%</div>
+                          <div className="font-mono text-brand-accent font-bold text-right">{(log.confidence * 100).toFixed(0)}%</div>
                           
                           <div>Model Provider:</div>
                           <div className="text-right">
@@ -1253,12 +1380,12 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <div className="col-span-2 border-t border-slate-800/40 pt-1.5 mt-1 flex justify-between items-center">
+                          <div className="col-span-2 border-t border-obsidian-800/40 pt-2.5 mt-1 flex justify-between items-center">
                             <span className="flex items-center gap-1 text-[10px] text-slate-500">
                               <Clock className="w-3.5 h-3.5" />
                               Execution Time
                             </span>
-                            <span className="font-mono text-emerald-400 font-bold text-xs">{log.latency_ms} ms</span>
+                            <span className="font-mono text-brand-emerald font-bold text-xs">{log.latency_ms} ms</span>
                           </div>
                         </div>
                       </div>
@@ -1266,9 +1393,9 @@ export default function Home() {
                   })}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center text-center p-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/10 min-h-[300px]">
+                <div className="flex flex-col items-center justify-center text-center p-8 border border-dashed border-obsidian-800 rounded-2xl bg-obsidian-950/40 min-h-[300px]">
                   <Cpu className="w-10 h-10 text-slate-700 animate-pulse mb-3" />
-                  <p className="text-xs text-slate-500 italic max-w-[200px]">Perform an interaction in the chat box to log supervisor trace logs here.</p>
+                  <p className="text-xs text-slate-550 italic max-w-[200px]">Perform an interaction in the chat box to log supervisor trace logs here.</p>
                 </div>
               )}
             </div>
@@ -1278,13 +1405,13 @@ export default function Home() {
           {activeTab === 'comparison' && (
             <div className="flex flex-col gap-4 animate-in fade-in duration-200">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
-                  <Sliders className="w-4 h-4 text-emerald-500" />
+                <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-355 tracking-wider">
+                  <Sliders className="w-4 h-4 text-brand-primary" />
                   <span>Comparison Matrix</span>
                 </div>
                 <button
                   onClick={() => handleSuggestion("compare selected candidates")}
-                  className="text-[9px] bg-emerald-950/30 text-emerald-400 border border-emerald-900/60 hover:bg-emerald-950/50 px-2 py-1 rounded"
+                  className="text-[9px] bg-brand-primary/15 text-slate-200 border border-brand-primary/30 hover:bg-brand-primary/25 px-2.5 py-1.5 rounded-lg transition-all"
                 >
                   Generate Markdown
                 </button>
@@ -1297,37 +1424,39 @@ export default function Home() {
                     return (
                       <div 
                         key={c.candidate_id}
-                        className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all ${
-                          isChecked ? 'bg-zinc-800/15 border-zinc-700/80' : 'bg-slate-900/40 border-slate-800 hover:border-zinc-800'
+                        className={`p-4 border rounded-2xl flex flex-col gap-3 transition-all duration-200 ${
+                          isChecked 
+                            ? 'bg-brand-primary/10 border-brand-primary/35 shadow-sm' 
+                            : 'bg-obsidian-900/40 border-obsidian-800 hover:border-obsidian-600/50'
                         }`}
                       >
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                        <div className="flex items-center justify-between border-b border-obsidian-800 pb-2">
                           <div className="flex items-center gap-2">
                             <input 
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => toggleCandidateSelect(c.candidate_id)}
-                              className="w-3.5 h-3.5 rounded border-slate-800 accent-emerald-500"
+                              className="w-3.5 h-3.5 rounded border-obsidian-800 accent-brand-primary cursor-pointer"
                             />
                             <span className="font-bold text-sm text-slate-100">{c.name}</span>
                           </div>
-                          <span className="text-[10px] bg-slate-950 border border-slate-800 text-emerald-400 px-2 py-0.5 rounded font-mono">
+                          <span className="text-[10px] bg-obsidian-950 border border-obsidian-800 text-brand-accent px-2 py-0.5 rounded-lg font-mono font-bold">
                             Score: {c.match_score ? c.match_score.toFixed(0) : 'N/A'}
                           </span>
                         </div>
 
-                        <div className="text-xs space-y-1.5 text-slate-300">
+                        <div className="text-xs space-y-1.5 text-slate-350">
                           <div className="flex justify-between">
                             <span className="text-slate-500">Exp:</span>
                             <span className="font-medium text-slate-200">{c.experience_years ? `${c.experience_years.toFixed(1)} years` : 'N/A'}</span>
                           </div>
                           
                           <div>
-                            <span className="text-slate-500 block mb-0.5">Matched Skills:</span>
+                            <span className="text-slate-500 block mb-1">Matched Skills:</span>
                             <div className="flex flex-wrap gap-1">
                               {c.matched_skills && c.matched_skills.length > 0 ? (
                                 c.matched_skills.map((s, idx) => (
-                                  <span key={idx} className="bg-emerald-950/20 text-emerald-400 border border-emerald-900/30 text-[9px] px-1.5 py-0.2 rounded font-medium">
+                                  <span key={idx} className="bg-brand-primary/10 text-slate-200 border border-brand-primary/20 text-[9px] px-2 py-0.5 rounded-lg font-medium">
                                     {s}
                                   </span>
                                 ))
@@ -1338,11 +1467,11 @@ export default function Home() {
                           </div>
 
                           <div>
-                            <span className="text-slate-500 block mb-0.5">Skill Gaps:</span>
+                            <span className="text-slate-500 block mb-1">Skill Gaps:</span>
                             <div className="flex flex-wrap gap-1">
                               {c.gaps && c.gaps.length > 0 ? (
                                 c.gaps.map((g, idx) => (
-                                  <span key={idx} className="bg-rose-950/20 text-rose-400 border border-rose-950/30 text-[9px] px-1.5 py-0.2 rounded font-medium">
+                                  <span key={idx} className="bg-brand-rose/10 text-brand-rose border border-brand-rose/20 text-[9px] px-2 py-0.5 rounded-lg font-medium">
                                     {g}
                                   </span>
                                 ))
@@ -1354,8 +1483,8 @@ export default function Home() {
 
                           {c.red_flags && c.red_flags.length > 0 && (
                             <div className="pt-1">
-                              <span className="text-rose-400 font-bold block mb-0.5 text-[10px] uppercase">⚠️ Red Flags:</span>
-                              <ul className="list-disc list-inside text-[10px] text-rose-300/80 space-y-0.5 leading-tight">
+                              <span className="text-brand-rose font-bold block mb-1 text-[10px] uppercase">⚠️ Red Flags:</span>
+                              <ul className="list-disc list-inside text-[10px] text-slate-305 space-y-0.5 leading-tight">
                                 {c.red_flags.map((flag, idx) => (
                                   <li key={idx}>{flag}</li>
                                 ))}
@@ -1367,7 +1496,7 @@ export default function Home() {
                     );
                   })}
                   {selectedCandidates.size > 0 && (
-                    <p className="text-[10px] text-slate-500 italic text-center">Comparing {selectedCandidates.size} checked candidates. Select compare checkbox above to generate.</p>
+                    <p className="text-[10px] text-slate-500 italic text-center">Comparing {selectedCandidates.size} checked candidates.</p>
                   )}
                 </div>
               ) : (
@@ -1379,17 +1508,17 @@ export default function Home() {
           {/* TAB 3: VISUAL SCHEDULER */}
           {activeTab === 'scheduler' && (
             <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
-                <Calendar className="w-4 h-4 text-emerald-500" />
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-355 tracking-wider">
+                <Calendar className="w-4 h-4 text-brand-primary" />
                 <span>Interview Slot Scheduler</span>
               </div>
 
               {pendingConfirmation && pendingConfirmation.action === 'schedule_interview' ? (
-                <div className="bg-slate-900/60 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3.5 shadow-md">
+                <div className="glass-card rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
                   <div>
                     <h3 className="font-extrabold text-slate-100 text-sm">Schedule Candidate Interview</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Position: <strong className="text-slate-200">{pendingConfirmation.role}</strong></p>
-                    <p className="text-xs text-slate-400">Candidate: <strong className="text-emerald-400">{pendingConfirmation.candidate_name}</strong></p>
+                    <p className="text-xs text-slate-400">Candidate: <strong className="text-brand-accent">{pendingConfirmation.candidate_name}</strong></p>
                   </div>
 
                   <div className="flex flex-col gap-2">
@@ -1398,41 +1527,41 @@ export default function Home() {
                       <button
                         key={slot.slot_number}
                         onClick={() => handleSelectSlot(slot.slot_number)}
-                        className="w-full bg-slate-950 border border-slate-800 hover:border-emerald-500/40 text-left p-2.5 rounded-lg flex items-center justify-between group transition-all"
+                        className="w-full bg-obsidian-950 border border-obsidian-800 hover:border-brand-primary/50 text-left p-3 rounded-xl flex items-center justify-between group transition-all"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="bg-zinc-800 text-slate-300 font-mono text-[10px] w-5 h-5 rounded-full flex items-center justify-center group-hover:bg-emerald-950 group-hover:text-emerald-400 transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <span className="bg-obsidian-900 text-slate-400 font-mono text-[10px] w-6.5 h-6.5 rounded-xl flex items-center justify-center group-hover:bg-brand-primary/20 group-hover:text-white transition-colors border border-obsidian-805 group-hover:border-brand-primary/30">
                             {slot.slot_number}
                           </span>
                           <span className="text-xs text-slate-200 group-hover:text-white transition-colors">{slot.label}</span>
                         </div>
-                        <ArrowRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-650 group-hover:text-brand-accent group-hover:translate-x-0.5 transition-all" />
                       </button>
                     ))}
                   </div>
 
-                  <div className="text-[10px] text-slate-500 italic text-center mt-1 border-t border-slate-800/40 pt-2">
+                  <div className="text-[10px] text-slate-500 italic text-center mt-1 border-t border-obsidian-800/40 pt-2.5">
                     Click a slot or reply to booking prompt with slot number (1-5).
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  <div className="p-4 border border-slate-800/80 bg-slate-900/20 rounded-xl flex flex-col gap-2 items-center justify-center text-center py-10">
+                  <div className="p-4 border border-obsidian-800/80 bg-obsidian-900/20 rounded-2xl flex flex-col gap-2 items-center justify-center text-center py-10">
                     <Calendar className="w-10 h-10 text-slate-700 mb-2 animate-pulse" />
                     <h4 className="text-xs font-bold text-slate-300">No Booking Active</h4>
-                    <p className="text-[11px] text-slate-500 max-w-[200px] mt-0.5">Select &quot;Schedule&quot; action on a candidate card to trigger the booking flow.</p>
+                    <p className="text-[11px] text-slate-505 max-w-[200px] mt-0.5">Select &quot;Schedule&quot; action on a candidate card to trigger the booking flow.</p>
                   </div>
                   
                   {scheduledInterviews.length > 0 && (
                     <div className="space-y-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Booked slots list:</span>
                       {scheduledInterviews.map((item, idx) => (
-                        <div key={idx} className="bg-emerald-950/15 border border-emerald-900/40 p-2.5 rounded-lg flex items-center justify-between">
+                        <div key={idx} className="bg-brand-emerald/10 border border-brand-emerald/25 p-2.5 rounded-xl flex items-center justify-between">
                           <div className="text-xs">
                             <span className="font-bold text-slate-200 block">{item.candidate_name}</span>
                             <span className="text-slate-400 text-[10px] font-mono">{item.slot}</span>
                           </div>
-                          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <CheckCircle className="w-4 h-4 text-brand-emerald shrink-0" />
                         </div>
                       ))}
                     </div>
@@ -1445,53 +1574,53 @@ export default function Home() {
           {/* TAB 4: RECRUITER EMAIL DRAUGHT DRAWER */}
           {activeTab === 'email' && (
             <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
-                <Mail className="w-4 h-4 text-emerald-500" />
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-350 tracking-wider">
+                <Mail className="w-4 h-4 text-brand-primary" />
                 <span>Outreach Email Drawer</span>
               </div>
 
               {draftBody ? (
-                <div className="bg-slate-900/60 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 shadow-md">
+                <div className="glass-card rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
                   <div className="space-y-2.5">
                     <div>
-                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-0.5">Recipient:</label>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Recipient:</label>
                       <input 
                         type="text"
                         value={draftRecipient}
                         onChange={e => setDraftRecipient(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded py-1 px-2.5 text-xs text-slate-200 focus:outline-none focus:border-zinc-700"
+                        className="w-full bg-obsidian-950 border border-obsidian-800 rounded-xl py-1.5 px-3 text-xs text-slate-200 focus:outline-none focus:border-brand-primary/50 transition-colors"
                       />
                     </div>
                     
                     <div>
-                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-0.5">Subject Line:</label>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Subject Line:</label>
                       <input 
                         type="text"
                         value={draftSubject}
                         onChange={e => setDraftSubject(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded py-1 px-2.5 text-xs text-slate-200 focus:outline-none focus:border-zinc-700 font-medium"
+                        className="w-full bg-obsidian-950 border border-obsidian-800 rounded-xl py-1.5 px-3 text-xs text-slate-200 focus:outline-none focus:border-brand-primary/50 font-medium transition-colors"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-0.5">Email Body:</label>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Email Body:</label>
                       <textarea
                         rows={8}
                         value={draftBody}
                         onChange={e => setDraftBody(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-xs text-slate-300 focus:outline-none focus:border-zinc-700 font-mono leading-relaxed"
+                        className="w-full bg-obsidian-950 border border-obsidian-800 rounded-xl p-3 text-xs text-slate-300 focus:outline-none focus:border-brand-primary/50 font-mono leading-relaxed transition-colors"
                       />
                     </div>
                   </div>
 
                   {emailStatus && (
-                    <div className="p-2 bg-emerald-950/20 border border-emerald-900/40 rounded text-xs text-emerald-400 flex items-center gap-1.5 font-medium">
+                    <div className="p-2.5 bg-brand-emerald/10 border border-brand-emerald/20 rounded-xl text-xs text-brand-emerald flex items-center gap-1.5 font-medium">
                       <Check className="w-4 h-4" />
                       {emailStatus}
                     </div>
                   )}
 
-                  <div className="flex gap-2 justify-end mt-1 pt-2 border-t border-slate-800/40">
+                  <div className="flex gap-2 justify-end mt-1 pt-3 border-t border-obsidian-800/60">
                     <button
                       onClick={() => {
                         setDraftBody("");
@@ -1499,13 +1628,13 @@ export default function Home() {
                         setDraftRecipient("");
                         setEmailStatus(null);
                       }}
-                      className="text-xs border border-slate-800 hover:border-slate-700 bg-slate-950 text-slate-400 px-3 py-1.5 rounded-lg transition"
+                      className="text-xs border border-obsidian-800 hover:border-obsidian-750 bg-obsidian-950 text-slate-400 hover:text-slate-200 px-3.5 py-1.5 rounded-xl transition"
                     >
                       Clear Draft
                     </button>
                     <button
                       onClick={handleSendEmailSimulation}
-                      className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow"
+                      className="text-xs bg-brand-primary hover:bg-brand-primary/95 text-white font-bold px-4 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow hover:scale-[1.02] active:scale-[0.98]"
                     >
                       <Send className="w-3 h-3 rotate-90" />
                       Send Outreach
@@ -1513,7 +1642,7 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                <div className="p-4 border border-slate-800/80 bg-slate-900/20 rounded-xl flex flex-col gap-2 items-center justify-center text-center py-10">
+                <div className="p-4 border border-obsidian-800/80 bg-obsidian-900/20 rounded-2xl flex flex-col gap-2 items-center justify-center text-center py-10">
                   <Mail className="w-10 h-10 text-slate-700 mb-2 animate-pulse" />
                   <h4 className="text-xs font-bold text-slate-300">No Draft Active</h4>
                   <p className="text-[11px] text-slate-500 max-w-[200px] mt-0.5">Ask the chatbot to draft an email (rejection, invite, offer) for a candidate to review it here.</p>
@@ -1527,17 +1656,17 @@ export default function Home() {
 
       {/* 4. PDF REPORT PREVIEW MODAL */}
       {showReportModal && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-6 select-text">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-obsidian-950/85 backdrop-blur-md z-50 flex items-center justify-center p-6 select-text animate-in fade-in duration-200">
+          <div className="bg-obsidian-900 border border-obsidian-800 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+            <div className="px-6 py-4 border-b border-obsidian-800 flex items-center justify-between bg-obsidian-950/50">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-emerald-500" />
+                <FileText className="w-5 h-5 text-brand-primary" />
                 <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-100">Recruitment Summary Report</h3>
               </div>
               <button 
                 onClick={() => setShowReportModal(false)}
-                className="text-slate-400 hover:text-white transition text-xs font-semibold px-2 py-1 bg-slate-800 rounded"
+                className="text-slate-400 hover:text-white transition text-xs font-semibold px-3 py-1.5 bg-obsidian-800 border border-obsidian-750 rounded-xl"
               >
                 Close Preview
               </button>
@@ -1547,42 +1676,42 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 text-slate-300 custom-scrollbar">
               
               {/* Position Info */}
-              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">1. Position target requirements</h4>
+              <div className="bg-obsidian-950/50 border border-obsidian-800/80 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2.5 text-brand-accent">1. Position target requirements</h4>
                 {jd ? (
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="grid grid-cols-2 gap-2 text-sm text-slate-300">
                     <div><span className="text-slate-500">Target Role:</span> <strong className="text-slate-100">{jd.role}</strong></div>
                     <div><span className="text-slate-500">Experience Required:</span> <strong className="text-slate-100">{jd.experience_years}+ years</strong></div>
                     <div><span className="text-slate-500">JD Tone & Culture:</span> <strong className="text-slate-100 capitalize">{jd.tone}</strong></div>
                     <div><span className="text-slate-500">Core Skills:</span> <strong className="text-slate-100">{jd.required_skills?.join(', ') || 'None'}</strong></div>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500 italic">No Position target loaded.</p>
+                  <p className="text-xs text-slate-550 italic">No Position target loaded.</p>
                 )}
               </div>
 
               {/* Candidates Table */}
-              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">2. Shortlist Assessment</h4>
+              <div className="bg-obsidian-950/50 border border-obsidian-800/80 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2.5 text-brand-accent">2. Shortlist Assessment</h4>
                 {(lastShortlist || candidates).length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 bg-slate-900/30">
-                          <th className="py-2 px-3 font-semibold">Candidate Name</th>
-                          <th className="py-2 px-3 font-semibold">Match Score</th>
-                          <th className="py-2 px-3 font-semibold">Matched Skills</th>
-                          <th className="py-2 px-3 font-semibold">Gaps Identified</th>
+                        <tr className="border-b border-obsidian-800 text-slate-400 bg-obsidian-900/30">
+                          <th className="py-2.5 px-3 font-semibold">Candidate Name</th>
+                          <th className="py-2.5 px-3 font-semibold">Match Score</th>
+                          <th className="py-2.5 px-3 font-semibold">Matched Skills</th>
+                          <th className="py-2.5 px-3 font-semibold">Gaps Identified</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(lastShortlist || candidates).map((c, idx) => {
                           const score = c.match_score || 0;
-                          const scoreColor = score >= 80 ? 'text-emerald-400 font-bold' : 
-                                             score >= 50 ? 'text-amber-400 font-bold' : 
-                                             'text-rose-400 font-bold';
+                          const scoreColor = score >= 80 ? 'text-brand-emerald font-bold' : 
+                                             score >= 50 ? 'text-brand-primary font-bold' : 
+                                             'text-brand-rose font-bold';
                           return (
-                            <tr key={idx} className="border-b border-slate-900/60 hover:bg-slate-900/20">
+                            <tr key={idx} className="border-b border-obsidian-900/60 hover:bg-obsidian-900/20">
                               <td className="py-2.5 px-3 text-slate-200">{c.name}</td>
                               <td className={`py-2.5 px-3 ${scoreColor}`}>{score.toFixed(0)}/100</td>
                               <td className="py-2.5 px-3 text-slate-400">{c.matched_skills?.join(', ') || 'None'}</td>
@@ -1594,36 +1723,36 @@ export default function Home() {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500 italic">No candidates screened or shortlisted yet.</p>
+                  <p className="text-xs text-slate-550 italic">No candidates screened or shortlisted yet.</p>
                 )}
               </div>
 
               {/* Salary Data */}
-              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">3. Market Salary expectations</h4>
+              <div className="bg-obsidian-950/50 border border-obsidian-800/80 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2.5 text-brand-accent">3. Market Salary expectations</h4>
                 <MarkdownText text={reportSalary} />
               </div>
 
               {/* Interview prep questions */}
-              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4">
-                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2 text-emerald-400">4. Interview prep questions</h4>
+              <div className="bg-obsidian-950/50 border border-obsidian-800/80 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider mb-2.5 text-brand-accent">4. Interview prep questions</h4>
                 <MarkdownText text={reportQs} />
               </div>
             </div>
             
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-950/50">
+            <div className="px-6 py-4 border-t border-obsidian-800 flex items-center justify-end gap-3 bg-obsidian-950/50">
               <button 
                 onClick={() => setShowReportModal(false)}
-                className="text-xs border border-slate-800 hover:border-slate-700 bg-slate-950 text-slate-400 hover:text-white px-4 py-2 rounded-lg transition"
+                className="text-xs border border-obsidian-800 hover:border-obsidian-750 bg-obsidian-950 text-slate-400 hover:text-white px-4 py-2 rounded-xl transition"
               >
                 Cancel
               </button>
               <button 
                 onClick={downloadPdfReport}
-                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg transition flex items-center gap-1.5"
+                className="text-xs bg-brand-primary hover:bg-[#ff8000] text-obsidian-950 font-black px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-[0_4px_12px_rgba(255,107,0,0.2)] hover:shadow-[0_4px_18px_rgba(255,107,0,0.35)]"
               >
-                <Send className="w-3.5 h-3.5 rotate-90" />
+                <Send className="w-3.5 h-3.5 rotate-90 text-obsidian-950" />
                 Download PDF Report
               </button>
             </div>
