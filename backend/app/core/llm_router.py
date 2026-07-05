@@ -64,7 +64,6 @@ def call_llm(
                     response_mime_type="application/json" if json_mode else None
                 )
                 response = model.invoke(messages)
-                response_text = str(response.content)
                 
             elif provider == "groq":
                 # Initialize LangChain ChatGroq
@@ -76,9 +75,38 @@ def call_llm(
                     model_kwargs=model_kwargs
                 )
                 response = model.invoke(messages)
-                response_text = str(response.content)
                 
             latency_ms = (time.time() - start_time) * 1000
+            
+            # Unwrap content: LangChain may return a list of content blocks
+            # e.g. [{'type': 'text', 'text': '...actual json...', 'extras': {...}}]
+            # We need to extract the raw text string from this structure.
+            def _extract_text(content) -> str:
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    # Collect all text-type blocks
+                    parts = []
+                    for block in content:
+                        if isinstance(block, dict):
+                            # Standard content block format
+                            if block.get("type") == "text" and "text" in block:
+                                parts.append(block["text"])
+                            elif "text" in block:
+                                parts.append(str(block["text"]))
+                            elif "content" in block:
+                                parts.append(str(block["content"]))
+                        elif isinstance(block, str):
+                            parts.append(block)
+                    return "\n".join(parts) if parts else str(content)
+                if isinstance(content, dict):
+                    if "text" in content:
+                        return str(content["text"])
+                    if "content" in content:
+                        return str(content["content"])
+                return str(content)
+            
+            response_text = _extract_text(response.content)
             
             # Sticky routing: make this successfully-responding provider preferred for subsequent calls
             _preferred_provider = provider
