@@ -177,3 +177,47 @@ Includes:
 - LLM Round-Robin Failover (`tests/test_failover.py`)
 - Phase 10 Features (Comparison, Scheduler, Email Tool, Red Flags, Trends) (`tests/test_phase10.py`)
 - Phase 11 Live APIs & Fallbacks (`tests/test_real_api.py`)
+
+---
+
+## Deployment
+
+This application is designed to be deployed as two connected services: a **Next.js Frontend** (on Vercel) and a **FastAPI Backend** (on a container/server hosting service like Render, Railway, Fly.io, or AWS).
+
+### Why the Frontend and Backend are hosted separately
+The FastAPI backend utilizes `sentence-transformers` and PyTorch (`all-MiniLM-L6-v2`) to compute high-quality vector embeddings. These machine learning packages require large native binaries (around 800MB) that exceed Vercel's Serverless Function size limit (250MB unzipped). Hosting the backend on a container-based service (like Render or Railway) and the frontend on Vercel is the standard and production-grade solution.
+
+---
+
+### Step 1: Deploy the FastAPI Backend (Render, Railway, etc.)
+
+We have provided a production-ready `Dockerfile` inside the `backend/` directory.
+
+#### Deploying on Render (Web Service):
+1. Create a new **Web Service** on Render and connect your GitHub repository.
+2. Set the **Root Directory** to `backend`.
+3. Set the **Runtime** to `Docker` (Render will automatically detect the `Dockerfile` inside `backend`).
+4. Set the instance type (a Starter tier or above is recommended due to PyTorch memory usage).
+5. In the **Environment Variables** section of the Render dashboard, add the following keys from your `.env`:
+   - `GEMINI_API_KEY`
+   - `GROQ_API_KEY`
+   - `TAVILY_API_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `SERPAPI_API_KEY` (if used)
+   - `APILAYER_API_KEY` (if used)
+   - `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER` (if email functionality is used)
+6. Deploy the web service and copy its public URL (e.g., `https://recruit-ai-backend.onrender.com`).
+
+---
+
+### Step 2: Deploy the Next.js Frontend (Vercel)
+
+The frontend is fully configured with Next.js dynamic rewrites. All client requests to `/api/*` are securely proxied server-side to the backend, bypassing browser CORS restrictions.
+
+#### Deploying on Vercel:
+1. Create a new Project on Vercel and connect your GitHub repository.
+2. In the project configure page, set the **Root Directory** to `frontend`.
+3. In the **Environment Variables** section, add:
+   - `BACKEND_URL`: The public URL of your deployed backend (e.g. `https://recruit-ai-backend.onrender.com`). Do **not** append `/api` or a trailing slash to this URL.
+4. Click **Deploy**. Vercel will build and host your Next.js frontend, routing all API calls to your live backend automatically.

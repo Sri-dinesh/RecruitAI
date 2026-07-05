@@ -10,7 +10,9 @@ def test_ingestion_pipeline():
     if not SUPABASE_URL or "your_supabase" in SUPABASE_URL:
         pytest.skip("Supabase is not configured.")
         
-    candidates = ingest_resumes_pipeline("backend/data/resumes")
+    from pathlib import Path
+    resumes_dir = Path(__file__).resolve().parent.parent / "data" / "resumes"
+    candidates = ingest_resumes_pipeline(str(resumes_dir))
     assert len(candidates) >= 15
     
     # Query for Alice Smith

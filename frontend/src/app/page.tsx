@@ -97,7 +97,7 @@ export default function Home() {
 
   const handleLoadSessionsList = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sessions');
+      const res = await fetch('/api/sessions');
       if (res.ok) {
         const list = await res.json();
         setSessions(list);
@@ -113,7 +113,7 @@ export default function Home() {
     setActiveSessionId(sessionId);
     localStorage.setItem('recruitai_session_id', sessionId);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}`);
+      const res = await fetch(`/api/sessions/${sessionId}`);
       if (!res.ok) return;
       const data = await res.json();
       
@@ -148,7 +148,7 @@ export default function Home() {
 
   const handleCreateSession = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+      const res = await fetch('/api/sessions', { method: 'POST' });
       if (res.ok) {
         const newSession = await res.json();
         setSessions(prev => [newSession, ...prev]);
@@ -162,7 +162,7 @@ export default function Home() {
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
       if (res.ok) {
         const list = sessions.filter(s => s.id !== sessionId);
         setSessions(list);
@@ -170,7 +170,7 @@ export default function Home() {
           if (list.length > 0) {
             handleSelectSession(list[0].id);
           } else {
-            const newRes = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+            const newRes = await fetch('/api/sessions', { method: 'POST' });
             if (newRes.ok) {
               const newS = await newRes.json();
               setSessions([newS]);
@@ -218,7 +218,7 @@ export default function Home() {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/');
+        const res = await fetch('/api/health');
         if (res.ok) setApiConnected(true);
       } catch {
         setApiConnected(false);
@@ -232,7 +232,7 @@ export default function Home() {
   useEffect(() => {
     const initSessions = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/sessions');
+        const res = await fetch('/api/sessions');
         if (!res.ok) return;
         const list = await res.json();
         setSessions(list);
@@ -244,7 +244,7 @@ export default function Home() {
           handleSelectSession(list[0].id);
         } else {
           // Create default first session
-          const newSessionRes = await fetch('http://127.0.0.1:8000/api/sessions', { method: 'POST' });
+          const newSessionRes = await fetch('/api/sessions', { method: 'POST' });
           if (newSessionRes.ok) {
             const newSession = await newSessionRes.json();
             setSessions([newSession]);
@@ -316,7 +316,7 @@ export default function Home() {
     }]);
     
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/ingest/upload-jd', {
+      const res = await fetch('/api/ingest/upload-jd', {
         method: 'POST',
         body: formData
       });
@@ -339,7 +339,7 @@ export default function Home() {
       // Persist JD to session
       const storedId = localStorage.getItem('recruitai_session_id');
       if (storedId) {
-        await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+        await fetch(`/api/sessions/${storedId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -389,7 +389,7 @@ export default function Home() {
       }]);
       
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/ingest/upload-jd', {
+        const res = await fetch('/api/ingest/upload-jd', {
           method: 'POST',
           body: formData
         });
@@ -412,7 +412,7 @@ export default function Home() {
         // Persist JD to session
         const storedId = localStorage.getItem('recruitai_session_id');
         if (storedId) {
-          await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+          await fetch(`/api/sessions/${storedId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -449,7 +449,7 @@ export default function Home() {
       }]);
       
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/ingest/upload', {
+        const res = await fetch('/api/ingest/upload', {
           method: 'POST',
           body: formData
         });
@@ -480,7 +480,7 @@ export default function Home() {
         // Persist updated candidate list and conversation history to session
         const storedId = localStorage.getItem('recruitai_session_id');
         if (storedId) {
-          await fetch(`http://127.0.0.1:8000/api/sessions/${storedId}`, {
+          await fetch(`/api/sessions/${storedId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -544,7 +544,7 @@ export default function Home() {
         }
       }
       
-      const res = await fetch('http://127.0.0.1:8000/api/reports/generate', {
+      const res = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -588,7 +588,7 @@ export default function Home() {
     abortControllerRef.current = controller;
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -630,7 +630,7 @@ export default function Home() {
         console.error(err);
         setMessages(prev => [...prev, { 
           role: 'assistant', 
-          content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the FastAPI server is running on `http://127.0.0.1:8000`." 
+          content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the backend agent server is running." 
         }]);
       }
     } finally {
@@ -658,7 +658,7 @@ export default function Home() {
     setLoading(true);
     setEmailStatus(null);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/email/send', {
+      const res = await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

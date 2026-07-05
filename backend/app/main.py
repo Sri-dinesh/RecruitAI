@@ -25,6 +25,10 @@ app.include_router(ingest_router, prefix="/api")
 def read_root():
     return {"message": "RecruitAI backend API server is running successfully."}
 
+@app.get("/api/health")
+def read_health():
+    return {"status": "ok", "message": "RecruitAI backend API server is running successfully."}
+
 def start_server():
     """
     Starts the FastAPI server using Uvicorn.
