@@ -1,11 +1,23 @@
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_chat import router as chat_router
 from app.api.routes_reports import router as reports_router
 from app.api.routes_ingest import router as ingest_router
+from app.core.config import PRELOAD_EMBEDDINGS
 
-app = FastAPI(title="RecruitAI API Server", version="2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm up expensive resources before serving requests."""
+    if PRELOAD_EMBEDDINGS:
+        from app.rag.embeddings import preload_embedding_model
+        preload_embedding_model()
+    from app.core.llm_router import warmup_llm_clients
+    warmup_llm_clients()
+    yield
+
+app = FastAPI(title="RecruitAI API Server", version="2.0", lifespan=lifespan)
 
 # Enable CORS to allow connections from Next.js frontend
 app.add_middleware(

@@ -4,13 +4,50 @@ from typing import Optional, Tuple
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from app.core.config import GEMINI_API_KEY, GROQ_API_KEY
+from app.core.config import GEMINI_API_KEY, GROQ_API_KEY, LLM_TIMEOUT_SECONDS
 
 PROVIDERS = ["gemini", "groq"]
 _preferred_provider = "gemini"
+_gemini_model = None
+_groq_model = None
 
 class AllProvidersFailedError(Exception):
     pass
+
+def _gemini_active() -> bool:
+    return bool(GEMINI_API_KEY) and "your_gemini" not in GEMINI_API_KEY
+
+def _groq_active() -> bool:
+    return bool(GROQ_API_KEY) and "your_groq" not in GROQ_API_KEY
+
+def _get_gemini_model() -> ChatGoogleGenerativeAI:
+    global _gemini_model
+    if _gemini_model is None:
+        _gemini_model = ChatGoogleGenerativeAI(
+            model="gemini-3.1-flash-lite",
+            google_api_key=GEMINI_API_KEY,
+            temperature=0.0,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+    return _gemini_model
+
+def _get_groq_model() -> ChatGroq:
+    global _groq_model
+    if _groq_model is None:
+        _groq_model = ChatGroq(
+            model="llama-3.1-8b-instant",
+            groq_api_key=GROQ_API_KEY,
+            temperature=0.0,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+    return _groq_model
+
+def warmup_llm_clients() -> None:
+    """Pre-create LLM clients to avoid first-request initialization latency."""
+    if _gemini_active():
+        _get_gemini_model()
+    if _groq_active():
+        _get_groq_model()
 
 def call_llm(
     prompt: str, 
@@ -27,10 +64,7 @@ def call_llm(
     """
     global _preferred_provider
     
-    gemini_active = bool(GEMINI_API_KEY) and "your_gemini" not in GEMINI_API_KEY
-    groq_active = bool(GROQ_API_KEY) and "your_groq" not in GROQ_API_KEY
-    
-    if not gemini_active and not groq_active:
+    if not _gemini_active() and not _groq_active():
         raise ValueError("No valid Gemini or Groq API keys are configured in .env.")
         
     # Determine execution order
@@ -43,53 +77,41 @@ def call_llm(
         order = [primary, secondary]
         
     # Filter to only active providers
-    order = [p for p in order if (p == "gemini" and gemini_active) or (p == "groq" and groq_active)]
+    order = [p for p in order if (p == "gemini" and _gemini_active()) or (p == "groq" and _groq_active())]
     
     errors = []
     for provider in order:
         start_time = time.time()
         try:
-            # Build messages in LangChain format
             messages = []
             if system_instruction:
                 messages.append(SystemMessage(content=system_instruction))
             messages.append(HumanMessage(content=prompt))
             
             if provider == "gemini":
-                # Initialize LangChain ChatGoogleGenerativeAI
-                model = ChatGoogleGenerativeAI(
-                    model="gemini-3.1-flash-lite",
-                    google_api_key=GEMINI_API_KEY,
-                    temperature=0.0,
-                    response_mime_type="application/json" if json_mode else None
-                )
+                model = _get_gemini_model()
+                if json_mode:
+                    model = model.bind(response_mime_type="application/json")
                 response = model.invoke(messages)
-                
             elif provider == "groq":
-                # Initialize LangChain ChatGroq
-                model_kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
-                model = ChatGroq(
-                    model="llama-3.1-8b-instant",
-                    groq_api_key=GROQ_API_KEY,
-                    temperature=0.0,
-                    model_kwargs=model_kwargs
-                )
-                response = model.invoke(messages)
+                model = _get_groq_model()
+                if json_mode:
+                    response = model.invoke(
+                        messages,
+                        response_format={"type": "json_object"},
+                    )
+                else:
+                    response = model.invoke(messages)
                 
             latency_ms = (time.time() - start_time) * 1000
             
-            # Unwrap content: LangChain may return a list of content blocks
-            # e.g. [{'type': 'text', 'text': '...actual json...', 'extras': {...}}]
-            # We need to extract the raw text string from this structure.
             def _extract_text(content) -> str:
                 if isinstance(content, str):
                     return content
                 if isinstance(content, list):
-                    # Collect all text-type blocks
                     parts = []
                     for block in content:
                         if isinstance(block, dict):
-                            # Standard content block format
                             if block.get("type") == "text" and "text" in block:
                                 parts.append(block["text"])
                             elif "text" in block:
@@ -108,14 +130,12 @@ def call_llm(
             
             response_text = _extract_text(response.content)
             
-            # Sticky routing: make this successfully-responding provider preferred for subsequent calls
             _preferred_provider = provider
             return response_text, provider, latency_ms
             
         except Exception as e:
             errors.append(f"{provider}: {str(e)}")
             print(f"[{provider}] call failed: {str(e)}. Retrying next provider...")
-            # Switch preferred provider to the other one since this one is failing
             _preferred_provider = "groq" if provider == "gemini" else "gemini"
             continue
             
@@ -144,4 +164,3 @@ def parse_json_safely(text: str) -> Any:
             return ast.literal_eval(cleaned)
         except Exception:
             raise ValueError(f"Failed to parse text as valid JSON: {text}")
-

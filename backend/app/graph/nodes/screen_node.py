@@ -1,25 +1,42 @@
 import json
-from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any
 from app.graph.state import RecruitState
 from app.core.llm_router import call_llm, parse_json_safely
-from app.core.logging import log_event
+from app.core.config import SKIP_RERANKING, VECTOR_QUERY_WORKERS
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import query_top_k
 from app.schemas.candidate_schema import Candidate
 
 from app.rag.advanced_rag import expand_query, rerank_chunks
 
+def _fetch_candidate_context(candidate: Candidate, index: int, query_embedding: List[float], expanded_query: str, retrieval_k: int) -> Dict[str, Any]:
+    try:
+        chunks = query_top_k(query_embedding, k=retrieval_k, candidate_id=candidate.candidate_id)
+        reranked_chunks = rerank_chunks(expanded_query, chunks, top_n=3)
+        chunks_text = "\n\n".join([c["chunk_text"] for c in reranked_chunks])
+    except Exception as e:
+        print(f"pgvector query failed for {candidate.name}: {e}. Falling back to raw text.")
+        chunks_text = candidate.raw_text
+
+    return {
+        "candidate_id": candidate.candidate_id,
+        "name": candidate.name,
+        "original_index": index,
+        "text": chunks_text,
+    }
+
 def screen_node(state: RecruitState) -> dict:
     """
     Advanced RAG-based screening node.
     Expands the search query, retrieves candidate resume chunks from pgvector,
-    reranks chunks using LLM relevance scoring, and evaluates candidates in a batch.
+    reranks chunks using LLM relevance scoring (or vector similarity in fast mode),
+    and evaluates candidates in a batch.
     """
     history = state.get("conversation_history", [])
     jd = state.get("jd_structured")
     resumes = state.get("resumes", [])
     
-    # 1. Edge Case: JD not loaded
     if not jd:
         return {
             "conversation_history": history + [{
@@ -28,7 +45,6 @@ def screen_node(state: RecruitState) -> dict:
             }]
         }
         
-    # 2. Edge Case: No candidates loaded
     if not resumes:
         return {
             "conversation_history": history + [{
@@ -37,11 +53,8 @@ def screen_node(state: RecruitState) -> dict:
             }]
         }
         
-    # 3. Retrieve chunks for all candidates from pgvector
-    # Build retrieval query from JD required skills + role
     retrieval_query = f"Role: {jd.role}. Required skills: {', '.join(jd.required_skills)}. Required Experience: {jd.experience_years} years."
     try:
-        # Advanced RAG: Expand Query
         jd_dict = {
             "role": jd.role,
             "required_skills": jd.required_skills,
@@ -56,29 +69,27 @@ def screen_node(state: RecruitState) -> dict:
                 "content": f"Failed to generate search embedding: {e}"
             }]
         }
+
+    retrieval_k = 3 if SKIP_RERANKING else 5
+    candidate_contexts: List[Dict[str, Any]] = [None] * len(resumes)  # type: ignore
+
+    max_workers = min(VECTOR_QUERY_WORKERS, len(resumes))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _fetch_candidate_context,
+                candidate,
+                index,
+                query_embedding,
+                expanded_query,
+                retrieval_k,
+            ): index
+            for index, candidate in enumerate(resumes)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            candidate_contexts[index] = future.result()
         
-    candidate_contexts = []
-    for index, candidate in enumerate(resumes):
-        # Retrieve top 5 chunks for this specific candidate
-        try:
-            # Fetch 5 chunks to allow reranker selection
-            chunks = query_top_k(query_embedding, k=5, candidate_id=candidate.candidate_id)
-            # Advanced RAG: Rerank chunks based on relevance
-            reranked_chunks = rerank_chunks(expanded_query, chunks, top_n=3)
-            chunks_text = "\n\n".join([c["chunk_text"] for c in reranked_chunks])
-        except Exception as e:
-            # Fallback to candidate raw text if DB search fails
-            print(f"pgvector query failed for {candidate.name}: {e}. Falling back to raw text.")
-            chunks_text = candidate.raw_text
-            
-        candidate_contexts.append({
-            "candidate_id": candidate.candidate_id,
-            "name": candidate.name,
-            "original_index": index, # for stable tie-breaker
-            "text": chunks_text
-        })
-        
-    # 4. Formulate the single batched prompt for LLM evaluation
     system_instruction = (
         "You are an expert HR screening assistant. Evaluate the provided candidates against the job description. "
         "For each candidate, rate their match on a scale of 0 to 100. "
@@ -97,7 +108,6 @@ def screen_node(state: RecruitState) -> dict:
         "}"
     )
     
-    # Construct prompt with candidate contexts wrapped in delimiter tags (Section 6.4)
     prompt_lines = [
         "Evaluate the following candidates against the job description.",
         f"Job Role: {jd.role}",
@@ -130,13 +140,10 @@ def screen_node(state: RecruitState) -> dict:
             }]
         }
         
-    # Create evaluation map
     eval_map = {e["candidate_id"]: e for e in evaluations}
     
-    # 5. Update Candidate objects and sort them stably
     screened_candidates = []
     for c in resumes:
-        # Create a copy of the candidate with updated evaluation fields
         eval_data = eval_map.get(c.candidate_id, {})
         screened_c = Candidate(
             candidate_id=c.candidate_id,
@@ -146,16 +153,12 @@ def screen_node(state: RecruitState) -> dict:
             matched_skills=eval_data.get("matched_skills", []),
             gaps=eval_data.get("gaps", [])
         )
-        # Store reasoning in extra dictionary (we can handle it dynamically or append to state)
         screened_c.__dict__["reasoning"] = eval_data.get("reasoning", "")
         screened_candidates.append(screened_c)
         
-    # Stable sort: Python sort is stable. Use negative match_score for descending order.
-    # To be extremely explicit about keeping original index as tie-breaker, sort by (-match_score, original_index)
     original_indices = {c.candidate_id: idx for idx, c in enumerate(resumes)}
     screened_candidates.sort(key=lambda c: (-c.match_score if c.match_score is not None else 0.0, original_indices[c.candidate_id]))
     
-    # 6. Format response message
     response_lines = [
         f"### Candidate Screening Results for **{jd.role}**\n",
         "Here are the candidates ranked by match score:\n"

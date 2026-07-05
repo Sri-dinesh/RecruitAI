@@ -46,14 +46,18 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
         return "finalize_shortlist", 1.0
 
     # 1. load_context check
+    if re.search(r"\b(here'?s|here is)\b.*\b(jd|job description|resume|resumes)\b", q):
+        return "load_context", 1.0
     if re.search(r"\b(load|parse|read|ingest|import)\b.*\b(jd|job description|resume|cv|candidate|resumes|context)\b", q) or re.search(r"\b(jd|job description|resume|cv|candidate|resumes|context)\b.*\b(load|parse|read|ingest|import)\b", q):
         return "load_context", 1.0
 
     # 2. count check
-    if re.search(r"\b(how many|count of|number of|how many (candidates|resumes|applicants))\b", q):
+    if re.search(r"\b(how many|count of|number of|how many (candidates|resumes|applicants)|applicants)\b", q):
         return "count", 1.0
 
     # 3. screen check
+    if re.search(r"\b(top candidate|get me top|get top|best candidate|shortlist)\b", q):
+        return "screen", 1.0
     if re.search(r"\b(screen|rank|evaluate|find top|get top|top candidate|filter|match)\b.*\b(candidate|resume|applicant|resumes)\b", q) or re.search(r"\b(candidate|resume|applicant|resumes)\b.*\b(screen|rank|evaluate|find top|get top|top candidate|filter|match)\b", q) or q in ["screen", "screen candidates", "rank candidates"]:
         return "screen", 1.0
 
@@ -93,7 +97,11 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     if re.search(r"\b(interview|prep|preparation|practice)\b.*\b(question|questions|prep)\b", q) or re.search(r"\b(question|questions)\b.*\b(interview|prep|candidate)\b", q):
         return "interview_questions", 1.0
 
-    # 13. simple greeting or fallback check
+    # 13. salary check
+    if re.search(r"\b(salary|compensation|market rate|pay range|ctc|lpa)\b", q):
+        return "salary", 1.0
+
+    # 14. simple greeting or fallback check
     if q in ["hi", "hello", "hey", "who are you", "help"]:
         return "other", 1.0
 

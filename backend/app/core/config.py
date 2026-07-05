@@ -25,6 +25,16 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_SENDER = os.getenv("SMTP_SENDER", SMTP_USERNAME)
 
+# Performance tuning (defaults optimized for live demos)
+FAST_MODE = os.getenv("FAST_MODE", "true").lower() == "true"
+SKIP_QUERY_EXPANSION = os.getenv("SKIP_QUERY_EXPANSION", str(FAST_MODE)).lower() == "true"
+SKIP_RERANKING = os.getenv("SKIP_RERANKING", str(FAST_MODE)).lower() == "true"
+SKIP_JD_DIAGNOSTICS = os.getenv("SKIP_JD_DIAGNOSTICS", str(FAST_MODE)).lower() == "true"
+PRELOAD_EMBEDDINGS = os.getenv("PRELOAD_EMBEDDINGS", "true").lower() == "true"
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "25"))
+VECTOR_QUERY_WORKERS = int(os.getenv("VECTOR_QUERY_WORKERS", "8"))
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "32"))
+
 def get_missing_keys():
     missing = []
     if not GEMINI_API_KEY:

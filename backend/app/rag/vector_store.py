@@ -47,3 +47,11 @@ def clear_all_chunks():
     client = get_supabase_client()
     response = client.table("resume_chunks").delete().neq("candidate_id", "").execute()
     return response
+
+def delete_chunks_by_candidate_ids(candidate_ids: List[str]):
+    """Delete chunks for specific candidates without wiping the entire table."""
+    if not candidate_ids:
+        return None
+    client = get_supabase_client()
+    response = client.table("resume_chunks").delete().in_("candidate_id", candidate_ids).execute()
+    return response

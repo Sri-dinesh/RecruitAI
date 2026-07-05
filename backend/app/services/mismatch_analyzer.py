@@ -28,20 +28,22 @@ def extract_experience_via_regex(text: str) -> Optional[float]:
         return max(matches)
     return None
 
-def extract_candidate_experience(candidate: Candidate) -> float:
+def extract_candidate_experience(candidate: Candidate, use_llm_fallback: bool = True) -> float:
     """
     Extracts the candidate's total years of experience as a float from their resume.
     Uses regex heuristics first, falling back to LLM parsing if regex fails.
     """
-    # Quick pre-check: check if experience is already parsed to avoid extra LLM call
     if hasattr(candidate, "experience_years") and candidate.experience_years is not None:
         return candidate.experience_years
         
-    # Fast regex heuristic extraction
     regex_exp = extract_experience_via_regex(candidate.raw_text)
     if regex_exp is not None:
         candidate.experience_years = regex_exp
         return regex_exp
+
+    if not use_llm_fallback:
+        candidate.experience_years = 0.0
+        return 0.0
         
     system_instruction = (
         "You are an AI resume parser. Analyze the candidate's resume and extract their total years "
@@ -62,7 +64,7 @@ def extract_candidate_experience(candidate: Candidate) -> float:
         print(f"Error extracting experience years for {candidate.name}: {e}")
         return 0.0
 
-def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate]) -> Dict[str, Any]:
+def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate], use_llm_fallback: bool = True) -> Dict[str, Any]:
     """
     Computes experience distribution, compares it with JD target experience,
     and returns mismatch analysis and actionable suggestions.
@@ -73,7 +75,7 @@ def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate])
             "message": "No candidates loaded to analyze experience mismatch."
         }
         
-    experiences = [extract_candidate_experience(c) for c in candidates]
+    experiences = [extract_candidate_experience(c, use_llm_fallback=use_llm_fallback) for c in candidates]
     avg_exp = sum(experiences) / len(experiences)
     
     underqualified = [exp for exp in experiences if exp < jd_experience]
@@ -102,11 +104,23 @@ def analyze_experience_mismatch(jd_experience: int, candidates: List[Candidate])
         "message": "\n".join(message_lines)
     }
 
-def suggest_jd_improvements(jd_raw_text: str) -> List[str]:
+def suggest_jd_improvements(jd_raw_text: str, use_llm: bool = True) -> List[str]:
     """
     Analyzes the job description raw text and returns a list of suggested improvements
     such as missing salary ranges, location parameters, or benefits details.
     """
+    suggestions = []
+    text_lower = jd_raw_text.lower()
+    if not re.search(r"\b(salary|compensation|ctc|pay range|lpa|package)\b", text_lower):
+        suggestions.append("Add a compensation or salary range to attract qualified applicants.")
+    if not re.search(r"\b(remote|hybrid|onsite|on-site|location|based in|work from)\b", text_lower):
+        suggestions.append("Specify job location or work mode (Remote, Hybrid, or Onsite).")
+    if not re.search(r"\b(benefit|perk|insurance|pto|leave|health)\b", text_lower):
+        suggestions.append("Include company benefits or perks to strengthen the posting.")
+
+    if not use_llm:
+        return suggestions
+
     system_instruction = (
         "You are an AI recruitment editor. Inspect the job description text and identify missing standard fields "
         "such as Compensation/Salary details, Job Location/Work Mode (Remote, Hybrid, Onsite), "
@@ -119,10 +133,14 @@ def suggest_jd_improvements(jd_raw_text: str) -> List[str]:
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)
         data = parse_json_safely(response_text)
-        return data.get("suggestions", [])
+        llm_suggestions = data.get("suggestions", [])
+        for item in llm_suggestions:
+            if item not in suggestions:
+                suggestions.append(item)
+        return suggestions
     except Exception as e:
         print(f"Error checking JD improvements: {e}")
-        return []
+        return suggestions
 
 
 def detect_red_flags(candidate: Candidate) -> List[str]:

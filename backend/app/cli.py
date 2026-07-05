@@ -44,6 +44,13 @@ def print_trace_table():
     console.print(table)
 
 def run_repl():
+    from app.core.config import PRELOAD_EMBEDDINGS
+    if PRELOAD_EMBEDDINGS:
+        from app.rag.embeddings import preload_embedding_model
+        preload_embedding_model()
+    from app.core.llm_router import warmup_llm_clients
+    warmup_llm_clients()
+
     # Print welcome banner
     console.print(Panel(
         "[bold green]RecruitAI MVP conversational REPL[/bold green]\n\n"

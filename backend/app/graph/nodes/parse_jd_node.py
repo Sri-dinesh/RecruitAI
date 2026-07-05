@@ -167,9 +167,14 @@ def parse_jd_node(state: RecruitState) -> dict:
         }
         
     from app.services.mismatch_analyzer import analyze_experience_mismatch, suggest_jd_improvements
-    
-    mismatch_result = analyze_experience_mismatch(experience_years, candidates)
-    jd_improvements = suggest_jd_improvements(raw_jd_text)
+    from app.core.config import SKIP_JD_DIAGNOSTICS
+
+    if SKIP_JD_DIAGNOSTICS:
+        mismatch_result = analyze_experience_mismatch(experience_years, candidates, use_llm_fallback=False)
+        jd_improvements = suggest_jd_improvements(raw_jd_text, use_llm=False)
+    else:
+        mismatch_result = analyze_experience_mismatch(experience_years, candidates)
+        jd_improvements = suggest_jd_improvements(raw_jd_text)
     
     success_msg = (
         f"Successfully loaded and parsed Job Description for **{role}** "

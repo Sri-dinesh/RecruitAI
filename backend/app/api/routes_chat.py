@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+import asyncio
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.graph.builder import graph
@@ -74,8 +75,8 @@ async def chat_endpoint(req: ChatRequest):
             "scheduled_interviews": req.scheduled_interviews
         }
         
-        # Execute the LangGraph
-        result = graph.invoke(state)
+        # Execute the LangGraph without blocking the event loop
+        result = await asyncio.to_thread(graph.invoke, state)
         
         # Serialize Pydantic objects back to raw dicts
         res_jd = result["jd_structured"].model_dump() if result["jd_structured"] else None
