@@ -1,4 +1,6 @@
 # RecruitAI
+PPT: https://canva.link/vhjbsmm3ggyqaf6
+Video Demo: https://drive.google.com/drive/folders/1LqA2B1YfSbc-91-OUlOwBDksLj5RAYDc?usp=sharing
 
 **RecruitAI** is a production‑grade, Multi-Agent recruitment chatbot built for the AI Bootcamp Hackathon. It lets a recruiter load job descriptions (JD) and dynamic resumes (PDF, DOCX, TXT), then interactively query the system to:
 
