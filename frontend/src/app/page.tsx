@@ -744,7 +744,7 @@ export default function Home() {
             <div className="p-3">
               <button
                 onClick={handleCreateSession}
-                className="w-full bg-brand-primary hover:bg-brand-secondary text-white py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full bg-brand-primary hover:bg-indigo-700 text-white py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-sm hover:-translate-y-[1px] active:translate-y-0"
               >
                 <Sparkles className="w-3.5 h-3.5 text-white" />
                 <span>New Campaign</span>
@@ -763,7 +763,7 @@ export default function Home() {
                     }}
                     className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
                       isActive 
-                        ? 'bg-slate-50 border-brand-primary/20 text-white font-semibold shadow-sm' 
+                        ? 'bg-slate-50 border-indigo-200 text-white font-semibold shadow-sm' 
                         : 'border-transparent text-slate-500 hover:bg-white hover:text-slate-800'
                     }`}
                   >
@@ -843,7 +843,7 @@ export default function Home() {
               </div>
               <div className="flex flex-wrap gap-1 mt-2">
                 {jd.required_skills && jd.required_skills.map((skill, idx) => (
-                  <span key={idx} className="bg-brand-primary text-white text-slate-800 text-[10px] px-2 py-0.5 rounded-lg border border-brand-primary/25 font-medium">
+                  <span key={idx} className="bg-brand-primary text-white text-[10px] px-2 py-0.5 rounded-lg border border-indigo-200 font-medium">
                     {skill}
                   </span>
                 ))}
@@ -863,7 +863,7 @@ export default function Home() {
 
           <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Custom JD</span>
-            <div className="relative border border-dashed border-slate-200 hover:border-brand-accent/50 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-white group">
+            <div className="relative border border-dashed border-slate-200 hover:border-brand-primary rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-white group">
               <input 
                 type="file" 
                 accept=".txt,.pdf,.doc,.docx"
@@ -918,7 +918,7 @@ export default function Home() {
                 const isSelected = selectedCandidates.has(c.candidate_id);
                 const score = c.match_score || 0;
                 const scoreColor = score >= 80 ? 'text-brand-emerald border-brand-emerald/30 bg-brand-emerald/10' : 
-                                   score >= 50 ? 'text-brand-primary border-brand-primary/30 bg-brand-primary text-white' : 
+                                   score >= 50 ? 'text-brand-primary border-indigo-200 bg-brand-primary text-white' : 
                                    score > 0 ? 'text-brand-rose border-brand-rose/30 bg-brand-rose/10' :
                                    'text-slate-500 border-slate-200 bg-white';
                 
@@ -927,7 +927,7 @@ export default function Home() {
                     key={c.candidate_id} 
                     className={`p-3 border rounded-xl flex flex-col gap-2.5 transition-all duration-200 hover:scale-[1.01] ${
                       isSelected 
-                        ? 'bg-brand-primary text-white border-brand-primary/45 shadow-sm shadow-brand-primary/5' 
+                        ? 'bg-brand-primary text-white border-indigo-200 shadow-sm shadow-sm' 
                         : 'bg-white border-slate-200 hover:border-slate-200 hover:bg-white shadow-md'
                     } ${
                       score >= 80 ? 'border-l-3 border-l-brand-emerald' :
@@ -993,7 +993,7 @@ export default function Home() {
                           <span className="text-[9px] text-slate-500 block mb-1">Matched Skills:</span>
                           <div className="flex flex-wrap gap-1">
                             {c.matched_skills.slice(0, 4).map((skill, sIdx) => (
-                              <span key={sIdx} className="bg-brand-primary text-white text-slate-700 text-[8px] px-1.5 py-0.5 rounded border border-brand-primary/15 font-mono">
+                              <span key={sIdx} className="bg-brand-primary text-white text-[8px] px-1.5 py-0.5 rounded border border-indigo-200 font-mono">
                                 {skill}
                               </span>
                             ))}
@@ -1014,7 +1014,7 @@ export default function Home() {
                           handleSend(`draft email for ${c.name}`);
                           setIsLeftPanelOpen(false);
                         }}
-                        className="text-[9px] px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-200 text-slate-400 hover:text-brand-primary font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]"
+                        className="text-[9px] px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-200 text-slate-400 hover:text-brand-primary font-semibold transition-all hover:-translate-y-[1px] active:translate-y-0"
                       >
                         ✉️ Email
                       </button>
@@ -1023,7 +1023,7 @@ export default function Home() {
                           handleSend(`schedule an interview with ${c.name}`);
                           setIsLeftPanelOpen(false);
                         }}
-                        className="text-[9px] px-2 py-1 rounded-lg bg-brand-primary/15 border border-brand-primary/30 text-slate-800 hover:text-brand-primary hover:bg-brand-primary/25 font-semibold transition-all hover:scale-[1.03] active:scale-[0.97] shadow-sm shadow-brand-primary/5"
+                        className="text-[9px] px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-slate-800 hover:text-brand-primary hover:bg-indigo-50 font-semibold transition-all hover:-translate-y-[1px] active:translate-y-0 shadow-sm shadow-sm"
                       >
                         📅 Schedule
                       </button>
@@ -1062,7 +1062,7 @@ export default function Home() {
       <section className="flex-1 flex flex-col bg-transparent relative select-text">
         <header className={`h-16 border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between bg-white  sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-brand-primary text-white rounded-xl border border-brand-primary/25 hidden xs:block">
+            <div className="p-1.5 bg-brand-primary text-white rounded-xl border border-indigo-200 hidden xs:block">
               <Cpu className="w-5 h-5 text-brand-primary animate-pulse" />
             </div>
             <div>
@@ -1104,7 +1104,7 @@ export default function Home() {
             
             <button 
               onClick={openReportPreview}
-              className="text-[10px] bg-slate-50 border border-brand-primary/30 hover:border-brand-primary/60 text-slate-800 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-sm hover:shadow-sm"
+              className="text-[10px] bg-slate-50 border border-indigo-200 hover:border-indigo-300 text-slate-800 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-sm hover:shadow-sm"
             >
               📄 <span className="hidden sm:inline">Report Preview</span><span className="sm:hidden">Report</span>
             </button>
@@ -1127,14 +1127,14 @@ export default function Home() {
                 className={`flex gap-3 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-205 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
               >
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                  isUser ? 'bg-slate-50 border border-brand-primary/30 text-brand-primary' : 'bg-slate-50 border border-slate-200 text-slate-450'
+                  isUser ? 'bg-slate-50 border border-indigo-200 text-brand-primary' : 'bg-slate-50 border border-slate-200 text-slate-450'
                 }`}>
                   {isUser ? <User className="w-4 h-4 text-brand-primary" /> : <Bot className="w-4 h-4 text-slate-500" />}
                 </div>
 
                 <div className={`p-4 rounded-2xl border text-sm leading-relaxed ${
                   isUser 
-                    ? 'bg-white border-brand-primary/25 text-slate-900 rounded-tr-none shadow-sm' 
+                    ? 'bg-white border-indigo-200 text-slate-900 rounded-tr-none shadow-sm' 
                     : 'bg-white border-slate-200 text-slate-800 rounded-tl-none shadow-lg '
                 }`}>
                   <MarkdownText text={msg.content} />
@@ -1149,9 +1149,9 @@ export default function Home() {
                 <Bot className="w-4 h-4" />
               </div>
               <div className="p-4 rounded-2xl border border-slate-200 bg-white flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           )}
@@ -1164,49 +1164,49 @@ export default function Home() {
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt and resumes from backend/data/resumes")}
-              className="text-xs bg-brand-primary text-white hover:bg-brand-primary/20 border border-brand-primary/25 hover:border-brand-primary/45 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-primary/5"
+              className="text-xs bg-brand-primary text-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-200 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-sm"
             >
               🚀 Ingest Sample Files
             </button>
             <button 
               onClick={() => handleSuggestion("fetch JD for Frontend Developer via API")}
-              className="text-xs bg-brand-secondary/10 hover:bg-brand-secondary/20 border border-brand-secondary/25 hover:border-brand-secondary/45 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-secondary/5"
+              className="text-xs bg-brand-secondary/10 hover:bg-indigo-700/20 border border-brand-secondary/25 hover:border-brand-secondary/45 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-secondary/5"
             >
               🌐 Fetch Job via API
             </button>
             <button 
               onClick={() => handleSuggestion("Screen candidates matching the job description")}
-              className="text-xs bg-brand-primary/15 hover:bg-brand-primary/25 border border-brand-primary/35 hover:border-brand-primary/55 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-primary/10"
+              className="text-xs bg-indigo-50 hover:bg-indigo-50 border border-brand-primary/35 hover:border-brand-primary/55 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-primary/10"
             >
               🔍 Screen Candidates
             </button>
             <button 
               onClick={() => handleSuggestion("compare top candidates")}
-              className="text-xs bg-brand-accent/10 hover:bg-brand-accent/20 border border-brand-accent/25 hover:border-brand-accent/45 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-accent/5"
+              className="text-xs bg-indigo-50 hover:bg-indigo-50 border border-brand-primary hover:border-brand-primary text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-accent/5"
             >
               📊 Compare Side-by-Side
             </button>
             <button 
               onClick={() => handleSuggestion("check resumes for red flags")}
-              className="text-xs bg-brand-rose/10 hover:bg-brand-rose/20 border border-brand-rose/25 hover:border-brand-rose/45 text-brand-rose px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-rose/5"
+              className="text-xs bg-brand-rose/10 hover:bg-brand-rose/20 border border-brand-rose/25 hover:border-brand-rose/45 text-brand-rose px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-rose/5"
             >
               ⚠️ Red Flags Check
             </button>
             <button 
               onClick={() => handleSuggestion("generate interview prep questions for the job description")}
-              className="text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 hover:border-amber-500/45 text-amber-250 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-amber-500/5"
+              className="text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 hover:border-amber-500/45 text-amber-250 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-amber-500/5"
             >
               📋 Prep Questions
             </button>
             <button 
               onClick={() => handleSuggestion("draft outreach email templates for top candidates")}
-              className="text-xs bg-brand-emerald/10 hover:bg-brand-emerald/20 border border-brand-emerald/25 hover:border-brand-emerald/45 text-brand-emerald px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm shadow-brand-emerald/5"
+              className="text-xs bg-brand-emerald/10 hover:bg-brand-emerald/20 border border-brand-emerald/25 hover:border-brand-emerald/45 text-brand-emerald px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-emerald/5"
             >
               ✉️ Outreach Draft
             </button>
             <button 
               onClick={() => handleSuggestion("clear recruitment workspace context")}
-              className="text-xs bg-slate-800/60 hover:bg-slate-100 border border-slate-700 hover:border-slate-500 text-slate-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              className="text-xs bg-slate-800/60 hover:bg-slate-100 border border-slate-700 hover:border-slate-500 text-slate-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer"
             >
               🧹 Reset Workspace
             </button>
@@ -1215,7 +1215,7 @@ export default function Home() {
           {/* Form */}
           <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
-            className="flex gap-2 bg-white border border-slate-200 focus-within:border-brand-primary/60 rounded-2xl p-2 transition-all shadow-sm focus-within:shadow-sm"
+            className="flex gap-2 bg-white border border-slate-200 focus-within:border-indigo-300 rounded-2xl p-2 transition-all shadow-sm focus-within:shadow-sm"
           >
             <input 
               type="file"
@@ -1246,7 +1246,7 @@ export default function Home() {
               <button 
                 type="button"
                 onClick={handleStop}
-                className="bg-brand-rose hover:bg-brand-rose/90 text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-bold gap-1 text-xs hover:scale-[1.02] active:scale-[0.98]"
+                className="bg-brand-rose hover:bg-brand-rose/90 text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-bold gap-1 text-xs hover:-translate-y-[1px] active:translate-y-0"
                 title="Stop execution"
               >
                 <X className="w-4 h-4" />
@@ -1256,7 +1256,7 @@ export default function Home() {
               <button 
                 type="submit"
                 disabled={!input.trim()}
-                className="bg-brand-primary hover:bg-brand-secondary disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-black hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                className="bg-brand-primary hover:bg-indigo-700 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-black hover:-translate-y-[1px] active:translate-y-0 cursor-pointer"
               >
                 <Send className="w-4 h-4 text-white" />
               </button>
@@ -1288,7 +1288,7 @@ export default function Home() {
             onClick={() => setActiveTab('diagnostics')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'diagnostics' 
-                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-sm' 
+                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1300,7 +1300,7 @@ export default function Home() {
             onClick={() => setActiveTab('comparison')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'comparison' 
-                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-sm' 
+                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1312,7 +1312,7 @@ export default function Home() {
             onClick={() => setActiveTab('scheduler')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'scheduler' 
-                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-sm' 
+                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1324,7 +1324,7 @@ export default function Home() {
             onClick={() => setActiveTab('email')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'email' 
-                ? 'bg-brand-primary/15 text-white border-brand-primary/30 font-bold shadow-sm' 
+                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1350,7 +1350,7 @@ export default function Home() {
                     const isGoogle = log.provider?.toLowerCase().includes('gemini');
                     const isGroq = log.provider?.toLowerCase().includes('groq');
                     const providerLogo = isGoogle ? 'GEMINI' : isGroq ? 'GROQ' : 'RULES';
-                    const providerColor = isGoogle ? 'bg-brand-primary text-white text-brand-primary border-brand-primary/25' : 
+                    const providerColor = isGoogle ? 'bg-brand-primary text-white text-brand-primary border-indigo-200' : 
                                             isGroq ? 'bg-brand-secondary/10 text-brand-secondary border-brand-secondary/25' : 
                                             'bg-slate-50 text-slate-500 border-slate-200';
 
@@ -1411,7 +1411,7 @@ export default function Home() {
                 </div>
                 <button
                   onClick={() => handleSuggestion("compare selected candidates")}
-                  className="text-[9px] bg-brand-primary/15 text-slate-800 border border-brand-primary/30 hover:bg-brand-primary/25 px-2.5 py-1.5 rounded-lg transition-all"
+                  className="text-[9px] bg-indigo-50 text-slate-800 border border-indigo-200 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-all"
                 >
                   Generate Markdown
                 </button>
@@ -1456,7 +1456,7 @@ export default function Home() {
                             <div className="flex flex-wrap gap-1">
                               {c.matched_skills && c.matched_skills.length > 0 ? (
                                 c.matched_skills.map((s, idx) => (
-                                  <span key={idx} className="bg-brand-primary text-white text-slate-800 border border-brand-primary/20 text-[9px] px-2 py-0.5 rounded-lg font-medium">
+                                  <span key={idx} className="bg-brand-primary text-white border border-indigo-200 text-[9px] px-2 py-0.5 rounded-lg font-medium">
                                     {s}
                                   </span>
                                 ))
@@ -1530,7 +1530,7 @@ export default function Home() {
                         className="w-full bg-slate-50 border border-slate-200 hover:border-brand-primary/50 text-left p-3 rounded-xl flex items-center justify-between group transition-all"
                       >
                         <div className="flex items-center gap-2.5">
-                          <span className="bg-slate-50 text-slate-500 font-mono text-[10px] w-6.5 h-6.5 rounded-xl flex items-center justify-center group-hover:bg-brand-primary/20 group-hover:text-brand-primary transition-colors border border-slate-200 group-hover:border-brand-primary/30">
+                          <span className="bg-slate-50 text-slate-500 font-mono text-[10px] w-6.5 h-6.5 rounded-xl flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-brand-primary transition-colors border border-slate-200 group-hover:border-indigo-200">
                             {slot.slot_number}
                           </span>
                           <span className="text-xs text-slate-800 group-hover:text-brand-primary transition-colors">{slot.label}</span>
@@ -1634,7 +1634,7 @@ export default function Home() {
                     </button>
                     <button
                       onClick={handleSendEmailSimulation}
-                      className="text-xs bg-brand-primary hover:bg-brand-primary/95 text-white font-bold px-4 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow hover:scale-[1.02] active:scale-[0.98]"
+                      className="text-xs bg-brand-primary hover:bg-brand-primary/95 text-white font-bold px-4 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow hover:-translate-y-[1px] active:translate-y-0"
                     >
                       <Send className="w-3 h-3 rotate-90" />
                       Send Outreach
@@ -1750,7 +1750,7 @@ export default function Home() {
               </button>
               <button 
                 onClick={downloadPdfReport}
-                className="text-xs bg-brand-primary hover:bg-brand-secondary text-white font-black px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-sm hover:shadow-sm"
+                className="text-xs bg-brand-primary hover:bg-indigo-700 text-white font-black px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-sm hover:shadow-sm"
               >
                 <Send className="w-3.5 h-3.5 rotate-90 text-white" />
                 Download PDF Report

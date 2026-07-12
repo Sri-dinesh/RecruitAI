@@ -5,8 +5,6 @@
   --background: #f8fafc; /* slate-50 */
   --foreground: #0f172a; /* slate-900 */
   --brand-primary: #4f46e5;       /* Indigo 600 */
-  --brand-secondary: #6366f1;     /* Indigo 500 */
-  --brand-accent: #0284c7;        /* Light Blue 600 */
   --brand-emerald: #059669;       /* Emerald 600 */
   --brand-rose: #e11d48;          /* Rose 600 */
 }
@@ -16,16 +14,8 @@
   --color-foreground: var(--foreground);
   
   --color-brand-primary: var(--brand-primary);
-  --color-brand-secondary: var(--brand-secondary);
-  --color-brand-accent: var(--brand-accent);
   --color-brand-emerald: var(--brand-emerald);
   --color-brand-rose: var(--brand-rose);
-  
-  --color-obsidian-950: #0f172a; /* Mapped to slate-900 for legacy classes */
-  --color-obsidian-900: #1e293b; /* Mapped to slate-800 */
-  --color-obsidian-800: #334155; /* Mapped to slate-700 */
-  --color-obsidian-700: #475569; /* Mapped to slate-600 */
-  --color-obsidian-600: #64748b; /* Mapped to slate-500 */
   
   --font-sans: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: 'Geist Mono', monospace;
@@ -56,30 +46,6 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8; /* slate-400 */
-}
-
-/* Base Component Reset for previously glass components */
-/* If any legacy glass components are left behind, they will default to solid styles */
-.glass-panel, .glass-panel-accent, .glass-card {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-}
-
-.glass-input {
-  background-color: #ffffff;
-  border: 1px solid #cbd5e1;
-}
-
-.glass-input:focus {
-  border-color: var(--brand-primary);
-  box-shadow: 0 0 0 1px var(--brand-primary);
-  outline: none;
-}
-
-/* Legacy gradient text fallback */
-.gradient-text-gold, .gradient-text-purple {
-  color: var(--brand-primary);
 }
 
 /* Utility Animations */
