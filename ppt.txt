@@ -1,0 +1,128 @@
+================================================================================
+                    RECRUITAI: AI-POWERED RECRUITING CO-PILOT
+              A Production-Grade Multi-Agent Recruitment Assistant
+================================================================================
+
+--------------------------------------------------------------------------------
+SLIDE 1: Title Slide
+--------------------------------------------------------------------------------
+* Title: RecruitAI
+* Subtitle: Multi-Agent Co-Pilot for Streamlined Sourcing & Screening
+* Presenter: Hackathon Team
+* Bullet Points:
+  - Production-grade Multi-Agent Supervisor Architecture
+  - Powered by LangGraph, LangChain, Gemini, and Groq
+  - Advanced RAG with Query Translation & Relevance Reranking
+  - Corporate ReportLab PDF Generation & Dynamic Document Uploads
+
+--------------------------------------------------------------------------------
+SLIDE 2: The Recruitment Problem Statement
+--------------------------------------------------------------------------------
+* Title: Sourcing & Screening Bottlenecks
+* Bullet Points:
+  - High Volume, Low Match: Recruiters spend hours scanning resumes manually.
+  - Fragile APIs: Free LLM tiers suffer from frequent rate-limits and service drops during live demos.
+  - Multi-Task Overlap: Routing recruiter instructions (JD writing, screening, benchmarking) requires strict context boundaries.
+  - Black-Box Pipelines: AI decisions lack audit logs or recruiter supervision.
+
+--------------------------------------------------------------------------------
+SLIDE 3: System Overview
+--------------------------------------------------------------------------------
+* Title: RecruitAI Architecture Concept
+* Bullet Points:
+  - Router-First Gate: Categorizes incoming commands before engaging LLMs.
+  - Dual Mode Execution: Interactive Command Line Interface (CLI) + Next.js App Router Web Dashboard.
+  - Scalpel vs. Hammer: Simple operations (e.g. counting) run on Python logic to conserve tokens.
+  - Guardrailed Automation: Shorlists, changes, and final decisions require human confirmation.
+
+--------------------------------------------------------------------------------
+SLIDE 4: Multi-Agent Supervisor Graph
+--------------------------------------------------------------------------------
+* Title: LangGraph Orchestration Flow
+* Bullet Points:
+  - Supervisor Node: Acts as central dispatcher; classifies intents and routes queries dynamically.
+  - Job Description (JD) Agent: Coordinates JD loading, parsing, and tone-specific rewriting.
+  - RAG Screening Agent: Conducts semantic pgvector candidate searches, counts applicants, and scores matches.
+  - Interview & Salary Agent: Queries Tavily web search for live benchmarks and builds tech preps.
+
+--------------------------------------------------------------------------------
+SLIDE 5: Resilient LLM Routing
+--------------------------------------------------------------------------------
+* Title: Round-Robin Provider Failover
+* Bullet Points:
+  - LangChain Model Wrappers: Powered by ChatGoogleGenerativeAI & ChatGroq.
+  - Automatic Fallback Failover: On API exceptions (e.g., Groq rate limit), immediately calls alternative model.
+  - Overrides with Resilience: Treat explicit overrides as preferred primary while keeping fallback active.
+  - Turn-by-Turn Metrics: Logs active provider, status, execution time, and latency metrics.
+
+--------------------------------------------------------------------------------
+SLIDE 6: Dynamic Data Ingestion
+--------------------------------------------------------------------------------
+* Title: Multi-Format Parse & Embed Pipelines
+* Bullet Points:
+  - Universal Uploads: Ingests plain text (.txt), PDF (.pdf), and MS Word (.docx) on the fly.
+  - Token-Safe Chunking: Splits resumes into 200-token blocks with a 30-token overlap.
+  - Vector Store Vector Storage: Generates 384-dimension embeddings via sentence-transformers.
+  - Database: Stored in hosted Supabase database using Postgres pgvector cosine similarity searches.
+
+--------------------------------------------------------------------------------
+SLIDE 7: Advanced RAG Search
+--------------------------------------------------------------------------------
+* Title: Double-Pass Sourcing Optimization
+* Bullet Points:
+  - Query Translation: Expands user prompts with related tech skills and synonyms via LLM translation.
+  - Multi-Pass Retrieval: Retails 5 dense chunks per applicant from Supabase pgvector database.
+  - Relevance Reranking: Prompts LLM to score each chunk 1-10 on JD relevance.
+  - Final Selection: Passes only the top 3 scored chunks for candidate ranking, filtering noise.
+
+--------------------------------------------------------------------------------
+SLIDE 8: Human-in-the-Loop Guardrails
+--------------------------------------------------------------------------------
+* Title: Shortlist Finalization & Edit Loops
+* Bullet Points:
+  - Gatekeeper Node: Shortlist modifications require confirmation to prevent unintended data commits.
+  - Natural Language Interactivity: Recruiter can confirm via "yes/no" or command changes like "remove Candidate B".
+  - Structured Rollbacks: Canceling proposals reverts data state without losing history.
+  - Transparent Pipeline: Actions remain audited and logged step-by-step.
+
+--------------------------------------------------------------------------------
+SLIDE 9: Corporate Reporting & Diagnostics
+--------------------------------------------------------------------------------
+* Title: ReportLab PDFs & In-App Diagnostics
+* Bullet Points:
+  - Styled PDFs: Auto-generates corporate candidate summaries, salary benchmarks, and interview preps.
+  - ReportLab Builders: Defensive table paddings, flowable paragraph wraps, and custom layouts.
+  - In-App Report Previews: Renders styled markdown templates inside the dashboard with single-click download actions.
+  - Dynamic Lists Render: Groups multi-turn bullet markdown points on the frontend without list restarts.
+
+--------------------------------------------------------------------------------
+SLIDE 10: Phase 10: Recruiter Nice-to-Haves
+--------------------------------------------------------------------------------
+* Title: Value-Add Features Implemented
+* Bullet Points:
+  - JD-Candidate Mismatch: Signals if candidate experience average diverges from JD target.
+  - Side-by-Side Comparison: Generates candidate skills matrices in structured Markdown tables.
+  - Resume Red-Flags: Extracts timeline discrepancies and unexplained employment gaps (>6 months).
+  - Recruiter Email Drafter: Custom LangChain tool for email outreach templates (invite/rejection/offer).
+  - Interview Calendar Scheduler: Displays available slots for booking candidates.
+
+--------------------------------------------------------------------------------
+SLIDE 11: Verification & Tests Suite
+--------------------------------------------------------------------------------
+* Title: Production-Ready Validation
+* Bullet Points:
+  - Extensive Test Coverage: 25 individual unit tests spanning all layers.
+  - Mock Provider Tests: Simulates rate-limits to verify automatic model failovers.
+  - E2E Simulation Runner: Automatically script-simulates 10 conversational turns.
+  - CLI & Dashboard Audited: Verified zero TS/Lint errors in next.js and zero exceptions in Python.
+
+--------------------------------------------------------------------------------
+SLIDE 12: Future Roadmap
+--------------------------------------------------------------------------------
+* Title: Phase 11 & 12 Strategy
+* Bullet Points:
+  - Real API Ingestion: Integrate SerpApi (Google Jobs) for live JD fetching and APILayer for CV parsing.
+  - API Fallbacks: Safe mock behaviors in case external keys are missing.
+  - Premium UI Styles: Add light/dark zinc-slate theme toggles, glassmorphism visuals, and hover styles.
+  - Diagnostics Monitors: Render neon provider latency logs and timeline diagnostics.
+================================================================================

@@ -15,7 +15,7 @@ export default function MarkdownText({ text }: { text: string }) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      codeBlocks.push(`<pre class="bg-obsidian-950 text-slate-200 p-3.5 rounded-xl border border-obsidian-800 font-mono text-[11px] overflow-x-auto my-3 shadow-inner"><code>${escapedCode}</code></pre>`);
+      codeBlocks.push(`<pre class="bg-slate-50 text-slate-800 p-3.5 rounded-xl border border-slate-200 font-mono text-[11px] overflow-x-auto my-3 shadow-inner"><code>${escapedCode}</code></pre>`);
       return id;
     });
 
@@ -27,11 +27,11 @@ export default function MarkdownText({ text }: { text: string }) {
 
     // 2. Parse Headings
     processed = processed.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-black uppercase text-brand-primary tracking-wider mt-4 mb-2">$1</h3>');
-    processed = processed.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-extrabold text-slate-100 mt-5 mb-2.5 pb-1 border-b border-obsidian-800">$1</h2>');
-    processed = processed.replace(/^# (.*?)$/gm, '<h1 class="text-base font-black text-slate-100 mt-6 mb-3">$1</h1>');
+    processed = processed.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-extrabold text-slate-900 mt-5 mb-2.5 pb-1 border-b border-slate-200">$1</h2>');
+    processed = processed.replace(/^# (.*?)$/gm, '<h1 class="text-base font-black text-slate-900 mt-6 mb-3">$1</h1>');
 
     // 3. Parse Horizontal Rules
-    processed = processed.replace(/^---$/gm, '<hr class="border-obsidian-800 my-4" />');
+    processed = processed.replace(/^---$/gm, '<hr class="border-slate-200 my-4" />');
 
     // 4. Parse Tables
     const lines = processed.split('\n');
@@ -44,9 +44,9 @@ export default function MarkdownText({ text }: { text: string }) {
       if (line.startsWith('|') && line.endsWith('|')) {
         if (!inTable) {
           inTable = true;
-          tableHtml = '<div class="overflow-x-auto my-4 rounded-xl border border-obsidian-800 bg-obsidian-900/30"><table class="w-full text-left border-collapse text-xs">';
+          tableHtml = '<div class="overflow-x-auto my-4 rounded-xl border border-slate-200 bg-white"><table class="w-full text-left border-collapse text-xs">';
           const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<thead class="bg-obsidian-950/60 border-b border-obsidian-800"><tr class="text-slate-400 font-bold">';
+          tableHtml += '<thead class="bg-white border-b border-slate-200"><tr class="text-slate-500 font-bold">';
           cols.forEach(col => {
             tableHtml += `<th class="py-2.5 px-3.5 font-bold">${col}</th>`;
           });
@@ -57,10 +57,10 @@ export default function MarkdownText({ text }: { text: string }) {
           }
         } else {
           const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<tr class="border-b border-obsidian-850 hover:bg-obsidian-900/10">';
+          tableHtml += '<tr class="border-b border-slate-200 hover:bg-white">';
           cols.forEach(col => {
             const cellHtml = compileInline(col);
-            tableHtml += `<td class="py-2 px-3.5 text-slate-350 font-medium">${cellHtml}</td>`;
+            tableHtml += `<td class="py-2 px-3.5 text-slate-600 font-medium">${cellHtml}</td>`;
           });
           tableHtml += '</tr>';
         }
@@ -84,8 +84,8 @@ export default function MarkdownText({ text }: { text: string }) {
     function compileInline(text: string): string {
       return text
         .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-brand-primary">$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em class="italic text-slate-300">$1</em>')
-        .replace(/`(.*?)`/g, '<code class="bg-obsidian-950 text-brand-accent px-1.5 py-0.5 rounded font-mono text-[11px] border border-obsidian-800/80">$1</code>')
+        .replace(/\*(.*?)\*/g, '<em class="italic text-slate-700">$1</em>')
+        .replace(/`(.*?)`/g, '<code class="bg-slate-50 text-brand-primary px-1.5 py-0.5 rounded font-mono text-[11px] border border-slate-200">$1</code>')
         .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline">$1</a>');
     }
 
@@ -105,7 +105,7 @@ export default function MarkdownText({ text }: { text: string }) {
           inOl = false;
         }
         if (!inUl) {
-          outputLines.push('<ul class="list-disc list-inside ml-4 my-2 text-slate-300 space-y-1">');
+          outputLines.push('<ul class="list-disc list-inside ml-4 my-2 text-slate-700 space-y-1">');
           inUl = true;
         }
         const content = trimmed.replace(/^[-*]\s+/, '');
@@ -119,7 +119,7 @@ export default function MarkdownText({ text }: { text: string }) {
           inUl = false;
         }
         if (!inOl) {
-          outputLines.push('<ol class="list-decimal list-inside ml-4 my-2 text-slate-300 space-y-1">');
+          outputLines.push('<ol class="list-decimal list-inside ml-4 my-2 text-slate-700 space-y-1">');
           inOl = true;
         }
         const content = trimmed.replace(/^\d+\.\s+/, '');
@@ -138,7 +138,7 @@ export default function MarkdownText({ text }: { text: string }) {
 
       // Paragraph wrapper
       if (trimmed && !trimmed.startsWith('<h') && !trimmed.startsWith('<div') && !trimmed.startsWith('<table') && !trimmed.startsWith('<tr') && !trimmed.startsWith('<td') && !trimmed.startsWith('<th') && !trimmed.startsWith('<hr') && !trimmed.startsWith('<thead') && !trimmed.startsWith('<tbody') && !trimmed.startsWith('__CODE_BLOCK_')) {
-        outputLines.push(`<p class="text-slate-300 my-1">${compileInline(line)}</p>`);
+        outputLines.push(`<p class="text-slate-700 my-1">${compileInline(line)}</p>`);
       } else {
         outputLines.push(line);
       }
