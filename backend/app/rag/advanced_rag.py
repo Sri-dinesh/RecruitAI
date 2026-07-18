@@ -28,17 +28,18 @@ def expand_query(query: str, jd: Optional[Dict[str, Any]] = None) -> str:
         print(f"Error in query expansion: {e}. Falling back to original query.")
         return query
 
-def rerank_chunks(query: str, chunks: List[Dict[str, Any]], top_n: int = 3) -> List[Dict[str, Any]]:
+def rerank_chunks(query: str, chunks: List[Dict[str, Any]], top_n: int = 3, jd: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Performs LLM-based relevance filtering of retrieved candidate resume chunks.
     Assigns a relevance score (1-10) to each chunk in a single batch call and retains only the top_n.
+    If jd is provided, scores relevance against the job description requirements.
     """
     if not chunks:
         return []
         
     system_instruction = (
         "You are an AI recruitment ranker. Evaluate the relevance of the following resume snippets "
-        "relative to the query. Assign a relevance score from 1 to 10 for each snippet. "
+        "relative to the query and the required Job Description skills. Assign a relevance score from 1 to 10 for each snippet. "
         "Output a JSON object containing a list of scores, exactly like: "
         "{\"scores\": [{\"id\": 0, \"relevance_score\": X}, {\"id\": 1, \"relevance_score\": Y}, ...]} "
         "where id matches the index of the snippet. Do not include any other text."
@@ -49,7 +50,12 @@ def rerank_chunks(query: str, chunks: List[Dict[str, Any]], top_n: int = 3) -> L
         chunk_text = chunk.get("chunk_text", "")
         snippets.append(f"Snippet ID: {idx}\nText: {chunk_text}")
         
-    prompt = f"Query: {query}\n\n" + "\n---\n".join(snippets)
+    prompt = f"Query: {query}\n"
+    if jd:
+        role = jd.get("role", "")
+        skills = ", ".join(jd.get("required_skills", [])) if jd.get("required_skills") else ""
+        prompt += f"Job Role: {role}\nRequired Skills: {skills}\n"
+    prompt += "\n---\n".join(snippets)
     
     try:
         response_text, _, _ = call_llm(prompt, system_instruction=system_instruction, json_mode=True)

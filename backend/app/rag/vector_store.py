@@ -3,13 +3,32 @@ from app.core.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 from typing import List, Dict, Optional
 
 _supabase_client = None
+_use_local_sqlite = False
 
-def get_supabase_client() -> Client:
-    global _supabase_client
+def get_supabase_client():
+    global _supabase_client, _use_local_sqlite
+    
+    if _use_local_sqlite:
+        from app.rag.fallback_db import FallbackSupabaseClient
+        return FallbackSupabaseClient()
+        
     if _supabase_client is None:
-        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-            raise ValueError("Supabase URL and SERVICE_ROLE_KEY must be set in your configuration.")
-        _supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or "your_supabase" in SUPABASE_URL:
+            print("Supabase credentials missing or default. Falling back to local SQLite.")
+            _use_local_sqlite = True
+            from app.rag.fallback_db import FallbackSupabaseClient
+            return FallbackSupabaseClient()
+        try:
+            client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+            # Ping test
+            client.table("chat_sessions").select("id").limit(1).execute()
+            _supabase_client = client
+        except Exception as e:
+            print(f"Supabase connection check failed: {e}. Falling back to local SQLite database.")
+            _use_local_sqlite = True
+            from app.rag.fallback_db import FallbackSupabaseClient
+            return FallbackSupabaseClient()
+            
     return _supabase_client
 
 def upsert_chunks(chunks: List[Dict]):
