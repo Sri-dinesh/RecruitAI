@@ -41,12 +41,12 @@ def get_mock_parsed_resume(filename: str, raw_text: str) -> Candidate:
 
 def parse_resume_via_api(file_bytes: bytes, filename: str) -> Candidate:
     """
-    Sends file bytes to APILayer CV Parser or falls back to local parsing.
-    Maps response fields to Candidate.
+    Parses resume locally using pypdf/docx and LLM extraction, 
+    completely avoiding external CV parser APIs to guarantee privacy.
     """
     extension = "." + filename.split(".")[-1].lower() if "." in filename else ".txt"
     
-    # Extract raw text first in case we need it as fallback or context
+    # Extract raw text strictly using local libraries
     raw_text = ""
     try:
         if extension == ".pdf":
@@ -56,68 +56,8 @@ def parse_resume_via_api(file_bytes: bytes, filename: str) -> Candidate:
         else:
             raw_text = file_bytes.decode("utf-8", errors="ignore").strip()
     except Exception as e:
-        print(f"Local text extraction failed during API parsing: {e}")
+        print(f"Local text extraction failed for {filename}: {e}")
         raw_text = "Empty Resume"
 
-    if APILAYER_API_KEY and "your_apilayer" not in APILAYER_API_KEY.lower():
-        try:
-            headers = {"apikey": APILAYER_API_KEY}
-            files = {"file": (filename, file_bytes, "application/octet-stream")}
-            
-            with httpx.Client() as client:
-                response = client.post(
-                    "https://api.apilayer.com/resume_parser/upload",
-                    headers=headers,
-                    files=files,
-                    timeout=10.0
-                )
-                
-            if response.status_code == 200:
-                parsed_data = response.json()
-                
-                name = parsed_data.get("name")
-                if not name and parsed_data.get("first_name"):
-                    name = f"{parsed_data.get('first_name')} {parsed_data.get('last_name', '')}".strip()
-                if not name:
-                    name = filename.split(".")[0].replace("_", " ").title()
-                    
-                skills = parsed_data.get("skills", [])
-                education = parsed_data.get("education", [])
-                experience = parsed_data.get("experience", [])
-                
-                formatted_lines = [
-                    f"Name: {name}",
-                    f"Email: {parsed_data.get('email', 'N/A')}",
-                    f"Phone: {parsed_data.get('phone', 'N/A')}",
-                    "\nSkills:",
-                    ", ".join(skills) if skills else "None listed",
-                    "\nEducation:"
-                ]
-                
-                for edu in education:
-                    inst = edu.get("organization") or edu.get("school") or "Unknown Institution"
-                    deg = edu.get("degree") or edu.get("field_of_study") or "Degree"
-                    formatted_lines.append(f"- {deg} from {inst}")
-                    
-                formatted_lines.append("\nExperience:")
-                for exp in experience:
-                    company = exp.get("organization") or exp.get("company") or "Unknown Company"
-                    title = exp.get("title") or "Role"
-                    desc = exp.get("description") or ""
-                    formatted_lines.append(f"- {title} at {company}\n  Description: {desc}")
-                    
-                structured_raw_text = "\n".join(formatted_lines)
-                candidate_id = name.lower().replace(" ", "_")
-                
-                return Candidate(
-                    candidate_id=candidate_id,
-                    name=name,
-                    raw_text=structured_raw_text
-                )
-            else:
-                print(f"[APILayer] returned status {response.status_code}: {response.text}")
-        except Exception as e:
-            print(f"[APILayer] failed: {e}. Falling back to local/LLM parsing.")
-
-    # Fallback to local parsing + LLM extraction
+    # Route immediately to local LLM-assisted name extraction
     return get_mock_parsed_resume(filename, raw_text)
