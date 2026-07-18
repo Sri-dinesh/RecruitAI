@@ -369,6 +369,78 @@ export default function Home() {
     }
   };
 
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for live parsing and vector database storage.`
+    }]);
+    
+    try {
+      const res = await fetch('/api/ingest/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Resume upload ingestion failed');
+      }
+      
+      const newCandidates = await res.json();
+      
+      let updatedCandidates: Candidate[] = [];
+      setCandidates(prev => {
+        const existingIds = new Set(prev.map(c => c.candidate_id));
+        const filteredNew = newCandidates.filter((c: Candidate) => !existingIds.has(c.candidate_id));
+        updatedCandidates = [...prev, ...filteredNew];
+        return updatedCandidates;
+      });
+      
+      const names = newCandidates.map((c: Candidate) => c.name).join(', ');
+      const successMsg = {
+        role: 'assistant' as const,
+        content: `✅ **Ingestion Success**: Successfully parsed and embedded ${newCandidates.length} candidate(s): **${names}**.`
+      };
+      
+      setMessages(prev => [...prev.slice(0, -1), successMsg]);
+      
+      const storedId = localStorage.getItem('recruitai_session_id');
+      if (storedId) {
+        await fetch(`/api/sessions/${storedId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resumes: updatedCandidates,
+            conversation_history: [...messages, successMsg]
+          })
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      const error = err as Error;
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `❌ **Ingestion Failed**: ${error.message || 'An error occurred during file upload.'}`
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -763,7 +835,7 @@ export default function Home() {
                     }}
                     className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
                       isActive 
-                        ? 'bg-slate-50 border-indigo-200 text-white font-semibold shadow-sm' 
+                        ? 'bg-indigo-50 border-indigo-200 text-brand-primary font-semibold shadow-sm' 
                         : 'border-transparent text-slate-500 hover:bg-white hover:text-slate-800'
                     }`}
                   >
@@ -918,7 +990,7 @@ export default function Home() {
                 const isSelected = selectedCandidates.has(c.candidate_id);
                 const score = c.match_score || 0;
                 const scoreColor = score >= 80 ? 'text-brand-emerald border-brand-emerald/30 bg-brand-emerald/10' : 
-                                   score >= 50 ? 'text-brand-primary border-indigo-200 bg-brand-primary text-white' : 
+                                   score >= 50 ? 'bg-brand-primary text-white border-indigo-200' : 
                                    score > 0 ? 'text-brand-rose border-brand-rose/30 bg-brand-rose/10' :
                                    'text-slate-500 border-slate-200 bg-white';
                 
@@ -1035,6 +1107,22 @@ export default function Home() {
           ) : (
             <p className="text-xs text-slate-500 italic py-6 text-center">No resumes matched. Upload resumes or run context load.</p>
           )}
+
+          {/* Resume Upload Option */}
+          <div className="pt-3 border-t border-slate-200 mt-2 flex flex-col gap-1.5 shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Candidate Resumes</span>
+            <div className="relative border border-dashed border-slate-200 hover:border-brand-primary rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-white group">
+              <input 
+                type="file" 
+                multiple
+                accept=".txt,.pdf,.doc,.docx"
+                onChange={handleResumeUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+              />
+              <Paperclip className="w-4 h-4 text-slate-400 group-hover:text-brand-primary mb-1 transition-colors" />
+              <span className="text-[10px] text-slate-500 group-hover:text-slate-800 transition-colors">Choose resume files</span>
+            </div>
+          </div>
         </div>
 
         {/* BOOKED INTERVIEWS */}
@@ -1068,7 +1156,7 @@ export default function Home() {
             <div>
               <h1 className="font-black text-xs sm:text-sm tracking-tight uppercase flex items-center gap-1.5">
                 <span className="text-brand-primary font-bold">RecruitAI</span>
-                <span className="text-[9px] bg-brand-primary text-white text-white px-2 py-0.5 rounded-full font-bold font-mono shadow-sm">v2.0</span>
+                <span className="text-[9px] bg-brand-primary text-white px-2 py-0.5 rounded-full font-bold font-mono shadow-sm">v2.0</span>
               </h1>
               <p className="text-[9px] sm:text-[10px] text-slate-500">Agent Supervisor</p>
             </div>
@@ -1164,49 +1252,49 @@ export default function Home() {
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt and resumes from backend/data/resumes")}
-              className="text-xs bg-brand-primary text-white hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-200 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-sm"
+              className="text-xs bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               🚀 Ingest Sample Files
             </button>
             <button 
               onClick={() => handleSuggestion("fetch JD for Frontend Developer via API")}
-              className="text-xs bg-brand-secondary/10 hover:bg-indigo-700/20 border border-brand-secondary/25 hover:border-brand-secondary/45 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-secondary/5"
+              className="text-xs bg-sky-50 hover:bg-sky-100/80 border border-sky-200 text-sky-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               🌐 Fetch Job via API
             </button>
             <button 
               onClick={() => handleSuggestion("Screen candidates matching the job description")}
-              className="text-xs bg-indigo-50 hover:bg-indigo-50 border border-brand-primary/35 hover:border-brand-primary/55 text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-primary/10"
+              className="text-xs bg-violet-50 hover:bg-violet-100/80 border border-violet-200 text-violet-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               🔍 Screen Candidates
             </button>
             <button 
               onClick={() => handleSuggestion("compare top candidates")}
-              className="text-xs bg-indigo-50 hover:bg-indigo-50 border border-brand-primary hover:border-brand-primary text-slate-900 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-accent/5"
+              className="text-xs bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               📊 Compare Side-by-Side
             </button>
             <button 
               onClick={() => handleSuggestion("check resumes for red flags")}
-              className="text-xs bg-brand-rose/10 hover:bg-brand-rose/20 border border-brand-rose/25 hover:border-brand-rose/45 text-brand-rose px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-rose/5"
+              className="text-xs bg-rose-50 hover:bg-rose-100/80 border border-rose-200 text-rose-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               ⚠️ Red Flags Check
             </button>
             <button 
               onClick={() => handleSuggestion("generate interview prep questions for the job description")}
-              className="text-xs bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 hover:border-amber-500/45 text-amber-250 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-amber-500/5"
+              className="text-xs bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               📋 Prep Questions
             </button>
             <button 
               onClick={() => handleSuggestion("draft outreach email templates for top candidates")}
-              className="text-xs bg-brand-emerald/10 hover:bg-brand-emerald/20 border border-brand-emerald/25 hover:border-brand-emerald/45 text-brand-emerald px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm shadow-brand-emerald/5"
+              className="text-xs bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               ✉️ Outreach Draft
             </button>
             <button 
               onClick={() => handleSuggestion("clear recruitment workspace context")}
-              className="text-xs bg-slate-800/60 hover:bg-slate-100 border border-slate-700 hover:border-slate-500 text-slate-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer"
+              className="text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
             >
               🧹 Reset Workspace
             </button>
@@ -1288,7 +1376,7 @@ export default function Home() {
             onClick={() => setActiveTab('diagnostics')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'diagnostics' 
-                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
+                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1300,7 +1388,7 @@ export default function Home() {
             onClick={() => setActiveTab('comparison')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'comparison' 
-                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
+                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1312,7 +1400,7 @@ export default function Home() {
             onClick={() => setActiveTab('scheduler')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'scheduler' 
-                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
+                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1324,7 +1412,7 @@ export default function Home() {
             onClick={() => setActiveTab('email')}
             className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
               activeTab === 'email' 
-                ? 'bg-indigo-50 text-white border-indigo-200 font-bold shadow-sm' 
+                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
                 : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
             }`}
           >
@@ -1350,7 +1438,7 @@ export default function Home() {
                     const isGoogle = log.provider?.toLowerCase().includes('gemini');
                     const isGroq = log.provider?.toLowerCase().includes('groq');
                     const providerLogo = isGoogle ? 'GEMINI' : isGroq ? 'GROQ' : 'RULES';
-                    const providerColor = isGoogle ? 'bg-brand-primary text-white text-brand-primary border-indigo-200' : 
+                    const providerColor = isGoogle ? 'bg-brand-primary text-white border-indigo-200' : 
                                             isGroq ? 'bg-brand-secondary/10 text-brand-secondary border-brand-secondary/25' : 
                                             'bg-slate-50 text-slate-500 border-slate-200';
 
