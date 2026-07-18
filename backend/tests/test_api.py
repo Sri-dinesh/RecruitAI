@@ -30,4 +30,4 @@ def test_chat_endpoint_routing():
     assert len(data["conversation_history"]) == 2
     assert data["conversation_history"][0]["role"] == "user"
     assert data["conversation_history"][1]["role"] == "assistant"
-    assert "I can do for you" in data["response"]
+    assert "I can help you with" in data["response"]

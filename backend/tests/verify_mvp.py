@@ -104,13 +104,13 @@ def custom_call_llm(prompt, system_instruction=None, json_mode=False, **kwargs):
             return '{"intent": "other", "confidence": 0.50}', "mock_provider", 10.0
             
     # 2. Main handler nodes mapping
-    if "<job_description>" in prompt:
+    if "<job_description>" in prompt_lower:
         return mock_llm_responses["parse_jd"]
-    elif "evaluate the following candidates" in prompt:
+    elif "evaluate the following candidates" in prompt_lower:
         return mock_llm_responses["screen_eval"]
-    elif "rewrite this job description" in prompt:
+    elif "rewrite this job description" in prompt_lower:
         return mock_llm_responses["rewrite_jd"]
-    elif "generate 5-7 interview prep questions" in prompt:
+    elif "generate 5-7 interview prep questions" in prompt_lower:
         return mock_llm_responses["interview_qs"]
         
     if json_mode:

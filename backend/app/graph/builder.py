@@ -107,25 +107,28 @@ def interview_salary_agent_node(state: RecruitState) -> dict:
 
 def fallback_node(state: RecruitState) -> dict:
     """
-    Fallback Agent for out-of-scope or unclassified user turns.
+    Fallback Agent for out-of-scope, malformed, or unclassified user queries.
+    Provides a graceful safety net for the multi-agent graph.
     """
     history = state.get("conversation_history", [])
     content = (
-        "I'm not quite sure how to help with that. Here are the things I can do for you:\n"
-        "1. Load and parse a Job Description and candidate resumes (e.g. 'load JD and resumes')\n"
+        "I didn't quite understand your request, or it might be outside my current capabilities. "
+        "I'm an AI recruitment assistant. Here are some of the things I can help you with:\n"
+        "1. Load a Job Description and candidate resumes (e.g. 'load JD and resumes')\n"
         "2. Count loaded resumes (e.g. 'how many candidates do we have?')\n"
         "3. Screen and rank candidates against the JD (e.g. 'screen candidates')\n"
         "4. Rewrite or polish the JD (e.g. 'rewrite this JD for a startup')\n"
         "5. Generate interview prep questions (e.g. 'interview questions for Alice')\n"
         "6. Check market salary ranges (e.g. 'salary range for this role')\n"
         "7. Finalize candidate shortlists (e.g. 'finalize the shortlist')\n\n"
-        "Could you please clarify your request?"
+        "Could you please rephrase or clarify your request?"
     )
     return {
         "conversation_history": history + [{
             "role": "assistant",
             "content": content
-        }]
+        }],
+        "last_intent": "other"
     }
 
 # Build LangGraph StateGraph

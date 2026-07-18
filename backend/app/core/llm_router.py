@@ -113,8 +113,15 @@ def call_llm(
             return response_text, provider, latency_ms
             
         except Exception as e:
-            errors.append(f"{provider}: {str(e)}")
-            print(f"[{provider}] call failed: {str(e)}. Retrying next provider...")
+            err_msg = str(e)
+            errors.append(f"{provider}: {err_msg}")
+            
+            # Backoff on rate limits/429s to allow resource windows to clear
+            if "429" in err_msg or "resource_exhausted" in err_msg.lower() or "rate_limit" in err_msg.lower():
+                print(f"[{provider}] Rate limit hit (429). Waiting 2s before retry failover...")
+                time.sleep(2)
+                
+            print(f"[{provider}] call failed: {err_msg}. Retrying next provider...")
             # Switch preferred provider to the other one since this one is failing
             _preferred_provider = "groq" if provider == "gemini" else "gemini"
             continue
