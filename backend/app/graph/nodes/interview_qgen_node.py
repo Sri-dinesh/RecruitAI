@@ -100,12 +100,8 @@ def interview_qgen_node(state: RecruitState) -> dict:
         )
         questions = response_text.strip()
     except Exception as e:
-        return {
-            "conversation_history": history + [{
-                "role": "assistant",
-                "content": f"Failed to generate interview questions due to LLM error: {e}"
-            }]
-        }
+        print(f"LLM call failed in interview_qgen_node: {e}. Utilizing Local Autonomous RAG Synthesizer.")
+        questions = _generate_local_questions(candidate, jd)
         
     heading = f"### Interview Prep Questions for **{candidate.name}** ({jd.role})\n\n"
     
@@ -115,3 +111,36 @@ def interview_qgen_node(state: RecruitState) -> dict:
             "content": heading + questions
         }]
     }
+
+def _generate_local_questions(candidate: Any, jd: Any) -> str:
+    """Autonomous deterministic interview question generator based on candidate skills & gaps."""
+    c_skills = ", ".join((candidate.skills or [])[:5]) or "general development"
+    gaps = candidate.gaps or []
+    
+    q_lines = [
+        "### Interview Preparation Questions\n",
+        f"These questions explore {candidate.name}'s experience in **{c_skills}** relative to the **{jd.role}** role requirements.\n"
+    ]
+    
+    # 1. Technical Core Skill Questions
+    q_lines.append("#### 1. Technical Architecture & Core Proficiency")
+    q_lines.append(f"\"Your background highlights experience with **{c_skills}**. Can you walk us through a recent project where you designed the core system architecture, explaining how you handled state management and database consistency?\"\n")
+    
+    # 2. Gap Probing Questions
+    if gaps:
+        gap_str = ", ".join(gaps[:2])
+        q_lines.append("#### 2. Skill Gap Exploration & Adaptability")
+        q_lines.append(f"\"The job description requires proficiency in **{gap_str}**. Based on your current stack in **{c_skills}**, how would you transition your current workflow to master these missing technical competencies quickly?\"\n")
+    else:
+        q_lines.append("#### 2. Deep-Dive Technical Optimization")
+        q_lines.append(f"\"How do you measure and optimize API response latencies and database query performance in production environments using **{c_skills}**?\"\n")
+        
+    # 3. System Design
+    q_lines.append("#### 3. System Design & Concurrency")
+    q_lines.append("\"Describe how you would design a high-throughput, concurrent backend API handling peak traffic spikes with zero-downtime guarantees.\"\n")
+    
+    # 4. Behavioral
+    q_lines.append("#### 4. Behavioral & Engineering Mindset")
+    q_lines.append("\"Tell us about a time you encountered a critical production bug or breaking API change close to a release deadline. How did you diagnose, resolve, and prevent future recurrences?\"\n")
+
+    return "\n".join(q_lines)

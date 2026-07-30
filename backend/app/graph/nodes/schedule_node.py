@@ -48,23 +48,17 @@ def _generate_slots(n: int = 5) -> List[dict]:
     return slots
 
 
+from app.graph.router_node import resolve_candidate_reference
+
 def _extract_candidate_name(query: str, state: RecruitState) -> Optional[str]:
-    """Extracts candidate name from query or falls back to shortlist top candidate."""
-    resumes = state.get("resumes", [])
-    q = query.lower()
+    """Extracts candidate name from query using resolve_candidate_reference."""
+    cid = resolve_candidate_reference(query, state)
+    resumes = state.get("resumes", []) or state.get("last_shortlist") or []
+    if cid:
+        c = next((cand for cand in resumes if cand.candidate_id == cid), None)
+        if c:
+            return c.name
 
-    for candidate in resumes:
-        first_name = candidate.name.split()[0].lower()
-        full_name = candidate.name.lower()
-        if (re.search(rf"\b{re.escape(first_name)}\b", q) or
-                re.search(rf"\b{re.escape(full_name)}\b", q)):
-            return candidate.name
-
-    shortlist = state.get("last_shortlist")
-    if shortlist:
-        return shortlist[0].name
-
-    # Try regex for any capitalized name
     match = re.search(r"\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", query)
     if match:
         return match.group(1)

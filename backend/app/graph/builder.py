@@ -18,12 +18,14 @@ from app.graph.nodes.email_node import email_node
 from app.graph.nodes.trend_node import trend_node
 from app.graph.nodes.schedule_node import schedule_node
 from app.graph.nodes.redflags_node import redflags_node
+from app.graph.nodes.candidate_qa_node import candidate_qa_node
 
 def supervisor_agent_node(state: RecruitState) -> dict:
     """
     Supervisor Agent.
     Coordinates incoming user requests, classifies intents via LLM router,
-    and forwards tasks to the appropriate specialized sub-agent.
+    maintains conversational turn context for follow-up prompts, and forwards
+    tasks to the appropriate specialized sub-agent.
     """
     history = state.get("conversation_history", [])
     user_msg = history[-1]["content"] if history else ""
@@ -31,9 +33,22 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     # 1. Pre-classify the user query to see if it's a new task
     intent, confidence, resolved_candidate = route_and_log(user_msg, state)
     
+    # 2. Conversational Context & Follow-Up prompt resolution
+    if len(history) >= 2:
+        last_assistant_msg = history[-2]["content"].lower() if history[-2]["role"] == "assistant" else ""
+        if "which candidate would you like to generate interview questions for" in last_assistant_msg:
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+                intent = "interview_questions"
+        elif "couldn't identify a candidate to draft the email for" in last_assistant_msg:
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+                intent = "email"
+        elif "which candidate would you like to check red flags for" in last_assistant_msg:
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+                intent = "redflags"
+
     pending = state.get("pending_confirmation")
     
-    # 2. Check if the user is replying to the confirmation or starting a brand new task
+    # 3. Check if the user is replying to the confirmation or starting a brand new task
     import re
     cleaned_msg = user_msg.lower().strip()
     is_confirmation_reply = cleaned_msg in ["yes", "confirm", "y", "go ahead", "sure", "no", "cancel", "n", "discard", "edit"] or \
@@ -73,7 +88,7 @@ def screening_agent_node(state: RecruitState) -> dict:
     """
     Specialized Screening & RAG Agent.
     Manages candidate count computations, advanced RAG screening matches,
-    candidate comparison tables, and resume red-flag detection.
+    candidate comparison tables, resume red-flag detection, and candidate QA.
     """
     intent = state.get("last_intent")
     if intent == "screen":
@@ -84,6 +99,8 @@ def screening_agent_node(state: RecruitState) -> dict:
         return compare_node(state)
     elif intent == "redflags":
         return redflags_node(state)
+    elif intent == "query_candidate":
+        return candidate_qa_node(state)
     return {}
 
 def interview_salary_agent_node(state: RecruitState) -> dict:
@@ -152,7 +169,7 @@ def route_to_subagent(state: RecruitState) -> str:
 
     if intent in ["load_context", "rewrite_jd", "fetch_jd_api"]:
         return "jd_agent"
-    elif intent in ["screen", "count", "compare", "redflags"]:
+    elif intent in ["screen", "count", "compare", "redflags", "query_candidate"]:
         return "screening_agent"
     elif intent in ["interview_questions", "salary", "email", "trend", "schedule"]:
         return "interview_salary_agent"

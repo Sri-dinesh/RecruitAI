@@ -9,25 +9,19 @@ from app.graph.state import RecruitState
 from app.tools.email_tool import draft_recruiter_email
 
 
+from app.graph.router_node import resolve_candidate_reference
+
 def _extract_candidate_name(query: str, state: RecruitState) -> Optional[str]:
     """
-    Tries to extract a candidate name from the query, or falls back to the
-    top candidate in the shortlist.
+    Tries to extract a candidate name from the query using resolve_candidate_reference.
     """
-    resumes = state.get("resumes", [])
-    # Check for explicit name mentions in the resumes list
-    q = query.lower()
-    for candidate in resumes:
-        first_name = candidate.name.split()[0].lower()
-        full_name = candidate.name.lower()
-        if re.search(rf"\b{re.escape(first_name)}\b", q) or re.search(rf"\b{re.escape(full_name)}\b", q):
-            return candidate.name
-
-    # Fall back to top shortlisted candidate
-    shortlist = state.get("last_shortlist")
-    if shortlist:
-        return shortlist[0].name
-
+    cid = resolve_candidate_reference(query, state)
+    resumes = state.get("resumes", []) or state.get("last_shortlist") or []
+    if cid:
+        c = next((cand for cand in resumes if cand.candidate_id == cid), None)
+        if c:
+            return c.name
+            
     # Attempt regex extraction of any capitalized name pattern
     match = re.search(r"\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", query)
     if match:

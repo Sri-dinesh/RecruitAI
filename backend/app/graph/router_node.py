@@ -18,7 +18,8 @@ INTENT_PLAIN_MAP = {
     "trend": "analyzing trending skills and market demand for a role",
     "schedule": "scheduling or booking an interview time slot",
     "redflags": "detecting red flags, timeline gaps, or inconsistencies in resumes",
-    "fetch_jd_api": "fetching job descriptions from live APIs"
+    "fetch_jd_api": "fetching job descriptions from live APIs",
+    "query_candidate": "answering candidate-specific questions about skills, projects, and background"
 }
 
 def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
@@ -44,6 +45,12 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
         return "salary", 1.0
     if num_query in ["7", "seven"]:
         return "finalize_shortlist", 1.0
+
+    # Candidate details / skills / projects check
+    if re.search(r"\b(skills|projects?|experience|education|background|roles?|tech stack|details?|info)\b.*\b(of|for|about)\b", q) or \
+       re.search(r"\bwhat (skills|projects?|experience|education|background|roles?)\b", q) or \
+       re.search(r"\b(tell me about|who is|show details|describe)\b", q):
+        return "query_candidate", 1.0
 
     # 1. load_context check
     if re.search(r"\b(load|parse|read|ingest|import)\b.*\b(jd|job description|resume|cv|candidate|resumes|context)\b", q) or re.search(r"\b(jd|job description|resume|cv|candidate|resumes|context)\b.*\b(load|parse|read|ingest|import)\b", q):
@@ -137,6 +144,7 @@ def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str,
         "- schedule: Schedule or book an interview slot (e.g. 'schedule an interview with Alice', 'book a meeting with the top candidate')\n"
         "- redflags: Detect red flags or issues in resumes (e.g. 'check for red flags', 'any gaps in resumes', 'resume issues')\n"
         "- fetch_jd_api: Fetch live job descriptions from external APIs (e.g. 'fetch JD for Frontend Developer via API', 'get job description for python from internet')\n"
+        "- query_candidate: Ask specific questions about candidate skills, projects, experience, education, or background (e.g. 'what are the skills of X', 'what projects did X work on')\n"
         "- other: Greetings, chit-chat, clarify, or unclassified queries.\n\n"
         "Return a JSON object: {\"intent\": \"<intent>\", \"confidence\": <float_0_to_1>}."
     )
@@ -149,7 +157,7 @@ def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str,
 
     valid_intents = [
         "load_context", "screen", "rewrite_jd", "interview_questions", "salary",
-        "compare", "email", "trend", "schedule", "redflags", "fetch_jd_api", "other"
+        "compare", "email", "trend", "schedule", "redflags", "fetch_jd_api", "query_candidate", "other"
     ]
 
     try:
@@ -174,32 +182,45 @@ def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str,
 def resolve_candidate_reference(query: str, state: RecruitState) -> Optional[str]:
     """
     Deterministically resolves candidate references like "the top candidate", "her", or names
-    against the last shortlist or loaded resumes.
+    (first name, last name, full name, or part of name) against the last shortlist or loaded resumes.
     Returns candidate_id if resolved, or None.
     """
-    q = query.lower()
+    q = query.lower().strip()
     last_shortlist = state.get("last_shortlist")
     all_resumes = state.get("resumes", [])
     
-    # 1. Check for explicit name mentions
+    if not all_resumes and last_shortlist:
+        all_resumes = last_shortlist
+        
+    if not all_resumes:
+        return None
+
+    # 1. Direct name match across full name and individual name tokens (first, middle, last names)
     for candidate in all_resumes:
-        # Check if first name or full name is mentioned
-        first_name = candidate.name.split()[0].lower()
-        full_name = candidate.name.lower()
-        if re.search(rf"\b{re.escape(first_name)}\b", q) or re.search(rf"\b{re.escape(full_name)}\b", q):
+        c_name_lower = candidate.name.lower()
+        if c_name_lower in q:
             return candidate.candidate_id
             
-    # 2. Check for ordinal mentions in the shortlist
-    if last_shortlist:
+        # Check individual name tokens (e.g., 'sridinesh', 'santhi', 'smith')
+        name_parts = [part.strip() for part in re.split(r"[\s,\.\-_]+", c_name_lower) if len(part.strip()) > 2]
+        for part in name_parts:
+            if re.search(rf"\b{re.escape(part)}\b", q):
+                return candidate.candidate_id
+
+    # 2. Check for ordinal mentions in shortlist / loaded resumes
+    candidates_list = last_shortlist if last_shortlist else all_resumes
+    if candidates_list:
         if re.search(r"\b(top candidate|first candidate|best match|first one|number one|no\.? 1)\b", q):
-            return last_shortlist[0].candidate_id
-        if len(last_shortlist) > 1 and re.search(r"\b(second candidate|second one|runner up|no\.? 2)\b", q):
-            return last_shortlist[1].candidate_id
-        if len(last_shortlist) > 2 and re.search(r"\b(third candidate|third one|no\.? 3)\b", q):
-            return last_shortlist[2].candidate_id
-            
-    # 3. Handle pronouns if there's only one in the last shortlist or resumes
-    # In a real app we might use LLM, but here we keep it simple or fallback to None
+            return candidates_list[0].candidate_id
+        if len(candidates_list) > 1 and re.search(r"\b(second candidate|second one|runner up|no\.? 2)\b", q):
+            return candidates_list[1].candidate_id
+        if len(candidates_list) > 2 and re.search(r"\b(third candidate|third one|no\.? 3)\b", q):
+            return candidates_list[2].candidate_id
+
+    # 3. Fallback: If only 1 candidate exists and query is brief, match that candidate
+    if len(all_resumes) == 1 and len(q.split()) <= 4:
+        return all_resumes[0].candidate_id
+
     return None
 
 def route_and_log(query: str, state: RecruitState) -> Tuple[str, float, Optional[str]]:
