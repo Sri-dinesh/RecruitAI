@@ -1,8 +1,9 @@
+# Environment variables
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,9 +11,24 @@ __pycache__/
 venv/
 ENV/
 env/
-.vscode/
-.idea/
-.gemini/
+.pytest_cache/
+
+# SQLite & Databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs & Temp directories
 *.log
 logs/
+scratch/
+.crush/
+.gemini/
+.vscode/
+.idea/
 
+# Node & Package Managers
+node_modules/
+.next/
+pnpm-lock.yaml
+pnpm-workspace.yaml
