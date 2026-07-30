@@ -18,11 +18,23 @@ interface Message {
 interface Candidate {
   candidate_id: string;
   name: string;
+  raw_text?: string;
   match_score?: number;
   matched_skills?: string[];
   gaps?: string[];
   experience_years?: number;
   red_flags?: string[];
+  email?: string;
+  phone?: string;
+  location?: string;
+  headline?: string;
+  summary?: string;
+  skills?: string[];
+  work_experience?: string[];
+  education?: string[];
+  certifications?: string[];
+  links?: string[];
+  languages?: string[];
 }
 
 interface JobDescription {
@@ -31,6 +43,18 @@ interface JobDescription {
   experience_years: number;
   tone: string;
   raw_text?: string;
+  company_name?: string;
+  department?: string;
+  location?: string;
+  employment_type?: string;
+  salary_range?: string;
+  education_requirements?: string;
+  preferred_skills?: string[];
+  responsibilities?: string[];
+  qualifications?: string[];
+  benefits?: string[];
+  industry?: string;
+  summary?: string;
 }
 
 interface RouterLog {
@@ -188,7 +212,7 @@ export default function Home() {
   };
 
   // Right Workspace Navigation & Selections
-  const [activeTab, setActiveTab] = useState<'diagnostics' | 'comparison' | 'scheduler' | 'email'>('diagnostics');
+  const [activeTab, setActiveTab] = useState<'comparison' | 'scheduler' | 'email'>('comparison');
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
 
   // Email draft states
@@ -878,24 +902,24 @@ export default function Home() {
           onClick={() => setIsLeftPanelOpen(false)}
         />
       )}
-      <section className={`fixed inset-y-0 left-0 z-45 w-80 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text bg-white border border-slate-200 shadow-sm transition-all duration-200 transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto lg:border-y-0 lg:border-l-0 lg:border-r lg:border-brand-primary/10 ${
+      <section className={`fixed inset-y-0 left-0 z-45 w-80 lg:w-96 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text bg-slate-50/50 border-r border-slate-200 shadow-sm transition-all duration-200 transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto ${
         isLeftPanelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3 bg-transparent">
           <div className="flex items-center gap-2">
-            <Database className="w-4.5 h-4.5 text-brand-primary" />
-            <h2 className="font-black text-xs uppercase tracking-wider text-slate-700">Workspace Data</h2>
+            <Database className="w-4 h-4 text-brand-primary" />
+            <h2 className="font-bold text-xs uppercase tracking-wider text-slate-800">Workspace Data</h2>
           </div>
           <button 
             onClick={() => setIsLeftPanelOpen(false)}
-            className="lg:hidden text-slate-500 hover:text-brand-primary p-1 hover:bg-slate-50 rounded-lg"
+            className="lg:hidden text-slate-500 hover:text-brand-primary p-1 hover:bg-slate-100 rounded-lg"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* ACTIVE JOB DESCRIPTION */}
-        <div className="bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
           <div className="flex items-center justify-between text-brand-primary font-bold text-xs uppercase tracking-wider">
             <div className="flex items-center gap-2">
               <Briefcase className="w-3.5 h-3.5 text-brand-primary" />
@@ -903,22 +927,46 @@ export default function Home() {
             </div>
           </div>
           {jd ? (
-            <div className="flex flex-col gap-1.5">
-              <h3 className="font-bold text-slate-900 text-sm tracking-tight">{jd.role}</h3>
-              <div className="flex justify-between text-xs text-slate-500 pt-0.5">
-                <span>Experience target:</span>
-                <span className="text-slate-800 font-semibold">{jd.experience_years}+ years</span>
-              </div>
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Format / Tone:</span>
-                <span className="text-slate-800 font-semibold capitalize">{jd.tone}</span>
-              </div>
-              <div className="flex flex-wrap gap-1 mt-2">
-                {jd.required_skills && jd.required_skills.map((skill, idx) => (
-                  <span key={idx} className="bg-brand-primary text-white text-[10px] px-2 py-0.5 rounded-lg border border-indigo-200 font-medium">
-                    {skill}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-1">
+                <h3 className="font-bold text-slate-900 text-sm tracking-tight">{jd.role}</h3>
+                {jd.employment_type && (
+                  <span className="text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200">
+                    {jd.employment_type}
                   </span>
-                ))}
+                )}
+              </div>
+              
+              {(jd.company_name || jd.location) && (
+                <div className="text-xs font-medium text-slate-600 flex flex-wrap items-center gap-1.5">
+                  {jd.company_name && <span>🏢 {jd.company_name}</span>}
+                  {jd.company_name && jd.location && <span>•</span>}
+                  {jd.location && <span>📍 {jd.location}</span>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1 border-t border-slate-100 mt-1">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Experience</span>
+                  <span className="text-slate-900 font-semibold">{jd.experience_years}+ years</span>
+                </div>
+                {jd.salary_range && (
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Salary</span>
+                    <span className="text-emerald-700 font-semibold">{jd.salary_range}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Required Skills</span>
+                <div className="flex flex-wrap gap-1">
+                  {jd.required_skills && jd.required_skills.map((skill, idx) => (
+                    <span key={idx} className="bg-slate-100 text-slate-800 text-[10px] px-2 py-0.5 rounded-md border border-slate-200 font-medium">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
@@ -935,25 +983,25 @@ export default function Home() {
 
           <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Custom JD</span>
-            <div className="relative border border-dashed border-slate-200 hover:border-brand-primary rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-white group">
+            <div className="relative border border-dashed border-slate-300 hover:border-brand-primary rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 hover:bg-white group">
               <input 
                 type="file" 
                 accept=".txt,.pdf,.doc,.docx"
                 onChange={handleJdUpload} 
                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
               />
-              <Paperclip className="w-4 h-4 text-slate-550 group-hover:text-brand-primary mb-1 transition-colors" />
-              <span className="text-[10px] text-slate-500 group-hover:text-slate-800 transition-colors">Choose JD file</span>
+              <Paperclip className="w-3.5 h-3.5 text-slate-500 group-hover:text-brand-primary transition-colors" />
+              <span className="text-xs font-semibold text-slate-700 group-hover:text-brand-primary transition-colors">Select JD File (.pdf, .docx, .txt)</span>
             </div>
           </div>
         </div>
 
-        {/* SCREENED CANDIDATES */}
-        <div className="flex-1 bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 shadow-lg flex flex-col gap-3 min-h-[250px] overflow-hidden">
+        {/* SCREENED CANDIDATES (TALENT POOL) */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-brand-primary font-bold text-xs uppercase tracking-wider">
-              <Users className="w-3.5 h-3.5" />
-              <span>Candidates ({filteredCandidates.length})</span>
+              <Users className="w-4 h-4" />
+              <span>Talent Pool ({filteredCandidates.length})</span>
             </div>
             {candidates.length > 1 && (
               <button
@@ -964,154 +1012,171 @@ export default function Home() {
                     setSelectedCandidates(new Set(candidates.map(c => c.candidate_id)));
                   }
                 }}
-                className="text-[10px] text-slate-500 hover:text-brand-primary font-semibold transition-colors"
+                className="text-xs text-brand-primary hover:underline font-semibold transition-colors"
               >
-                {selectedCandidates.size === candidates.length ? 'Clear Select' : 'Select All'}
+                {selectedCandidates.size === candidates.length ? 'Deselect All' : 'Select All'}
               </button>
             )}
           </div>
 
-          {candidates.length > 0 && (
+          {/* Search bar & quick filters */}
+          <div className="flex flex-col gap-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-550 absolute left-2.5 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
               <input 
                 type="text"
-                placeholder="Search candidates/skills..."
+                placeholder="Filter candidate by name, title, or skills..."
                 value={candidateFilter}
                 onChange={e => setCandidateFilter(e.target.value)}
-                className="w-full bg-white border border-slate-300 shadow-sm focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-500"
+                className="w-full bg-slate-50 border border-slate-200 focus:border-brand-primary focus:bg-white focus:ring-1 focus:ring-brand-primary transition-all rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400"
               />
             </div>
-          )}
+          </div>
 
+          {/* Candidate list container */}
           {filteredCandidates.length > 0 ? (
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
               {filteredCandidates.map((c) => {
                 const isSelected = selectedCandidates.has(c.candidate_id);
                 const score = c.match_score || 0;
-                const scoreColor = score >= 80 ? 'text-brand-emerald border-brand-emerald/30 bg-brand-emerald/10' : 
-                                   score >= 50 ? 'bg-brand-primary text-white border-indigo-200' : 
-                                   score > 0 ? 'text-brand-rose border-brand-rose/30 bg-brand-rose/10' :
-                                   'text-slate-500 border-slate-200 bg-white';
+                const scoreBadge = score >= 80 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : score >= 50 
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                  : score > 0 
+                  ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                  : 'bg-slate-100 text-slate-600 border-slate-200';
                 
                 return (
                   <div 
                     key={c.candidate_id} 
-                    className={`p-3 border rounded-xl flex flex-col gap-2.5 transition-all duration-200 hover:scale-[1.01] ${
+                    className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all ${
                       isSelected 
-                        ? 'bg-brand-primary text-white border-indigo-200 shadow-sm shadow-sm' 
-                        : 'bg-white border-slate-200 hover:border-slate-200 hover:bg-white shadow-md'
-                    } ${
-                      score >= 80 ? 'border-l-3 border-l-brand-emerald' :
-                      score >= 50 ? 'border-l-3 border-l-brand-primary' :
-                      score > 0 ? 'border-l-3 border-l-brand-rose' :
-                      'border-l-3 border-l-slate-700'
+                        ? 'bg-indigo-50/50 border-brand-primary shadow-sm ring-1 ring-brand-primary/30' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="flex items-center gap-2 max-w-[70%]">
+                    {/* Header: Checkbox + Name + Headline + Score */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
                         <input 
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleCandidateSelect(c.candidate_id)}
-                          className="w-3.5 h-3.5 rounded border-slate-200 accent-brand-primary cursor-pointer shrink-0"
+                          className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-primary cursor-pointer shrink-0"
                         />
-                        <span className="font-bold text-slate-900 text-xs truncate cursor-pointer hover:text-brand-primary transition-colors" onClick={() => toggleCandidateSelect(c.candidate_id)}>
-                          {c.name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {c.red_flags && c.red_flags.length > 0 && (
+                        <div className="flex flex-col min-w-0">
                           <span 
-                            title={`${c.red_flags.length} Red flag(s) detected!`}
-                            className="text-brand-rose animate-pulse cursor-help shrink-0"
+                            className="font-bold text-slate-900 text-sm truncate cursor-pointer hover:text-brand-primary transition-colors"
+                            onClick={() => toggleCandidateSelect(c.candidate_id)}
                           >
-                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {c.name}
                           </span>
-                        )}
-                        {score > 0 && (
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-lg border font-mono font-bold shrink-0 ${scoreColor}`}>
-                            {score.toFixed(0)}% Match
-                          </span>
-                        )}
+                          {c.headline && (
+                            <span className="text-xs text-slate-600 font-medium truncate">{c.headline}</span>
+                          )}
+                        </div>
                       </div>
+
+                      {score > 0 && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${scoreBadge}`}>
+                          {score.toFixed(0)}% Match
+                        </span>
+                      )}
                     </div>
 
-                    {/* Expandable red flags */}
+                    {/* Contact Badges */}
+                    {(c.email || c.phone || c.location) && (
+                      <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500 pt-0.5">
+                        {c.email && <span className="truncate max-w-[170px]" title={c.email}>✉️ {c.email}</span>}
+                        {c.phone && <span>📞 {c.phone}</span>}
+                        {c.location && <span>📍 {c.location}</span>}
+                      </div>
+                    )}
+
+                    {/* Red flags indicator */}
                     {c.red_flags && c.red_flags.length > 0 && (
-                      <div className="bg-brand-rose/5 border border-brand-rose/20 rounded-xl p-2 text-[9px] text-brand-rose leading-tight space-y-1 animate-in slide-in-from-top-1">
-                        <span className="font-bold uppercase tracking-wider text-[8px] text-brand-rose/90 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Flag Details:
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-2 text-[10px] text-rose-700 space-y-0.5">
+                        <span className="font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          {c.red_flags.length} Red Flag(s) Detected
                         </span>
                         {c.red_flags.map((flag, idx) => (
-                          <div key={idx} className="flex gap-1 pl-1">
-                            <span>•</span>
-                            <span>{flag}</span>
-                          </div>
+                          <div key={idx} className="pl-1 text-slate-700">• {flag}</div>
                         ))}
                       </div>
                     )}
 
-                    <div className="text-[10px] text-slate-500 space-y-1">
+                    {/* Experience & Skills */}
+                    <div className="text-xs space-y-1.5 pt-1 border-t border-slate-100">
                       {c.experience_years != null && (
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                        <div className="flex items-center justify-between text-slate-600">
                           <span>Experience:</span>
-                          <strong className="text-slate-800">{c.experience_years.toFixed(1)} years</strong>
+                          <span className="text-slate-900 font-bold">{c.experience_years.toFixed(1)} yrs</span>
                         </div>
                       )}
-                      {c.matched_skills && c.matched_skills.length > 0 && (
-                        <div className="pt-0.5">
-                          <span className="text-[9px] text-slate-500 block mb-1">Matched Skills:</span>
+                      
+                      {/* Candidate Skills tags */}
+                      {((c.matched_skills && c.matched_skills.length > 0) || (c.skills && c.skills.length > 0)) && (
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Key Skills</span>
                           <div className="flex flex-wrap gap-1">
-                            {c.matched_skills.slice(0, 4).map((skill, sIdx) => (
-                              <span key={sIdx} className="bg-brand-primary text-white text-[8px] px-1.5 py-0.5 rounded border border-indigo-200 font-mono">
+                            {(c.matched_skills && c.matched_skills.length > 0 ? c.matched_skills : c.skills).slice(0, 5).map((skill, sIdx) => (
+                              <span key={sIdx} className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md border border-indigo-100 font-medium">
                                 {skill}
                               </span>
                             ))}
-                            {c.matched_skills.length > 4 && (
-                              <span className="text-[8px] text-slate-500 font-semibold pl-0.5 self-center">
-                                +{c.matched_skills.length - 4} more
-                              </span>
-                            )}
                           </div>
                         </div>
                       )}
                     </div>
 
                     {/* Candidate actions */}
-                    <div className="flex gap-1.5 border-t border-slate-200 pt-2 mt-1 justify-end">
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <button
-                        onClick={() => {
-                          handleSend(`draft email for ${c.name}`);
-                          setIsLeftPanelOpen(false);
-                        }}
-                        className="text-[9px] px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-200 text-slate-400 hover:text-brand-primary font-semibold transition-all hover:-translate-y-[1px] active:translate-y-0"
+                        onClick={() => setSelectedCandidates(new Set([c.candidate_id]))}
+                        className="text-xs text-brand-primary font-semibold hover:underline flex items-center gap-1"
                       >
-                        ✉️ Email
+                        <Sparkles className="w-3 h-3" /> Inspect Details
                       </button>
-                      <button
-                        onClick={() => {
-                          handleSend(`schedule an interview with ${c.name}`);
-                          setIsLeftPanelOpen(false);
-                        }}
-                        className="text-[9px] px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-slate-800 hover:text-brand-primary hover:bg-indigo-50 font-semibold transition-all hover:-translate-y-[1px] active:translate-y-0 shadow-sm shadow-sm"
-                      >
-                        📅 Schedule
-                      </button>
+
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => {
+                            handleSend(`draft email for ${c.name}`);
+                            setIsLeftPanelOpen(false);
+                          }}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                          title="Draft Email"
+                        >
+                          ✉️ Email
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleSend(`schedule an interview with ${c.name}`);
+                            setIsLeftPanelOpen(false);
+                          }}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-brand-primary text-white hover:bg-indigo-700 font-semibold transition"
+                          title="Schedule Interview"
+                        >
+                          📅 Schedule
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <p className="text-xs text-slate-500 italic py-6 text-center">No resumes matched. Upload resumes or run context load.</p>
+            <div className="text-xs text-slate-500 italic py-6 text-center bg-slate-50 rounded-xl border border-slate-100">
+              No candidates found in talent pool. Upload PDF/DOCX resumes below.
+            </div>
           )}
 
           {/* Resume Upload Option */}
-          <div className="pt-3 border-t border-slate-200 mt-2 flex flex-col gap-1.5 shrink-0">
+          <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Candidate Resumes</span>
-            <div className="relative border border-dashed border-slate-200 hover:border-brand-primary rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition-all bg-white group">
+            <div className="relative border border-dashed border-slate-300 hover:border-brand-primary rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 hover:bg-white group">
               <input 
                 type="file" 
                 multiple
@@ -1119,23 +1184,23 @@ export default function Home() {
                 onChange={handleResumeUpload} 
                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
               />
-              <Paperclip className="w-4 h-4 text-slate-400 group-hover:text-brand-primary mb-1 transition-colors" />
-              <span className="text-[10px] text-slate-500 group-hover:text-slate-800 transition-colors">Choose resume files</span>
+              <Paperclip className="w-3.5 h-3.5 text-slate-500 group-hover:text-brand-primary transition-colors" />
+              <span className="text-xs font-semibold text-slate-700 group-hover:text-brand-primary transition-colors">Attach Candidate PDF/DOCX Resumes</span>
             </div>
           </div>
         </div>
 
         {/* BOOKED INTERVIEWS */}
-        <div className="bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 shadow-lg flex flex-col gap-2.5">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-2.5">
           <div className="flex items-center gap-2 text-brand-primary font-bold text-xs uppercase tracking-wider">
-            <Calendar className="w-3.5 h-3.5" />
+            <Calendar className="w-3.5 h-3.5 text-brand-primary" />
             <span>Scheduled Interviews ({scheduledInterviews.length})</span>
           </div>
           {scheduledInterviews.length > 0 ? (
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[160px] custom-scrollbar pr-1">
               {scheduledInterviews.map((item, idx) => (
-                <div key={idx} className="p-2.5 border border-slate-200 bg-white rounded-xl flex flex-col gap-0.5">
-                  <div className="font-bold text-slate-800 text-xs truncate">{item.candidate_name}</div>
+                <div key={idx} className="p-2.5 border border-slate-200 bg-slate-50/50 rounded-xl flex flex-col gap-0.5">
+                  <div className="font-bold text-slate-900 text-xs truncate">{item.candidate_name}</div>
                   <div className="text-[10px] text-brand-primary font-mono font-bold">{item.slot}</div>
                 </div>
               ))}
@@ -1147,8 +1212,8 @@ export default function Home() {
       </section>
 
       {/* 2. CHAT PANEL (CENTER) */}
-      <section className="flex-1 flex flex-col bg-transparent relative select-text">
-        <header className={`h-16 border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between bg-white  sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
+      <section className="flex-1 flex flex-col bg-transparent relative select-text min-w-0 overflow-x-hidden">
+        <header className={`h-16 border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between bg-white sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 bg-brand-primary text-white rounded-xl border border-indigo-200 hidden xs:block">
               <Cpu className="w-5 h-5 text-brand-primary animate-pulse" />
@@ -1206,13 +1271,13 @@ export default function Home() {
         </header>
 
         {/* CHAT MESSAGES WINDOW */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full custom-scrollbar">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4 max-w-4xl mx-auto w-full custom-scrollbar">
           {messages.map((msg, idx) => {
             const isUser = msg.role === 'user';
             return (
               <div 
                 key={idx} 
-                className={`flex gap-3 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-205 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                className={`flex gap-3 max-w-[85%] min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-205 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
               >
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
                   isUser ? 'bg-slate-50 border border-indigo-200 text-brand-primary' : 'bg-slate-50 border border-slate-200 text-slate-450'
@@ -1220,7 +1285,7 @@ export default function Home() {
                   {isUser ? <User className="w-4 h-4 text-brand-primary" /> : <Bot className="w-4 h-4 text-slate-500" />}
                 </div>
 
-                <div className={`p-4 rounded-2xl border text-sm leading-relaxed ${
+                <div className={`p-4 rounded-2xl border text-sm leading-relaxed min-w-0 max-w-full overflow-hidden ${
                   isUser 
                     ? 'bg-white border-indigo-200 text-slate-900 rounded-tr-none shadow-sm' 
                     : 'bg-white border-slate-200 text-slate-800 rounded-tl-none shadow-lg '
@@ -1365,129 +1430,53 @@ export default function Home() {
       }`}>
         
         {/* Workspace Nav Header */}
-        <div className="flex border-b border-slate-200 bg-white p-2 gap-1 shrink-0 items-center">
+        <div className="flex border-b border-slate-200 bg-white p-2 gap-1.5 shrink-0 items-center">
           <button 
             onClick={() => setIsRightPanelOpen(false)}
             className="lg:hidden text-slate-500 hover:text-brand-primary p-2 hover:bg-slate-50 rounded-xl shrink-0 mr-1 transition"
           >
             <X className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => setActiveTab('diagnostics')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
-              activeTab === 'diagnostics' 
-                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
-                : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Trace</span>
-          </button>
           
           <button
             onClick={() => setActiveTab('comparison')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
               activeTab === 'comparison' 
-                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
-                : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
             <Sliders className="w-4 h-4" />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Compare</span>
+            <span>Compare</span>
           </button>
 
           <button
             onClick={() => setActiveTab('scheduler')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
               activeTab === 'scheduler' 
-                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
-                : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Calendar</span>
+            <span>Calendar</span>
           </button>
 
           <button
             onClick={() => setActiveTab('email')}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all border ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
               activeTab === 'email' 
-                ? 'bg-brand-primary text-white border-indigo-200 font-bold shadow-sm' 
-                : 'border-transparent text-slate-500 hover:text-slate-205 hover:bg-slate-50/40'
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
             <Mail className="w-4 h-4" />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Email</span>
+            <span>Email</span>
           </button>
         </div>
 
         {/* TAB WORKSPACE CONTENT */}
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 select-text custom-scrollbar bg-white">
-          
-          {/* TAB 1: DIAGNOSTIC TRACE */}
-          {activeTab === 'diagnostics' && (
-            <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
-                <Terminal className="w-4 h-4 text-brand-primary" />
-                <span>Real-Time Route Diagnostics</span>
-              </div>
-              
-              {routerLogs.length > 0 ? (
-                <div className="space-y-3.5">
-                  {routerLogs.map((log, idx) => {
-                    const isGoogle = log.provider?.toLowerCase().includes('gemini');
-                    const isGroq = log.provider?.toLowerCase().includes('groq');
-                    const providerLogo = isGoogle ? 'GEMINI' : isGroq ? 'GROQ' : 'RULES';
-                    const providerColor = isGoogle ? 'bg-brand-primary text-white border-indigo-200' : 
-                                            isGroq ? 'bg-brand-secondary/10 text-brand-secondary border-brand-secondary/25' : 
-                                            'bg-slate-50 text-slate-500 border-slate-200';
-
-                    return (
-                      <div 
-                        key={idx} 
-                        className="bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 shadow-lg flex flex-col gap-2.5"
-                      >
-                        {/* Header */}
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <span className="text-xs font-black text-brand-primary uppercase font-mono">Turn {log.turn}</span>
-                          <span className="text-[10px] text-slate-500 font-semibold font-mono bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">{log.node}</span>
-                        </div>
-                        
-                        {/* Router Metrics */}
-                        <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[11px] text-slate-500">
-                          <div>Intent Routed:</div>
-                          <div className="text-slate-900 font-bold text-right capitalize">{log.intent}</div>
-                          
-                          <div>Confidence Score:</div>
-                          <div className="font-mono text-brand-primary font-bold text-right">{(log.confidence * 100).toFixed(0)}%</div>
-                          
-                          <div>Model Provider:</div>
-                          <div className="text-right">
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-black ${providerColor}`}>
-                              {providerLogo}
-                            </span>
-                          </div>
-
-                          <div className="col-span-2 border-t border-slate-200 pt-2.5 mt-1 flex justify-between items-center">
-                            <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                              <Clock className="w-3.5 h-3.5" />
-                              Execution Time
-                            </span>
-                            <span className="font-mono text-brand-emerald font-bold text-xs">{log.latency_ms} ms</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center text-center p-8 border border-dashed border-slate-200 rounded-2xl bg-white min-h-[300px]">
-                  <Cpu className="w-10 h-10 text-slate-700 animate-pulse mb-3" />
-                  <p className="text-xs text-slate-550 italic max-w-[200px]">Perform an interaction in the chat box to log supervisor trace logs here.</p>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* TAB 2: CANDIDATE COMPARISON MATRIX */}
           {activeTab === 'comparison' && (
@@ -1514,19 +1503,24 @@ export default function Home() {
                         key={c.candidate_id}
                         className={`p-4 border rounded-2xl flex flex-col gap-3 transition-all duration-200 ${
                           isChecked 
-                            ? 'bg-brand-primary text-white border-brand-primary/35 shadow-sm' 
-                            : 'bg-white border-slate-200 hover:border-slate-200'
+                            ? 'bg-indigo-50/70 border-brand-primary ring-2 ring-brand-primary/20 shadow-sm' 
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
                         }`}
                       >
                         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                          <div className="flex items-center gap-2">
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => toggleCandidateSelect(c.candidate_id)}
-                              className="w-3.5 h-3.5 rounded border-slate-200 accent-brand-primary cursor-pointer"
-                            />
-                            <span className="font-bold text-sm text-slate-900">{c.name}</span>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCandidateSelect(c.candidate_id)}
+                                className="w-3.5 h-3.5 rounded border-slate-200 accent-brand-primary cursor-pointer"
+                              />
+                              <span className="font-bold text-sm text-slate-900">{c.name}</span>
+                            </div>
+                            {c.headline && (
+                              <span className="text-xs text-slate-500 font-medium pl-5">{c.headline}</span>
+                            )}
                           </div>
                           <span className="text-[10px] bg-slate-50 border border-slate-200 text-brand-primary px-2 py-0.5 rounded-lg font-mono font-bold">
                             Score: {c.match_score ? c.match_score.toFixed(0) : 'N/A'}
@@ -1534,10 +1528,25 @@ export default function Home() {
                         </div>
 
                         <div className="text-xs space-y-1.5 text-slate-400">
+                          {(c.email || c.phone || c.location) && (
+                            <div className="flex flex-wrap gap-2 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              {c.email && <span>✉️ {c.email}</span>}
+                              {c.phone && <span>📞 {c.phone}</span>}
+                              {c.location && <span>📍 {c.location}</span>}
+                            </div>
+                          )}
+
                           <div className="flex justify-between">
                             <span className="text-slate-500">Exp:</span>
                             <span className="font-medium text-slate-800">{c.experience_years ? `${c.experience_years.toFixed(1)} years` : 'N/A'}</span>
                           </div>
+
+                          {c.education && c.education.length > 0 && (
+                            <div>
+                              <span className="text-slate-500 block mb-0.5">Education:</span>
+                              <span className="text-slate-800 text-[11px] font-medium">{c.education.join(' • ')}</span>
+                            </div>
+                          )}
                           
                           <div>
                             <span className="text-slate-500 block mb-1">Matched Skills:</span>

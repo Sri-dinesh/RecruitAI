@@ -26,7 +26,8 @@ export default function MarkdownText({ text }: { text: string }) {
       .replace(/>/g, '&gt;');
 
     // 2. Parse Headings
-    processed = processed.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-black uppercase text-brand-primary tracking-wider mt-4 mb-2">$1</h3>');
+    processed = processed.replace(/^#### (.*?)$/gm, '<h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mt-3.5 mb-1.5">$1</h4>');
+    processed = processed.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-extrabold text-brand-primary uppercase tracking-wider mt-4 mb-2">$1</h3>');
     processed = processed.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-extrabold text-slate-900 mt-5 mb-2.5 pb-1 border-b border-slate-200">$1</h2>');
     processed = processed.replace(/^# (.*?)$/gm, '<h1 class="text-base font-black text-slate-900 mt-6 mb-3">$1</h1>');
 
@@ -46,7 +47,7 @@ export default function MarkdownText({ text }: { text: string }) {
           inTable = true;
           tableHtml = '<div class="overflow-x-auto my-4 rounded-xl border border-slate-200 bg-white"><table class="w-full text-left border-collapse text-xs">';
           const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<thead class="bg-white border-b border-slate-200"><tr class="text-slate-500 font-bold">';
+          tableHtml += '<thead class="bg-slate-100 border-b border-slate-200"><tr class="text-slate-700 font-bold">';
           cols.forEach(col => {
             tableHtml += `<th class="py-2.5 px-3.5 font-bold">${col}</th>`;
           });
@@ -57,10 +58,10 @@ export default function MarkdownText({ text }: { text: string }) {
           }
         } else {
           const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<tr class="border-b border-slate-200 hover:bg-white">';
+          tableHtml += '<tr class="border-b border-slate-200 hover:bg-slate-50/50">';
           cols.forEach(col => {
             const cellHtml = compileInline(col);
-            tableHtml += `<td class="py-2 px-3.5 text-slate-600 font-medium">${cellHtml}</td>`;
+            tableHtml += `<td class="py-2 px-3.5 text-slate-700 font-medium">${cellHtml}</td>`;
           });
           tableHtml += '</tr>';
         }
@@ -83,10 +84,10 @@ export default function MarkdownText({ text }: { text: string }) {
     // Inline elements compiler
     function compileInline(text: string): string {
       return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-brand-primary">$1</strong>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>')
         .replace(/\*(.*?)\*/g, '<em class="italic text-slate-700">$1</em>')
-        .replace(/`(.*?)`/g, '<code class="bg-slate-50 text-brand-primary px-1.5 py-0.5 rounded font-mono text-[11px] border border-slate-200">$1</code>')
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline">$1</a>');
+        .replace(/`(.*?)`/g, '<code class="bg-indigo-50 text-indigo-700 font-mono text-[11px] px-1.5 py-0.5 rounded border border-indigo-100">$1</code>')
+        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline font-medium">$1</a>');
     }
 
     // 5. Parse Lists
