@@ -215,6 +215,11 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'comparison' | 'scheduler' | 'email'>('comparison');
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
 
+  // Enterprise Product States
+  const [isBlindHiring, setIsBlindHiring] = useState(false);
+  const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
+  const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
+
   // Email draft states
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
@@ -225,6 +230,87 @@ export default function Home() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportQs, setReportQs] = useState("");
   const [reportSalary, setReportSalary] = useState("");
+
+  // PII Masking formatters for Blind Hiring
+  const formatCandidateName = (c: Candidate) => {
+    if (!isBlindHiring) return c.name;
+    const initials = c.name.split(' ').map(n => n[0]).join('.').toUpperCase();
+    return `Candidate #${c.candidate_id.slice(-4).toUpperCase()} (${initials})`;
+  };
+
+  const formatCandidateEmail = (email?: string) => {
+    if (!email) return null;
+    if (!isBlindHiring) return email;
+    const parts = email.split('@');
+    return `${parts[0][0]}***@${parts[1] || 'domain.com'}`;
+  };
+
+  // Enterprise ATS Export Handlers
+  const exportToCsv = () => {
+    const exportList = selectedCandidates.size > 0 
+      ? candidates.filter(c => selectedCandidates.has(c.candidate_id)) 
+      : candidates;
+      
+    if (exportList.length === 0) return;
+    
+    let csv = "Candidate ID,Name,Headline,Email,Phone,Location,Match Score,Experience Years,Matched Skills,Gaps,Red Flags,Tech Score,Comm Score,Recruiter Notes\n";
+    exportList.forEach(c => {
+      const e = evalNotes[c.candidate_id] || { tech: 0, comm: 0, notes: '' };
+      csv += `"${c.candidate_id}","${c.name}","${c.headline || ''}","${c.email || ''}","${c.phone || ''}","${c.location || ''}","${c.match_score || 0}%","${c.experience_years || 0}","${(c.matched_skills || []).join('; ')}","${(c.gaps || []).join('; ')}","${(c.red_flags || []).join('; ')}","${e.tech}/5","${e.comm}/5","${e.notes.replace(/"/g, '""')}"\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `recruitai_shortlist_export_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToAtsJson = () => {
+    const exportList = selectedCandidates.size > 0 
+      ? candidates.filter(c => selectedCandidates.has(c.candidate_id)) 
+      : candidates;
+      
+    const payload = {
+      export_type: "Enterprise ATS Export Payload (Greenhouse / Lever Compliant)",
+      exported_at: new Date().toISOString(),
+      active_position: jd ? jd.role : "Unspecified Position",
+      candidates: exportList.map(c => {
+        const e = evalNotes[c.candidate_id] || { tech: 0, comm: 0, notes: '' };
+        return {
+          id: c.candidate_id,
+          first_name: c.name.split(' ')[0],
+          last_name: c.name.split(' ').slice(1).join(' '),
+          headline: c.headline,
+          contact: { email: c.email, phone: c.phone, location: c.location },
+          evaluation: {
+            overall_match_score: c.match_score,
+            experience_years: c.experience_years,
+            matched_skills: c.matched_skills,
+            gaps: c.gaps,
+            red_flags: c.red_flags,
+            recruiter_rubric: {
+              technical_competency: `${e.tech}/5`,
+              communication_cultural_fit: `${e.comm}/5`,
+              notes: e.notes
+            }
+          }
+        };
+      })
+    };
+    
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `recruitai_ats_export_${new Date().toISOString().slice(0,10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1019,7 +1105,29 @@ export default function Home() {
             )}
           </div>
 
-          {/* Search bar & quick filters */}
+          {/* Hiring Analytics Summary Bar */}
+          {candidates.length > 0 && (
+            <div className="grid grid-cols-3 gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-center">
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Pool</span>
+                <span className="text-xs font-bold text-slate-900">{candidates.length}</span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Shortlisted</span>
+                <span className="text-xs font-bold text-emerald-700">
+                  {candidates.filter(c => (c.match_score || 0) >= 80).length}
+                </span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Avg Match</span>
+                <span className="text-xs font-bold text-indigo-700">
+                  {candidates.length ? (candidates.reduce((a, c) => a + (c.match_score || 0), 0) / candidates.length).toFixed(0) : 0}%
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Search bar & ATS Export Row */}
           <div className="flex flex-col gap-2">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
@@ -1031,6 +1139,26 @@ export default function Home() {
                 className="w-full bg-slate-50 border border-slate-200 focus:border-brand-primary focus:bg-white focus:ring-1 focus:ring-brand-primary transition-all rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400"
               />
             </div>
+
+            {/* ATS Bulk Exports */}
+            {candidates.length > 0 && (
+              <div className="flex gap-1.5 justify-end">
+                <button
+                  onClick={exportToCsv}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 font-semibold transition"
+                  title="Export shortlist to CSV"
+                >
+                  📥 Export CSV
+                </button>
+                <button
+                  onClick={exportToAtsJson}
+                  className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-brand-primary px-2.5 py-1 rounded-lg border border-indigo-200 font-semibold transition"
+                  title="Export to Greenhouse/Lever ATS JSON payload"
+                >
+                  📄 ATS JSON
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Candidate list container */}
@@ -1068,9 +1196,9 @@ export default function Home() {
                         <div className="flex flex-col min-w-0">
                           <span 
                             className="font-bold text-slate-900 text-sm truncate cursor-pointer hover:text-brand-primary transition-colors"
-                            onClick={() => toggleCandidateSelect(c.candidate_id)}
+                            onClick={() => setInspectedCandidate(c)}
                           >
-                            {c.name}
+                            {formatCandidateName(c)}
                           </span>
                           {c.headline && (
                             <span className="text-xs text-slate-600 font-medium truncate">{c.headline}</span>
@@ -1088,8 +1216,8 @@ export default function Home() {
                     {/* Contact Badges */}
                     {(c.email || c.phone || c.location) && (
                       <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500 pt-0.5">
-                        {c.email && <span className="truncate max-w-[170px]" title={c.email}>✉️ {c.email}</span>}
-                        {c.phone && <span>📞 {c.phone}</span>}
+                        {c.email && <span className="truncate max-w-[170px]" title={c.email}>✉️ {formatCandidateEmail(c.email)}</span>}
+                        {c.phone && <span>📞 {!isBlindHiring ? c.phone : '+1 ***-***-****'}</span>}
                         {c.location && <span>📍 {c.location}</span>}
                       </div>
                     )}
@@ -1121,7 +1249,7 @@ export default function Home() {
                         <div>
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Key Skills</span>
                           <div className="flex flex-wrap gap-1">
-                            {(c.matched_skills && c.matched_skills.length > 0 ? c.matched_skills : c.skills).slice(0, 5).map((skill, sIdx) => (
+                            {(c.matched_skills && c.matched_skills.length > 0 ? c.matched_skills : (c.skills || [])).slice(0, 5).map((skill, sIdx) => (
                               <span key={sIdx} className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md border border-indigo-100 font-medium">
                                 {skill}
                               </span>
@@ -1134,10 +1262,10 @@ export default function Home() {
                     {/* Candidate actions */}
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <button
-                        onClick={() => setSelectedCandidates(new Set([c.candidate_id]))}
+                        onClick={() => setInspectedCandidate(c)}
                         className="text-xs text-brand-primary font-semibold hover:underline flex items-center gap-1"
                       >
-                        <Sparkles className="w-3 h-3" /> Inspect Details
+                        <Sparkles className="w-3 h-3" /> Rubric & Notes
                       </button>
 
                       <div className="flex gap-1.5">
@@ -1248,6 +1376,18 @@ export default function Home() {
               title="Widgets & Reports"
             >
               <Sliders className="w-4 h-4 text-brand-primary" />
+            </button>
+
+            <button 
+              onClick={() => setIsBlindHiring(!isBlindHiring)}
+              className={`text-[10px] px-2.5 py-1 rounded-full border transition-all font-bold flex items-center gap-1 cursor-pointer ${
+                isBlindHiring 
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-sm' 
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Toggle Blind Hiring (PII Masking for Bias-Free Screening)"
+            >
+              <span>{isBlindHiring ? '🔒 Blind Mode: ON' : '🔓 Blind Mode: OFF'}</span>
             </button>
 
             <div className="hidden md:flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-slate-200 text-[10px]">
@@ -1852,6 +1992,174 @@ export default function Home() {
                 <Send className="w-3.5 h-3.5 rotate-90 text-white" />
                 Download PDF Report
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. CANDIDATE INSPECTION & RECRUITER RUBRIC MODAL */}
+      {inspectedCandidate && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 sm:p-6 select-text animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-brand-primary flex items-center justify-center font-bold text-sm">
+                  {formatCandidateName(inspectedCandidate).slice(0, 2)}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">{formatCandidateName(inspectedCandidate)}</h3>
+                  {inspectedCandidate.headline && (
+                    <p className="text-xs text-slate-500 font-medium">{inspectedCandidate.headline}</p>
+                  )}
+                </div>
+              </div>
+              <button 
+                onClick={() => setInspectedCandidate(null)}
+                className="text-slate-500 hover:text-brand-primary transition p-2 bg-slate-100 rounded-xl"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-slate-700 custom-scrollbar">
+              
+              {/* Overview Metrics */}
+              <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Match Score</span>
+                  <span className="text-sm font-black text-brand-primary">{(inspectedCandidate.match_score || 0).toFixed(0)}%</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Experience</span>
+                  <span className="text-sm font-black text-slate-800">{inspectedCandidate.experience_years ? `${inspectedCandidate.experience_years.toFixed(1)} yrs` : 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Location</span>
+                  <span className="text-sm font-bold text-slate-800">{inspectedCandidate.location || 'Remote'}</span>
+                </div>
+              </div>
+
+              {/* Skills & Gaps */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3.5 border border-slate-200 rounded-xl bg-slate-50/30">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-2">Matched Competencies</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(inspectedCandidate.matched_skills || inspectedCandidate.skills || []).map((s, idx) => (
+                      <span key={idx} className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
+                        ✓ {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-3.5 border border-slate-200 rounded-xl bg-slate-50/30">
+                  <span className="text-xs font-bold text-rose-600 uppercase tracking-wider block mb-2">Identified Skill Gaps</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(inspectedCandidate.gaps && inspectedCandidate.gaps.length > 0) ? (
+                      inspectedCandidate.gaps.map((g, idx) => (
+                        <span key={idx} className="bg-rose-50 text-rose-700 text-xs px-2.5 py-1 rounded-lg border border-rose-200 font-medium">
+                          ⚠ {g}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">No skill gaps identified</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Recruiter Evaluation Rubric */}
+              <div className="border border-indigo-200 bg-indigo-50/30 rounded-xl p-4 space-y-4">
+                <h4 className="font-extrabold text-xs uppercase tracking-wider text-brand-primary flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" /> Recruiter Assessment Rubric & Team Notes
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Technical Fit Score */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">Technical Architecture Fit (1-5 ⭐):</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(star => {
+                        const currentTech = evalNotes[inspectedCandidate.candidate_id]?.tech || 0;
+                        return (
+                          <button
+                            key={star}
+                            onClick={() => {
+                              const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                              setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, tech: star } });
+                            }}
+                            className={`text-lg p-1 transition ${star <= currentTech ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-300'}`}
+                          >
+                            ★
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Culture Fit Score */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">Communication & Culture Fit (1-5 ⭐):</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(star => {
+                        const currentComm = evalNotes[inspectedCandidate.candidate_id]?.comm || 0;
+                        return (
+                          <button
+                            key={star}
+                            onClick={() => {
+                              const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                              setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, comm: star } });
+                            }}
+                            className={`text-lg p-1 transition ${star <= currentComm ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-300'}`}
+                          >
+                            ★
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recruiter Notes */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">Recruiter & Interviewer Notes:</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Enter technical interview feedback, salary expectation notes, or team comments..."
+                    value={evalNotes[inspectedCandidate.candidate_id]?.notes || ''}
+                    onChange={e => {
+                      const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                      setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, notes: e.target.value } });
+                    }}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Resume Context */}
+              {inspectedCandidate.raw_text && (
+                <div className="border border-slate-200 rounded-xl p-3.5 bg-slate-50">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Resume Snippet</span>
+                  <p className="text-xs text-slate-700 font-mono leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {inspectedCandidate.raw_text.slice(0, 1500)}...
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50/50">
+              <span className="text-xs text-slate-500 italic">Assessment auto-saved in campaign session</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setInspectedCandidate(null)}
+                  className="text-xs px-4 py-2 bg-brand-primary text-white font-bold rounded-xl hover:bg-indigo-700 transition"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>
