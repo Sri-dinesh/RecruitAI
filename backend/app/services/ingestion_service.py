@@ -49,20 +49,19 @@ def ingest_resumes_pipeline(directory_path: str) -> List[Candidate]:
 
 def ingest_single_candidate_text(candidate_id: str, name: str, raw_text: str) -> Candidate:
     """
-    Ingests a single candidate's resume: chunks it, embeds it, and
-    upserts it to Supabase pgvector without clearing other candidates.
+    Ingests a single candidate's resume: parses rich structured fields, chunks it,
+    embeds it, and upserts it to Supabase pgvector.
     """
+    from app.services.resume_parser import parse_structured_resume
+    candidate = parse_structured_resume(raw_text, filename=f"{candidate_id}.txt")
+    candidate.candidate_id = candidate_id
+    if name and name != "Unknown Candidate":
+        candidate.name = name
+
     # 1. Chunk resume
-    chunks = chunk_resume(raw_text, candidate_id, name)
+    chunks = chunk_resume(raw_text, candidate.candidate_id, candidate.name)
     if not chunks:
-        return Candidate(
-            candidate_id=candidate_id,
-            name=name,
-            raw_text=raw_text,
-            match_score=0,
-            matched_skills=[],
-            gaps=[]
-        )
+        return candidate
         
     # 2. Embed chunks
     texts_to_embed = [c["chunk_text"] for c in chunks]
@@ -75,12 +74,5 @@ def ingest_single_candidate_text(candidate_id: str, name: str, raw_text: str) ->
     # 4. Upsert into Supabase
     upsert_chunks(chunks)
     
-    return Candidate(
-        candidate_id=candidate_id,
-        name=name,
-        raw_text=raw_text,
-        match_score=0,
-        matched_skills=[],
-        gaps=[]
-    )
+    return candidate
 

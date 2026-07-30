@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from typing import List
 from app.schemas.candidate_schema import Candidate
+from app.services.document_parser import parse_document
+from app.services.resume_parser import parse_structured_resume
 
 def load_resumes(directory_path: str) -> List[Candidate]:
     candidates = []
@@ -10,22 +12,22 @@ def load_resumes(directory_path: str) -> List[Candidate]:
     if not dir_path.exists() or not dir_path.is_dir():
         return candidates
         
-    for file in dir_path.glob("*.txt"):
-        with open(file, "r", encoding="utf-8") as f:
-            raw_text = f.read()
+    supported_extensions = {".txt", ".pdf", ".docx"}
+    for file in sorted(dir_path.iterdir()):
+        if file.suffix.lower() not in supported_extensions:
+            continue
             
-        # Try to parse name from text, otherwise fallback to file name
-        name = file.stem.replace("_", " ").title()
-        for line in raw_text.splitlines():
-            if line.strip().lower().startswith("name:"):
-                name = line.split(":", 1)[1].strip()
-                break
+        try:
+            raw_text = parse_document(file)
+            if not raw_text:
+                continue
                 
-        candidate = Candidate(
-            candidate_id=file.stem,
-            name=name,
-            raw_text=raw_text
-        )
-        candidates.append(candidate)
-        
+            candidate = parse_structured_resume(raw_text, filename=file.name)
+            # Retain file stem as candidate_id if present for consistent IDs in tests/DB
+            candidate.candidate_id = file.stem
+            candidates.append(candidate)
+        except Exception as e:
+            print(f"Skipping resume file '{file.name}': {e}")
+            
     return candidates
+

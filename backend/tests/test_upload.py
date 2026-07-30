@@ -69,3 +69,54 @@ def test_upload_jd_txt(mock_call_llm):
     assert "Python and React" in data["raw_text"]
     mock_call_llm.assert_called_once()
 
+
+@patch("app.api.routes_ingest.ingest_single_candidate_text", return_value=mock_candidate)
+@patch("app.services.resume_api.call_llm")
+def test_upload_pdf_file(mock_llm, mock_ingest):
+    import io
+    from reportlab.pdfgen import canvas
+    
+    mock_llm.return_value = ('{"name": "John Doe"}', "mock_provider", 10)
+    
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 750, "John Doe resume content. Experienced Python Developer.")
+    c.save()
+    pdf_bytes = buf.getvalue()
+    
+    files = {"files": ("john_doe.pdf", pdf_bytes, "application/pdf")}
+    response = client.post("/api/ingest/upload", files=files)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["candidate_id"] == "john_doe"
+
+
+@patch("app.api.routes_ingest.call_llm")
+def test_upload_jd_pdf(mock_call_llm):
+    import io
+    from reportlab.pdfgen import canvas
+    
+    mock_call_llm.return_value = (
+        '{"role": "Lead DevOps Engineer", "required_skills": ["Docker", "Kubernetes"], "experience_years": 5}',
+        "mock_provider",
+        20
+    )
+    
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 750, "Seeking Lead DevOps Engineer with Docker and Kubernetes experience.")
+    c.save()
+    pdf_bytes = buf.getvalue()
+    
+    files = {"file": ("job_description.pdf", pdf_bytes, "application/pdf")}
+    response = client.post("/api/ingest/upload-jd", files=files)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["role"] == "Lead DevOps Engineer"
+    assert data["required_skills"] == ["Docker", "Kubernetes"]
+    assert "DevOps" in data["raw_text"]
+
+

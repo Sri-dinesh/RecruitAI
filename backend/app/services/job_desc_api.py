@@ -104,7 +104,7 @@ def fetch_live_job_description(query: str, location: Optional[str] = None) -> Jo
 def map_raw_job_to_jd(job_data: dict, source_name: str) -> JobDescription:
     """
     Helper to map raw job dictionary (from SerpApi or IndianAPI) into a JobDescription
-    using LLM-assisted schema extraction (or heuristics if LLM fails).
+    using LLM-assisted schema extraction and heuristic fallback.
     """
     title = job_data.get("title") or job_data.get("job_title") or "Software Engineer"
     desc = job_data.get("description") or job_data.get("job_description") or ""
@@ -113,42 +113,11 @@ def map_raw_job_to_jd(job_data: dict, source_name: str) -> JobDescription:
     
     full_text = f"Job Title: {title}\nCompany: {company}\nLocation: {location}\nDescription:\n{desc}"
     
-    system_instruction = (
-        "You are an expert recruitment parser. Extract structured fields from the job description "
-        "and return a JSON object containing:\n"
-        "- role (str)\n"
-        "- required_skills (list of str)\n"
-        "- experience_years (int, default to 2 if not found)\n"
-        "Return only the raw JSON."
-    )
-    
-    prompt = f"Extract fields from this job description:\n{full_text}"
-    
-    try:
-        response_text, provider, _ = call_llm(
-            prompt=prompt,
-            system_instruction=system_instruction,
-            json_mode=True
-        )
-        data = parse_json_safely(response_text)
-        return JobDescription(
-            role=data.get("role", title),
-            required_skills=data.get("required_skills", []),
-            experience_years=data.get("experience_years", 2),
-            raw_text=full_text,
-            tone="professional"
-        )
-    except Exception as e:
-        print(f"LLM mapping of job description failed: {e}. Using simple parsing.")
-        skills = []
-        possible_skills = ["python", "javascript", "react", "node", "typescript", "django", "fastapi", "sql", "docker", "aws"]
-        for skill in possible_skills:
-            if skill in full_text.lower():
-                skills.append(skill.title())
-        return JobDescription(
-            role=title,
-            required_skills=skills if skills else ["General Software Development"],
-            experience_years=2,
-            raw_text=full_text,
-            tone="professional"
-        )
+    from app.services.jd_parser import parse_structured_jd
+    jd = parse_structured_jd(full_text)
+    if not jd.company_name or jd.company_name == "Unknown Company":
+        jd.company_name = company
+    if not jd.location:
+        jd.location = location
+    return jd
+
