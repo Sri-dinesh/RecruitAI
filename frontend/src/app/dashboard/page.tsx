@@ -1,0 +1,2170 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { 
+  Send, User, Bot, Briefcase, Users, Database, 
+  Cpu, Activity, Clock, Terminal, FileText, Paperclip,
+  Calendar, Mail, AlertTriangle, CheckCircle,
+  Trash2, ArrowRight, Check, X,
+  Sliders, Search, Sparkles
+} from 'lucide-react';
+import MarkdownText from '@/components/MarkdownText';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface Candidate {
+  candidate_id: string;
+  name: string;
+  raw_text?: string;
+  match_score?: number;
+  matched_skills?: string[];
+  gaps?: string[];
+  experience_years?: number;
+  red_flags?: string[];
+  email?: string;
+  phone?: string;
+  location?: string;
+  headline?: string;
+  summary?: string;
+  skills?: string[];
+  work_experience?: string[];
+  education?: string[];
+  certifications?: string[];
+  links?: string[];
+  languages?: string[];
+}
+
+interface JobDescription {
+  role: string;
+  required_skills: string[];
+  experience_years: number;
+  tone: string;
+  raw_text?: string;
+  company_name?: string;
+  department?: string;
+  location?: string;
+  employment_type?: string;
+  salary_range?: string;
+  education_requirements?: string;
+  preferred_skills?: string[];
+  responsibilities?: string[];
+  qualifications?: string[];
+  benefits?: string[];
+  industry?: string;
+  summary?: string;
+}
+
+interface RouterLog {
+  turn: number;
+  node: string;
+  intent: string;
+  confidence: number;
+  provider: string;
+  latency_ms: number;
+}
+
+interface PendingConfirmation {
+  action: string;
+  candidate_name?: string;
+  role?: string;
+  slots?: { slot_number: number; label: string }[];
+  payload?: unknown;
+}
+
+interface ScheduledInterview {
+  candidate_name: string;
+  slot: string;
+  booked_at?: string;
+}
+
+interface Session {
+  id: string;
+  title: string;
+  created_at?: string;
+  jd_structured?: JobDescription | null;
+  resumes?: Candidate[];
+  last_shortlist?: Candidate[] | null;
+  pending_confirmation?: PendingConfirmation | null;
+  last_intent?: string | null;
+  scheduled_interviews?: ScheduledInterview[] | null;
+  conversation_history?: Message[] | null;
+}
+
+export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: 'assistant',
+      content: "Hello! I am **RecruitAI**, your AI recruiting assistant. Start by loading a job description and candidate resumes, or select one of the quick start options below."
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [apiConnected, setApiConnected] = useState(false);
+  const [candidateFilter, setCandidateFilter] = useState('');
+
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
+  // Mobile responsive layout states
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  
+  // Recruitment states synchronized from backend
+  const [jd, setJd] = useState<JobDescription | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [lastShortlist, setLastShortlist] = useState<Candidate[] | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
+  const [lastIntent, setLastIntent] = useState<string | null>(null);
+  const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
+
+  const handleLoadSessionsList = async () => {
+    try {
+      const res = await fetch('/api/sessions');
+      if (res.ok) {
+        const list = await res.json();
+        setSessions(list);
+        return list;
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    return [];
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    localStorage.setItem('recruitai_session_id', sessionId);
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      
+      setJd(data.jd_structured);
+      setCandidates(data.resumes || []);
+      setLastShortlist(data.last_shortlist);
+      setPendingConfirmation(data.pending_confirmation);
+      setLastIntent(data.last_intent);
+      setScheduledInterviews(data.scheduled_interviews || []);
+      
+      setRouterLogs([]);
+      setSelectedCandidates(new Set());
+      setEmailStatus(null);
+      setDraftBody("");
+      setDraftSubject("");
+      setDraftRecipient("");
+
+      if (data.conversation_history && data.conversation_history.length > 0) {
+        setMessages(data.conversation_history);
+      } else {
+        setMessages([
+          {
+            role: 'assistant',
+            content: "Hello! I am **RecruitAI**, your AI recruiting assistant. Start by loading a job description and candidate resumes, or select one of the quick start options below."
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateSession = async () => {
+    try {
+      const res = await fetch('/api/sessions', { method: 'POST' });
+      if (res.ok) {
+        const newSession = await res.json();
+        setSessions(prev => [newSession, ...prev]);
+        handleSelectSession(newSession.id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const list = sessions.filter(s => s.id !== sessionId);
+        setSessions(list);
+        if (activeSessionId === sessionId) {
+          if (list.length > 0) {
+            handleSelectSession(list[0].id);
+          } else {
+            const newRes = await fetch('/api/sessions', { method: 'POST' });
+            if (newRes.ok) {
+              const newS = await newRes.json();
+              setSessions([newS]);
+              handleSelectSession(newS.id);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Right Workspace Navigation & Selections
+  const [activeTab, setActiveTab] = useState<'comparison' | 'scheduler' | 'email'>('comparison');
+  const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
+
+  // Enterprise Product States
+  const [isBlindHiring, setIsBlindHiring] = useState(false);
+  const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
+  const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
+
+  // Email draft states
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [draftRecipient, setDraftRecipient] = useState("");
+  const [emailStatus, setEmailStatus] = useState<string | null>(null);
+  
+  // PDF & In-App Report States
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportQs, setReportQs] = useState("");
+  const [reportSalary, setReportSalary] = useState("");
+
+  // PII Masking formatters for Blind Hiring
+  const formatCandidateName = (c: Candidate) => {
+    if (!isBlindHiring) return c.name;
+    const initials = c.name.split(' ').map(n => n[0]).join('.').toUpperCase();
+    return `Candidate #${c.candidate_id.slice(-4).toUpperCase()} (${initials})`;
+  };
+
+  const formatCandidateEmail = (email?: string) => {
+    if (!email) return null;
+    if (!isBlindHiring) return email;
+    const parts = email.split('@');
+    return `${parts[0][0]}***@${parts[1] || 'domain.com'}`;
+  };
+
+  // Enterprise ATS Export Handlers
+  const exportToCsv = () => {
+    const exportList = selectedCandidates.size > 0 
+      ? candidates.filter(c => selectedCandidates.has(c.candidate_id)) 
+      : candidates;
+      
+    if (exportList.length === 0) return;
+    
+    let csv = "Candidate ID,Name,Headline,Email,Phone,Location,Match Score,Experience Years,Matched Skills,Gaps,Red Flags,Tech Score,Comm Score,Recruiter Notes\n";
+    exportList.forEach(c => {
+      const e = evalNotes[c.candidate_id] || { tech: 0, comm: 0, notes: '' };
+      csv += `"${c.candidate_id}","${c.name}","${c.headline || ''}","${c.email || ''}","${c.phone || ''}","${c.location || ''}","${c.match_score || 0}%","${c.experience_years || 0}","${(c.matched_skills || []).join('; ')}","${(c.gaps || []).join('; ')}","${(c.red_flags || []).join('; ')}","${e.tech}/5","${e.comm}/5","${e.notes.replace(/"/g, '""')}"\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `recruitai_shortlist_export_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToAtsJson = () => {
+    const exportList = selectedCandidates.size > 0 
+      ? candidates.filter(c => selectedCandidates.has(c.candidate_id)) 
+      : candidates;
+      
+    const payload = {
+      export_type: "Enterprise ATS Export Payload (Greenhouse / Lever Compliant)",
+      exported_at: new Date().toISOString(),
+      active_position: jd ? jd.role : "Unspecified Position",
+      candidates: exportList.map(c => {
+        const e = evalNotes[c.candidate_id] || { tech: 0, comm: 0, notes: '' };
+        return {
+          id: c.candidate_id,
+          first_name: c.name.split(' ')[0],
+          last_name: c.name.split(' ').slice(1).join(' '),
+          headline: c.headline,
+          contact: { email: c.email, phone: c.phone, location: c.location },
+          evaluation: {
+            overall_match_score: c.match_score,
+            experience_years: c.experience_years,
+            matched_skills: c.matched_skills,
+            gaps: c.gaps,
+            red_flags: c.red_flags,
+            recruiter_rubric: {
+              technical_competency: `${e.tech}/5`,
+              communication_cultural_fit: `${e.comm}/5`,
+              notes: e.notes
+            }
+          }
+        };
+      })
+    };
+    
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `recruitai_ats_export_${new Date().toISOString().slice(0,10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Test backend connection and load sessions on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const res = await fetch('/api/health');
+        if (res.ok) setApiConnected(true);
+      } catch {
+        setApiConnected(false);
+      }
+    };
+    checkConnection();
+    const interval = setInterval(checkConnection, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const initSessions = async () => {
+      try {
+        const res = await fetch('/api/sessions');
+        if (!res.ok) return;
+        const list = await res.json();
+        setSessions(list);
+
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId && list.some((s: Session) => s.id === storedId)) {
+          handleSelectSession(storedId);
+        } else if (list.length > 0) {
+          handleSelectSession(list[0].id);
+        } else {
+          // Create default first session
+          const newSessionRes = await fetch('/api/sessions', { method: 'POST' });
+          if (newSessionRes.ok) {
+            const newSession = await newSessionRes.json();
+            setSessions([newSession]);
+            handleSelectSession(newSession.id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize sessions:", err);
+      }
+    };
+    initSessions();
+  }, []);
+
+  // Intercept messages to dynamically switch tabs and prepopulate widgets
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role !== 'assistant') return;
+
+    const timer = setTimeout(() => {
+      // 1. Detect Email draft
+      if (lastMsg.content.includes('✉️ Email Draft:')) {
+        const codeBlockMatch = lastMsg.content.match(/```([\s\S]*?)```/);
+        if (codeBlockMatch) {
+          const draftText = codeBlockMatch[1].trim();
+          const subjectMatch = draftText.match(/^Subject:\s*(.*)$/m);
+          const subject = subjectMatch ? subjectMatch[1] : "Interview Invitation";
+          const body = draftText.replace(/^Subject:\s*.*$/m, '').trim();
+          
+          setDraftSubject(subject);
+          setDraftBody(body);
+          
+          // Extract recipient email
+          const nameMatch = lastMsg.content.match(/\*\*([A-Za-z\s]+)\*\*/);
+          const name = nameMatch ? nameMatch[1] : "Candidate";
+          setDraftRecipient(name.toLowerCase().replace(/\s+/g, '_') + "@example.com");
+          setEmailStatus(null);
+          setActiveTab('email');
+        }
+      }
+
+      // 2. Detect Schedule slots
+      if (lastMsg.content.includes('📅 Interview Slots') || lastMsg.content.includes('Interview Slots for')) {
+        setActiveTab('scheduler');
+      }
+
+      // 3. Detect Comparison Table
+      if (lastMsg.content.includes('📊 Candidate Comparison Table') || lastMsg.content.includes('Candidate Comparison Table')) {
+        setActiveTab('comparison');
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [messages]);
+
+  // File upload state & handlers
+  const handleJdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', files[0]);
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `⏳ **Ingesting Job Description...** parsing raw file and structuring schema fields.`
+    }]);
+    
+    try {
+      const res = await fetch('/api/ingest/upload-jd', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Job Description upload ingestion failed');
+      }
+      
+      const structuredJd = await res.json();
+      setJd(structuredJd);
+      
+      const successMsg = {
+        role: 'assistant' as const,
+        content: `✅ **JD Ingestion Success**: Loaded Job Description for **${structuredJd.role}** (${structuredJd.experience_years}+ years experience, skills: ${structuredJd.required_skills.join(', ')}).`
+      };
+      
+      setMessages(prev => [...prev.slice(0, -1), successMsg]);
+      
+      // Persist JD to session
+      const storedId = localStorage.getItem('recruitai_session_id');
+      if (storedId) {
+        await fetch(`/api/sessions/${storedId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jd_structured: structuredJd,
+            title: `Hiring: ${structuredJd.role}`,
+            conversation_history: [...messages, successMsg]
+          })
+        });
+        handleLoadSessionsList();
+      }
+    } catch (err) {
+      console.error(err);
+      const error = err as Error;
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `❌ **JD Ingestion Failed**: ${error.message || 'An error occurred during JD upload.'}`
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+    
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for live parsing and vector database storage.`
+    }]);
+    
+    try {
+      const res = await fetch('/api/ingest/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Resume upload ingestion failed');
+      }
+      
+      const newCandidates = await res.json();
+      
+      let updatedCandidates: Candidate[] = [];
+      setCandidates(prev => {
+        const existingIds = new Set(prev.map(c => c.candidate_id));
+        const filteredNew = newCandidates.filter((c: Candidate) => !existingIds.has(c.candidate_id));
+        updatedCandidates = [...prev, ...filteredNew];
+        return updatedCandidates;
+      });
+      
+      const names = newCandidates.map((c: Candidate) => c.name).join(', ');
+      const successMsg = {
+        role: 'assistant' as const,
+        content: `✅ **Ingestion Success**: Successfully parsed and embedded ${newCandidates.length} candidate(s): **${names}**.`
+      };
+      
+      setMessages(prev => [...prev.slice(0, -1), successMsg]);
+      
+      const storedId = localStorage.getItem('recruitai_session_id');
+      if (storedId) {
+        await fetch(`/api/sessions/${storedId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resumes: updatedCandidates,
+            conversation_history: [...messages, successMsg]
+          })
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      const error = err as Error;
+      setMessages(prev => [
+        ...prev.slice(0, -1),
+        {
+          role: 'assistant',
+          content: `❌ **Ingestion Failed**: ${error.message || 'An error occurred during file upload.'}`
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setLoading(true);
+    
+    const firstFileName = files[0].name.toLowerCase();
+    const isJdUpload = files.length === 1 && (
+      firstFileName.includes('jd') || 
+      firstFileName.includes('job') || 
+      firstFileName.includes('description')
+    );
+    
+    if (isJdUpload) {
+      const formData = new FormData();
+      formData.append('file', files[0]);
+      
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⏳ **Ingesting Job Description...** parsing raw file and structuring schema fields.`
+      }]);
+      
+      try {
+        const res = await fetch('/api/ingest/upload-jd', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Job Description upload ingestion failed');
+        }
+        
+        const structuredJd = await res.json();
+        setJd(structuredJd);
+        
+        const successMsg = {
+          role: 'assistant' as const,
+          content: `✅ **JD Ingestion Success**: Loaded Job Description for **${structuredJd.role}** (${structuredJd.experience_years}+ years experience, skills: ${structuredJd.required_skills.join(', ')}).`
+        };
+        
+        setMessages(prev => [...prev.slice(0, -1), successMsg]);
+        
+        // Persist JD to session
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId) {
+          await fetch(`/api/sessions/${storedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jd_structured: structuredJd,
+              title: `Hiring: ${structuredJd.role}`,
+              conversation_history: [...messages, successMsg]
+            })
+          });
+          handleLoadSessionsList();
+        }
+      } catch (err) {
+        console.error(err);
+        const error = err as Error;
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: 'assistant',
+            content: `❌ **JD Ingestion Failed**: ${error.message || 'An error occurred during JD upload.'}`
+          }
+        ]);
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    } else {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+      
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⏳ **Ingesting Resumes...** uploading ${files.length} resume(s) for live parsing and pgvector vector storage.`
+      }]);
+      
+      try {
+        const res = await fetch('/api/ingest/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Resume upload ingestion failed');
+        }
+        
+        const newCandidates = await res.json();
+        
+        let updatedCandidates: Candidate[] = [];
+        setCandidates(prev => {
+          const existingIds = new Set(prev.map(c => c.candidate_id));
+          const filteredNew = newCandidates.filter((c: Candidate) => !existingIds.has(c.candidate_id));
+          updatedCandidates = [...prev, ...filteredNew];
+          return updatedCandidates;
+        });
+        
+        const names = newCandidates.map((c: Candidate) => c.name).join(', ');
+        const successMsg = {
+          role: 'assistant' as const,
+          content: `✅ **Ingestion Success**: Successfully parsed and embedded ${newCandidates.length} candidate(s): **${names}**.`
+        };
+        
+        setMessages(prev => [...prev.slice(0, -1), successMsg]);
+        
+        // Persist updated candidate list and conversation history to session
+        const storedId = localStorage.getItem('recruitai_session_id');
+        if (storedId) {
+          await fetch(`/api/sessions/${storedId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              resumes: updatedCandidates,
+              conversation_history: [...messages, successMsg]
+            })
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        const error = err as Error;
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          {
+            role: 'assistant',
+            content: `❌ **Ingestion Failed**: ${error.message || 'An error occurred during file upload.'}`
+          }
+        ]);
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const openReportPreview = () => {
+    let interviewQs = "";
+    let salaryInfo = "";
+    
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === 'assistant') {
+        if (!interviewQs && (msg.content.includes("Interview Prep Questions") || msg.content.includes("interview_questions") || msg.content.includes("Interview questions") || msg.content.includes("Interview prep questions"))) {
+          interviewQs = msg.content;
+        }
+        if (!salaryInfo && (msg.content.includes("Salary Benchmark") || msg.content.includes("salary range") || msg.content.includes("Salary expectations") || msg.content.includes("salary benchmark"))) {
+          salaryInfo = msg.content;
+        }
+      }
+    }
+    setReportQs(interviewQs || "No interview questions generated yet. Ask: 'Generate prep questions for the top candidate'.");
+    setReportSalary(salaryInfo || "No salary benchmark queries performed. Ask: 'What is the average salary range for this role?'.");
+    setShowReportModal(true);
+  };
+
+  const downloadPdfReport = async () => {
+    try {
+      setLoading(true);
+      let interviewQs = "";
+      let salaryInfo = "";
+      
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === 'assistant') {
+          if (!interviewQs && (msg.content.includes("Interview Prep Questions") || msg.content.includes("interview_questions") || msg.content.includes("Interview questions") || msg.content.includes("Interview prep questions"))) {
+            interviewQs = msg.content;
+          }
+          if (!salaryInfo && (msg.content.includes("Salary Benchmark") || msg.content.includes("salary range") || msg.content.includes("Salary expectations") || msg.content.includes("salary benchmark"))) {
+            salaryInfo = msg.content;
+          }
+        }
+      }
+      
+      const res = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jd: jd,
+          shortlist: lastShortlist || candidates,
+          interview_questions: interviewQs || "No questions generated.",
+          salary_data: salaryInfo || "No salary data benchmarks available."
+        })
+      });
+
+      if (!res.ok) throw new Error("Report generation failed");
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Recruitment_Report_${jd?.role || 'Position'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to download PDF report.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Send message to FastAPI agent
+  const handleSend = async (text: string) => {
+    if (!text.trim() || loading) return;
+
+    setLoading(true);
+    setInput('');
+    
+    const userMsg: Message = { role: 'user', content: text };
+    setMessages(prev => [...prev, userMsg]);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          conversation_history: messages,
+          jd_structured: jd,
+          resumes: candidates,
+          last_shortlist: lastShortlist,
+          pending_confirmation: pendingConfirmation,
+          last_intent: lastIntent,
+          scheduled_interviews: scheduledInterviews,
+          session_id: activeSessionId
+        }),
+        signal: controller.signal
+      });
+
+      if (!res.ok) throw new Error('API server returned an error');
+
+      const data = await res.json();
+      
+      setJd(data.jd_structured);
+      setCandidates(data.resumes || []);
+      setLastShortlist(data.last_shortlist);
+      setPendingConfirmation(data.pending_confirmation);
+      setLastIntent(data.last_intent);
+      setRouterLogs(data.router_logs || []);
+      setScheduledInterviews(data.scheduled_interviews || []);
+
+      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      handleLoadSessionsList();
+    } catch (err) {
+      const error = err as Error;
+      if (error.name === 'AbortError') {
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: "🛑 **Task Cancelled**: The user stopped the current query execution." 
+        }]);
+      } else {
+        console.error(err);
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the backend agent server is running." 
+        }]);
+      }
+    } finally {
+      setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleSuggestion = (prompt: string) => {
+    handleSend(prompt);
+  };
+
+  const toggleCandidateSelect = (cid: string) => {
+    const next = new Set(selectedCandidates);
+    if (next.has(cid)) {
+      next.delete(cid);
+    } else {
+      next.add(cid);
+    }
+    setSelectedCandidates(next);
+  };
+
+  const handleSendEmailSimulation = async () => {
+    if (!draftRecipient || !draftBody) return;
+    setLoading(true);
+    setEmailStatus(null);
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email_draft: `Subject: ${draftSubject}\n\n${draftBody}`,
+          recipient_email: draftRecipient
+        })
+      });
+
+      if (!res.ok) throw new Error('Failed to send email outreach');
+
+      const data = await res.json();
+      setEmailStatus(data.status);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `✉️ **Email Outreach Dispatch Output**:\n\n${data.status}`
+      }]);
+    } catch (err) {
+      console.error(err);
+      const error = err as Error;
+      setEmailStatus("Failed to send email draft.");
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `❌ **Failed to send email outreach**: ${error.message || 'Server error'}`
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectSlot = (slotNo: number) => {
+    handleSend(`slot ${slotNo}`);
+  };
+
+  const clearChat = () => {
+    setMessages([
+      {
+        role: 'assistant',
+        content: "Chat history cleared. Let me know what you want to do next!"
+      }
+    ]);
+    setJd(null);
+    setCandidates([]);
+    setLastShortlist(null);
+    setPendingConfirmation(null);
+    setLastIntent(null);
+    setRouterLogs([]);
+    setScheduledInterviews([]);
+    setSelectedCandidates(new Set());
+    setEmailStatus(null);
+  };
+
+  const filteredCandidates = candidates.filter(c => 
+    c.name.toLowerCase().includes(candidateFilter.toLowerCase()) ||
+    (c.matched_skills && c.matched_skills.some(s => s.toLowerCase().includes(candidateFilter.toLowerCase())))
+  );
+
+  return (
+    <main className="flex h-screen w-screen bg-transparent text-foreground overflow-hidden font-sans select-none relative">
+      
+      {/* SESSIONS SIDEBAR (FAR LEFT) */}
+      {isSidebarOpen && (
+        <>
+          {/* Backdrop on mobile/tablet */}
+          <div 
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 w-[230px] border-r border-slate-200 bg-white  flex flex-col shrink-0 lg:relative lg:translate-x-0">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-500">Conversations</span>
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="text-slate-500 hover:text-slate-400 transition p-1 hover:bg-slate-50 rounded-lg animate-in fade-in"
+                title="Close sidebar"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <div className="p-3">
+              <button
+                onClick={handleCreateSession}
+                className="w-full bg-brand-primary hover:bg-indigo-700 text-white py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-sm hover:-translate-y-[1px] active:translate-y-0"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+                <span>New Campaign</span>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-1">
+              {sessions.map(s => {
+                const isActive = s.id === activeSessionId;
+                return (
+                  <div 
+                    key={s.id}
+                    onClick={() => {
+                      handleSelectSession(s.id);
+                      if (window.innerWidth < 1024) setIsSidebarOpen(false);
+                    }}
+                    className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all text-xs border ${
+                      isActive 
+                        ? 'bg-indigo-50 border-indigo-200 text-brand-primary font-semibold shadow-sm' 
+                        : 'border-transparent text-slate-500 hover:bg-white hover:text-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <Bot className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-brand-primary' : 'text-slate-500'}`} />
+                      <span className="truncate">{s.title || 'New Chat'}</span>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteSession(s.id, e)}
+                      className="text-slate-600 hover:text-brand-rose transition p-1 opacity-0 group-hover:opacity-100 shrink-0 hover:bg-slate-50 rounded"
+                      title="Delete Campaign"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+        </>
+      )}
+
+      {/* Sidebar toggle button when closed */}
+      {!isSidebarOpen && (
+        <div className="absolute left-3 top-3.5 z-40">
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2.5 bg-white border border-slate-200 hover:border-slate-200 text-slate-700 rounded-xl shadow-lg transition-all"
+            title="Open Conversations"
+          >
+            <Bot className="w-4 h-4 text-brand-primary" />
+          </button>
+        </div>
+      )}
+      
+      {/* 1. LEFT WORKSPACE PANEL */}
+      {isLeftPanelOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+          onClick={() => setIsLeftPanelOpen(false)}
+        />
+      )}
+      <section className={`fixed inset-y-0 left-0 z-45 w-80 lg:w-96 p-4 flex flex-col gap-4 overflow-y-auto shrink-0 select-text bg-slate-50/50 border-r border-slate-200 shadow-sm transition-all duration-200 transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto ${
+        isLeftPanelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3 bg-transparent">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-brand-primary" />
+            <h2 className="font-bold text-xs uppercase tracking-wider text-slate-800">Workspace Data</h2>
+          </div>
+          <button 
+            onClick={() => setIsLeftPanelOpen(false)}
+            className="lg:hidden text-slate-500 hover:text-brand-primary p-1 hover:bg-slate-100 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ACTIVE JOB DESCRIPTION */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+          <div className="flex items-center justify-between text-brand-primary font-bold text-xs uppercase tracking-wider">
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-3.5 h-3.5 text-brand-primary" />
+              <span>Active Position</span>
+            </div>
+          </div>
+          {jd ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-1">
+                <h3 className="font-bold text-slate-900 text-sm tracking-tight">{jd.role}</h3>
+                {jd.employment_type && (
+                  <span className="text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-md border border-slate-200">
+                    {jd.employment_type}
+                  </span>
+                )}
+              </div>
+              
+              {(jd.company_name || jd.location) && (
+                <div className="text-xs font-medium text-slate-600 flex flex-wrap items-center gap-1.5">
+                  {jd.company_name && <span>🏢 {jd.company_name}</span>}
+                  {jd.company_name && jd.location && <span>•</span>}
+                  {jd.location && <span>📍 {jd.location}</span>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1 border-t border-slate-100 mt-1">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Experience</span>
+                  <span className="text-slate-900 font-semibold">{jd.experience_years}+ years</span>
+                </div>
+                {jd.salary_range && (
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Salary</span>
+                    <span className="text-emerald-700 font-semibold">{jd.salary_range}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Required Skills</span>
+                <div className="flex flex-wrap gap-1">
+                  {jd.required_skills && jd.required_skills.map((skill, idx) => (
+                    <span key={idx} className="bg-slate-100 text-slate-800 text-[10px] px-2 py-0.5 rounded-md border border-slate-200 font-medium">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 italic py-2">
+              No Job Description loaded. Let&apos;s try:
+              <button 
+                onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt")} 
+                className="mt-2 text-brand-primary font-semibold flex items-center gap-1 hover:underline text-left text-[11px]"
+              >
+                📂 Load Sample JD file
+              </button>
+            </div>
+          )}
+
+          <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Custom JD</span>
+            <div className="relative border border-dashed border-slate-300 hover:border-brand-primary rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 hover:bg-white group">
+              <input 
+                type="file" 
+                accept=".txt,.pdf,.doc,.docx"
+                onChange={handleJdUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+              />
+              <Paperclip className="w-3.5 h-3.5 text-slate-500 group-hover:text-brand-primary transition-colors" />
+              <span className="text-xs font-semibold text-slate-700 group-hover:text-brand-primary transition-colors">Select JD File (.pdf, .docx, .txt)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* SCREENED CANDIDATES (TALENT POOL) */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-brand-primary font-bold text-xs uppercase tracking-wider">
+              <Users className="w-4 h-4" />
+              <span>Talent Pool ({filteredCandidates.length})</span>
+            </div>
+            {candidates.length > 1 && (
+              <button
+                onClick={() => {
+                  if (selectedCandidates.size === candidates.length) {
+                    setSelectedCandidates(new Set());
+                  } else {
+                    setSelectedCandidates(new Set(candidates.map(c => c.candidate_id)));
+                  }
+                }}
+                className="text-xs text-brand-primary hover:underline font-semibold transition-colors"
+              >
+                {selectedCandidates.size === candidates.length ? 'Deselect All' : 'Select All'}
+              </button>
+            )}
+          </div>
+
+          {/* Hiring Analytics Summary Bar */}
+          {candidates.length > 0 && (
+            <div className="grid grid-cols-3 gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-center">
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Pool</span>
+                <span className="text-xs font-bold text-slate-900">{candidates.length}</span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Shortlisted</span>
+                <span className="text-xs font-bold text-emerald-700">
+                  {candidates.filter(c => (c.match_score || 0) >= 80).length}
+                </span>
+              </div>
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Avg Match</span>
+                <span className="text-xs font-bold text-indigo-700">
+                  {candidates.length ? (candidates.reduce((a, c) => a + (c.match_score || 0), 0) / candidates.length).toFixed(0) : 0}%
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Search bar & ATS Export Row */}
+          <div className="flex flex-col gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input 
+                type="text"
+                placeholder="Filter candidate by name, title, or skills..."
+                value={candidateFilter}
+                onChange={e => setCandidateFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-brand-primary focus:bg-white focus:ring-1 focus:ring-brand-primary transition-all rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400"
+              />
+            </div>
+
+            {/* ATS Bulk Exports */}
+            {candidates.length > 0 && (
+              <div className="flex gap-1.5 justify-end">
+                <button
+                  onClick={exportToCsv}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 font-semibold transition"
+                  title="Export shortlist to CSV"
+                >
+                  📥 Export CSV
+                </button>
+                <button
+                  onClick={exportToAtsJson}
+                  className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-brand-primary px-2.5 py-1 rounded-lg border border-indigo-200 font-semibold transition"
+                  title="Export to Greenhouse/Lever ATS JSON payload"
+                >
+                  📄 ATS JSON
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Candidate list container */}
+          {filteredCandidates.length > 0 ? (
+            <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+              {filteredCandidates.map((c) => {
+                const isSelected = selectedCandidates.has(c.candidate_id);
+                const score = c.match_score || 0;
+                const scoreBadge = score >= 80 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : score >= 50 
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                  : score > 0 
+                  ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                  : 'bg-slate-100 text-slate-600 border-slate-200';
+                
+                return (
+                  <div 
+                    key={c.candidate_id} 
+                    className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all ${
+                      isSelected 
+                        ? 'bg-indigo-50/50 border-brand-primary shadow-sm ring-1 ring-brand-primary/30' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                  >
+                    {/* Header: Checkbox + Name + Headline + Score */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <input 
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleCandidateSelect(c.candidate_id)}
+                          className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-primary cursor-pointer shrink-0"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span 
+                            className="font-bold text-slate-900 text-sm truncate cursor-pointer hover:text-brand-primary transition-colors"
+                            onClick={() => setInspectedCandidate(c)}
+                          >
+                            {formatCandidateName(c)}
+                          </span>
+                          {c.headline && (
+                            <span className="text-xs text-slate-600 font-medium truncate">{c.headline}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {score > 0 && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${scoreBadge}`}>
+                          {score.toFixed(0)}% Match
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Contact Badges */}
+                    {(c.email || c.phone || c.location) && (
+                      <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500 pt-0.5">
+                        {c.email && <span className="truncate max-w-[170px]" title={c.email}>✉️ {formatCandidateEmail(c.email)}</span>}
+                        {c.phone && <span>📞 {!isBlindHiring ? c.phone : '+1 ***-***-****'}</span>}
+                        {c.location && <span>📍 {c.location}</span>}
+                      </div>
+                    )}
+
+                    {/* Red flags indicator */}
+                    {c.red_flags && c.red_flags.length > 0 && (
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-2 text-[10px] text-rose-700 space-y-0.5">
+                        <span className="font-bold uppercase tracking-wider text-[9px] flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          {c.red_flags.length} Red Flag(s) Detected
+                        </span>
+                        {c.red_flags.map((flag, idx) => (
+                          <div key={idx} className="pl-1 text-slate-700">• {flag}</div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Experience & Skills */}
+                    <div className="text-xs space-y-1.5 pt-1 border-t border-slate-100">
+                      {c.experience_years != null && (
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>Experience:</span>
+                          <span className="text-slate-900 font-bold">{c.experience_years.toFixed(1)} yrs</span>
+                        </div>
+                      )}
+                      
+                      {/* Candidate Skills tags */}
+                      {((c.matched_skills && c.matched_skills.length > 0) || (c.skills && c.skills.length > 0)) && (
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Key Skills</span>
+                          <div className="flex flex-wrap gap-1">
+                            {(c.matched_skills && c.matched_skills.length > 0 ? c.matched_skills : (c.skills || [])).slice(0, 5).map((skill, sIdx) => (
+                              <span key={sIdx} className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-md border border-indigo-100 font-medium">
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Candidate actions */}
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
+                      <button
+                        onClick={() => setInspectedCandidate(c)}
+                        className="text-xs text-brand-primary font-semibold hover:underline flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" /> Rubric & Notes
+                      </button>
+
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => {
+                            handleSend(`draft email for ${c.name}`);
+                            setIsLeftPanelOpen(false);
+                          }}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
+                          title="Draft Email"
+                        >
+                          ✉️ Email
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleSend(`schedule an interview with ${c.name}`);
+                            setIsLeftPanelOpen(false);
+                          }}
+                          className="text-[10px] px-2 py-1 rounded-lg bg-brand-primary text-white hover:bg-indigo-700 font-semibold transition"
+                          title="Schedule Interview"
+                        >
+                          📅 Schedule
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 italic py-6 text-center bg-slate-50 rounded-xl border border-slate-100">
+              No candidates found in talent pool. Upload PDF/DOCX resumes below.
+            </div>
+          )}
+
+          {/* Resume Upload Option */}
+          <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Upload Candidate Resumes</span>
+            <div className="relative border border-dashed border-slate-300 hover:border-brand-primary rounded-xl p-2.5 flex items-center justify-center gap-2 cursor-pointer transition-all bg-slate-50 hover:bg-white group">
+              <input 
+                type="file" 
+                multiple
+                accept=".txt,.pdf,.doc,.docx"
+                onChange={handleResumeUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+              />
+              <Paperclip className="w-3.5 h-3.5 text-slate-500 group-hover:text-brand-primary transition-colors" />
+              <span className="text-xs font-semibold text-slate-700 group-hover:text-brand-primary transition-colors">Attach Candidate PDF/DOCX Resumes</span>
+            </div>
+          </div>
+        </div>
+
+        {/* BOOKED INTERVIEWS */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-2.5">
+          <div className="flex items-center gap-2 text-brand-primary font-bold text-xs uppercase tracking-wider">
+            <Calendar className="w-3.5 h-3.5 text-brand-primary" />
+            <span>Scheduled Interviews ({scheduledInterviews.length})</span>
+          </div>
+          {scheduledInterviews.length > 0 ? (
+            <div className="flex flex-col gap-2 overflow-y-auto max-h-[160px] custom-scrollbar pr-1">
+              {scheduledInterviews.map((item, idx) => (
+                <div key={idx} className="p-2.5 border border-slate-200 bg-slate-50/50 rounded-xl flex flex-col gap-0.5">
+                  <div className="font-bold text-slate-900 text-xs truncate">{item.candidate_name}</div>
+                  <div className="text-[10px] text-brand-primary font-mono font-bold">{item.slot}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic py-1 text-center">No interviews booked yet.</p>
+          )}
+        </div>
+      </section>
+
+      {/* 2. CHAT PANEL (CENTER) */}
+      <section className="flex-1 flex flex-col bg-transparent relative select-text min-w-0 overflow-x-hidden">
+        <header className={`h-16 border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between bg-white sticky top-0 z-10 ${!isSidebarOpen ? 'pl-16' : ''}`}>
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-brand-primary text-white rounded-xl border border-indigo-200 hidden xs:block">
+              <Cpu className="w-5 h-5 text-brand-primary animate-pulse" />
+            </div>
+            <div>
+              <h1 className="font-black text-xs sm:text-sm tracking-tight uppercase flex items-center gap-1.5">
+                <span className="text-brand-primary font-bold">RecruitAI</span>
+                <span className="text-[9px] bg-brand-primary text-white px-2 py-0.5 rounded-full font-bold font-mono shadow-sm">v2.0</span>
+              </h1>
+              <p className="text-[9px] sm:text-[10px] text-slate-500">Agent Supervisor</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Mobile Toggles for Panels */}
+            <button
+              onClick={() => {
+                setIsLeftPanelOpen(true);
+                setIsRightPanelOpen(false);
+              }}
+              className="lg:hidden p-2 bg-slate-50 border border-slate-200 hover:border-slate-200 text-slate-400 hover:text-brand-primary rounded-xl transition"
+              title="Workspace Data"
+            >
+              <Database className="w-4 h-4 text-brand-primary" />
+            </button>
+            <button
+              onClick={() => {
+                setIsRightPanelOpen(true);
+                setIsLeftPanelOpen(false);
+              }}
+              className="lg:hidden p-2 bg-slate-50 border border-slate-200 hover:border-slate-200 text-slate-400 hover:text-brand-primary rounded-xl transition"
+              title="Widgets & Reports"
+            >
+              <Sliders className="w-4 h-4 text-brand-primary" />
+            </button>
+
+            <button 
+              onClick={() => setIsBlindHiring(!isBlindHiring)}
+              className={`text-[10px] px-2.5 py-1 rounded-full border transition-all font-bold flex items-center gap-1 cursor-pointer ${
+                isBlindHiring 
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-sm' 
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Toggle Blind Hiring (PII Masking for Bias-Free Screening)"
+            >
+              <span>{isBlindHiring ? '🔒 Blind Mode: ON' : '🔓 Blind Mode: OFF'}</span>
+            </button>
+
+            <div className="hidden md:flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-slate-200 text-[10px]">
+              <span className={`w-1.5 h-1.5 rounded-full ${apiConnected ? 'bg-brand-emerald animate-pulse' : 'bg-brand-rose'}`} />
+              <span className="text-slate-305 font-bold font-mono">{apiConnected ? 'API: ONLINE' : 'API: OFFLINE'}</span>
+            </div>
+            
+            <button 
+              onClick={openReportPreview}
+              className="text-[10px] bg-slate-50 border border-indigo-200 hover:border-indigo-300 text-slate-800 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-sm hover:shadow-sm"
+            >
+              📄 <span className="hidden sm:inline">Report Preview</span><span className="sm:hidden">Report</span>
+            </button>
+            <button 
+              onClick={clearChat}
+              className="text-[10px] border border-slate-200 hover:border-brand-rose/25 bg-slate-50 text-slate-405 hover:text-brand-rose px-2.5 py-1.5 rounded-xl transition-all hidden xs:block"
+            >
+              Reset
+            </button>
+          </div>
+        </header>
+
+        {/* CHAT MESSAGES WINDOW */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4 max-w-4xl mx-auto w-full custom-scrollbar">
+          {messages.map((msg, idx) => {
+            const isUser = msg.role === 'user';
+            return (
+              <div 
+                key={idx} 
+                className={`flex gap-3 max-w-[85%] min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-205 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+              >
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                  isUser ? 'bg-slate-50 border border-indigo-200 text-brand-primary' : 'bg-slate-50 border border-slate-200 text-slate-450'
+                }`}>
+                  {isUser ? <User className="w-4 h-4 text-brand-primary" /> : <Bot className="w-4 h-4 text-slate-500" />}
+                </div>
+
+                <div className={`p-4 rounded-2xl border text-sm leading-relaxed min-w-0 max-w-full overflow-hidden ${
+                  isUser 
+                    ? 'bg-white border-indigo-200 text-slate-900 rounded-tr-none shadow-sm' 
+                    : 'bg-white border-slate-200 text-slate-800 rounded-tl-none shadow-lg '
+                }`}>
+                  <MarkdownText text={msg.content} />
+                </div>
+              </div>
+            );
+          })}
+          
+          {loading && (
+            <div className="flex gap-3 max-w-[85%]">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-slate-50 border border-slate-200 text-slate-500">
+                <Bot className="w-4 h-4" />
+              </div>
+              <div className="p-4 rounded-2xl border border-slate-200 bg-white flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-primary animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          )}
+          
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="border-t border-slate-200 bg-white  p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
+          {/* Action Chips */}
+          <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={() => handleSuggestion("load JD backend/data/jds/senior_fullstack_engineer.txt and resumes from backend/data/resumes")}
+              className="text-xs bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200 text-indigo-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              🚀 Ingest Sample Files
+            </button>
+            <button 
+              onClick={() => handleSuggestion("fetch JD for Frontend Developer via API")}
+              className="text-xs bg-sky-50 hover:bg-sky-100/80 border border-sky-200 text-sky-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              🌐 Fetch Job via API
+            </button>
+            <button 
+              onClick={() => handleSuggestion("Screen candidates matching the job description")}
+              className="text-xs bg-violet-50 hover:bg-violet-100/80 border border-violet-200 text-violet-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              🔍 Screen Candidates
+            </button>
+            <button 
+              onClick={() => handleSuggestion("compare top candidates")}
+              className="text-xs bg-blue-50 hover:bg-blue-100/80 border border-blue-200 text-blue-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              📊 Compare Side-by-Side
+            </button>
+            <button 
+              onClick={() => handleSuggestion("check resumes for red flags")}
+              className="text-xs bg-rose-50 hover:bg-rose-100/80 border border-rose-200 text-rose-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              ⚠️ Red Flags Check
+            </button>
+            <button 
+              onClick={() => handleSuggestion("generate interview prep questions for the job description")}
+              className="text-xs bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              📋 Prep Questions
+            </button>
+            <button 
+              onClick={() => handleSuggestion("draft outreach email templates for top candidates")}
+              className="text-xs bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              ✉️ Outreach Draft
+            </button>
+            <button 
+              onClick={() => handleSuggestion("clear recruitment workspace context")}
+              className="text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-full transition-all flex items-center gap-1.5 font-bold hover:-translate-y-[1px] active:translate-y-0 cursor-pointer shadow-sm"
+            >
+              🧹 Reset Workspace
+            </button>
+          </div>
+
+          {/* Form */}
+          <form 
+            onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
+            className="flex gap-2 bg-white border border-slate-200 focus-within:border-indigo-300 rounded-2xl p-2 transition-all shadow-sm focus-within:shadow-sm"
+          >
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              multiple
+              accept=".pdf,.docx,.txt"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className="text-slate-500 hover:text-brand-primary disabled:opacity-50 p-3 transition hover:bg-slate-50 rounded-xl shrink-0"
+              title="Attach PDF/DOCX Resumes"
+            >
+              <Paperclip className="w-4.5 h-4.5" />
+            </button>
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type command or query for the Agent..."
+              className="flex-1 bg-transparent px-4 py-2 text-sm border-none outline-none focus:ring-0 text-slate-205 placeholder-slate-600"
+              disabled={loading}
+            />
+            {loading ? (
+              <button 
+                type="button"
+                onClick={handleStop}
+                className="bg-brand-rose hover:bg-brand-rose/90 text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-bold gap-1 text-xs hover:-translate-y-[1px] active:translate-y-0"
+                title="Stop execution"
+              >
+                <X className="w-4 h-4" />
+                <span>Stop</span>
+              </button>
+            ) : (
+              <button 
+                type="submit"
+                disabled={!input.trim()}
+                className="bg-brand-primary hover:bg-indigo-700 disabled:bg-slate-50 disabled:text-slate-400 disabled:shadow-none text-white rounded-xl px-5 py-2.5 transition shrink-0 shadow-sm hover:shadow-sm flex items-center justify-center font-black hover:-translate-y-[1px] active:translate-y-0 cursor-pointer"
+              >
+                <Send className="w-4 h-4 text-white" />
+              </button>
+            )}
+          </form>
+        </div>
+      </section>
+
+      {/* 3. RIGHT WORKSPACE PANEL (VISUAL WIDGETS) */}
+      {isRightPanelOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden animate-in fade-in"
+          onClick={() => setIsRightPanelOpen(false)}
+        />
+      )}
+      <section className={`fixed inset-y-0 right-0 z-45 w-full max-w-[380px] flex flex-col overflow-hidden shrink-0 bg-white border border-slate-200 shadow-sm transition-all duration-200 transition-transform duration-300 lg:relative lg:translate-x-0 lg:z-auto lg:border-y-0 lg:border-r-0 lg:border-l lg:border-brand-primary/10 ${
+        isRightPanelOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+      }`}>
+        
+        {/* Workspace Nav Header */}
+        <div className="flex border-b border-slate-200 bg-white p-2 gap-1.5 shrink-0 items-center">
+          <button 
+            onClick={() => setIsRightPanelOpen(false)}
+            className="lg:hidden text-slate-500 hover:text-brand-primary p-2 hover:bg-slate-50 rounded-xl shrink-0 mr-1 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('comparison')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
+              activeTab === 'comparison' 
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>Compare</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('scheduler')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
+              activeTab === 'scheduler' 
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span>Calendar</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('email')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition-all border text-xs font-bold ${
+              activeTab === 'email' 
+                ? 'bg-brand-primary text-white border-indigo-200 shadow-sm' 
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <Mail className="w-4 h-4" />
+            <span>Email</span>
+          </button>
+        </div>
+
+        {/* TAB WORKSPACE CONTENT */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 select-text custom-scrollbar bg-white">
+
+          {/* TAB 2: CANDIDATE COMPARISON MATRIX */}
+          {activeTab === 'comparison' && (
+            <div className="flex flex-col gap-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
+                  <Sliders className="w-4 h-4 text-brand-primary" />
+                  <span>Comparison Matrix</span>
+                </div>
+                <button
+                  onClick={() => handleSuggestion("compare selected candidates")}
+                  className="text-[9px] bg-indigo-50 text-slate-800 border border-indigo-200 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-all"
+                >
+                  Generate Markdown
+                </button>
+              </div>
+
+              {candidates.length > 0 ? (
+                <div className="space-y-4">
+                  {candidates.map((c) => {
+                    const isChecked = selectedCandidates.has(c.candidate_id);
+                    return (
+                      <div 
+                        key={c.candidate_id}
+                        className={`p-4 border rounded-2xl flex flex-col gap-3 transition-all duration-200 ${
+                          isChecked 
+                            ? 'bg-indigo-50/70 border-brand-primary ring-2 ring-brand-primary/20 shadow-sm' 
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCandidateSelect(c.candidate_id)}
+                                className="w-3.5 h-3.5 rounded border-slate-200 accent-brand-primary cursor-pointer"
+                              />
+                              <span className="font-bold text-sm text-slate-900">{c.name}</span>
+                            </div>
+                            {c.headline && (
+                              <span className="text-xs text-slate-500 font-medium pl-5">{c.headline}</span>
+                            )}
+                          </div>
+                          <span className="text-[10px] bg-slate-50 border border-slate-200 text-brand-primary px-2 py-0.5 rounded-lg font-mono font-bold">
+                            Score: {c.match_score ? c.match_score.toFixed(0) : 'N/A'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs space-y-1.5 text-slate-400">
+                          {(c.email || c.phone || c.location) && (
+                            <div className="flex flex-wrap gap-2 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              {c.email && <span>✉️ {c.email}</span>}
+                              {c.phone && <span>📞 {c.phone}</span>}
+                              {c.location && <span>📍 {c.location}</span>}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Exp:</span>
+                            <span className="font-medium text-slate-800">{c.experience_years ? `${c.experience_years.toFixed(1)} years` : 'N/A'}</span>
+                          </div>
+
+                          {c.education && c.education.length > 0 && (
+                            <div>
+                              <span className="text-slate-500 block mb-0.5">Education:</span>
+                              <span className="text-slate-800 text-[11px] font-medium">{c.education.join(' • ')}</span>
+                            </div>
+                          )}
+                          
+                          <div>
+                            <span className="text-slate-500 block mb-1">Matched Skills:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {c.matched_skills && c.matched_skills.length > 0 ? (
+                                c.matched_skills.map((s, idx) => (
+                                  <span key={idx} className="bg-brand-primary text-white border border-indigo-200 text-[9px] px-2 py-0.5 rounded-lg font-medium">
+                                    {s}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-500 italic text-[10px]">None</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-500 block mb-1">Skill Gaps:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {c.gaps && c.gaps.length > 0 ? (
+                                c.gaps.map((g, idx) => (
+                                  <span key={idx} className="bg-brand-rose/10 text-brand-rose border border-brand-rose/20 text-[9px] px-2 py-0.5 rounded-lg font-medium">
+                                    {g}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-500 italic text-[10px]">None</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {c.red_flags && c.red_flags.length > 0 && (
+                            <div className="pt-1">
+                              <span className="text-brand-rose font-bold block mb-1 text-[10px] uppercase">⚠️ Red Flags:</span>
+                              <ul className="list-disc list-inside text-[10px] text-slate-305 space-y-0.5 leading-tight">
+                                {c.red_flags.map((flag, idx) => (
+                                  <li key={idx}>{flag}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {selectedCandidates.size > 0 && (
+                    <p className="text-[10px] text-slate-500 italic text-center">Comparing {selectedCandidates.size} checked candidates.</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic text-center py-10">No candidates to compare yet.</p>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: VISUAL SCHEDULER */}
+          {activeTab === 'scheduler' && (
+            <div className="flex flex-col gap-4 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
+                <Calendar className="w-4 h-4 text-brand-primary" />
+                <span>Interview Slot Scheduler</span>
+              </div>
+
+              {pendingConfirmation && pendingConfirmation.action === 'schedule_interview' ? (
+                <div className="bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">Schedule Candidate Interview</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Position: <strong className="text-slate-800">{pendingConfirmation.role}</strong></p>
+                    <p className="text-xs text-slate-500">Candidate: <strong className="text-brand-primary">{pendingConfirmation.candidate_name}</strong></p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Available time slots:</span>
+                    {pendingConfirmation.slots?.map((slot: { slot_number: number; label: string }) => (
+                      <button
+                        key={slot.slot_number}
+                        onClick={() => handleSelectSlot(slot.slot_number)}
+                        className="w-full bg-slate-50 border border-slate-200 hover:border-brand-primary/50 text-left p-3 rounded-xl flex items-center justify-between group transition-all"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="bg-slate-50 text-slate-500 font-mono text-[10px] w-6.5 h-6.5 rounded-xl flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-brand-primary transition-colors border border-slate-200 group-hover:border-indigo-200">
+                            {slot.slot_number}
+                          </span>
+                          <span className="text-xs text-slate-800 group-hover:text-brand-primary transition-colors">{slot.label}</span>
+                        </div>
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-brand-primary group-hover:translate-x-0.5 transition-all" />
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="text-[10px] text-slate-500 italic text-center mt-1 border-t border-slate-200 pt-2.5">
+                    Click a slot or reply to booking prompt with slot number (1-5).
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="p-4 border border-slate-200 bg-white rounded-2xl flex flex-col gap-2 items-center justify-center text-center py-10">
+                    <Calendar className="w-10 h-10 text-slate-700 mb-2 animate-pulse" />
+                    <h4 className="text-xs font-bold text-slate-700">No Booking Active</h4>
+                    <p className="text-[11px] text-slate-505 max-w-[200px] mt-0.5">Select &quot;Schedule&quot; action on a candidate card to trigger the booking flow.</p>
+                  </div>
+                  
+                  {scheduledInterviews.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Booked slots list:</span>
+                      {scheduledInterviews.map((item, idx) => (
+                        <div key={idx} className="bg-brand-emerald/10 border border-brand-emerald/25 p-2.5 rounded-xl flex items-center justify-between">
+                          <div className="text-xs">
+                            <span className="font-bold text-slate-800 block">{item.candidate_name}</span>
+                            <span className="text-slate-500 text-[10px] font-mono">{item.slot}</span>
+                          </div>
+                          <CheckCircle className="w-4 h-4 text-brand-emerald shrink-0" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: RECRUITER EMAIL DRAUGHT DRAWER */}
+          {activeTab === 'email' && (
+            <div className="flex flex-col gap-4 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-xs font-black uppercase text-slate-400 tracking-wider">
+                <Mail className="w-4 h-4 text-brand-primary" />
+                <span>Outreach Email Drawer</span>
+              </div>
+
+              {draftBody ? (
+                <div className="bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md rounded-2xl p-4 flex flex-col gap-3.5 shadow-lg">
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Recipient:</label>
+                      <input 
+                        type="text"
+                        value={draftRecipient}
+                        onChange={e => setDraftRecipient(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-1.5 px-3 text-xs text-slate-800 focus:outline-none focus:border-brand-primary/50 transition-colors"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Subject Line:</label>
+                      <input 
+                        type="text"
+                        value={draftSubject}
+                        onChange={e => setDraftSubject(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-1.5 px-3 text-xs text-slate-800 focus:outline-none focus:border-brand-primary/50 font-medium transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 block mb-1">Email Body:</label>
+                      <textarea
+                        rows={8}
+                        value={draftBody}
+                        onChange={e => setDraftBody(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 focus:outline-none focus:border-brand-primary/50 font-mono leading-relaxed transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {emailStatus && (
+                    <div className="p-2.5 bg-brand-emerald/10 border border-brand-emerald/20 rounded-xl text-xs text-brand-emerald flex items-center gap-1.5 font-medium">
+                      <Check className="w-4 h-4" />
+                      {emailStatus}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end mt-1 pt-3 border-t border-slate-200">
+                    <button
+                      onClick={() => {
+                        setDraftBody("");
+                        setDraftSubject("");
+                        setDraftRecipient("");
+                        setEmailStatus(null);
+                      }}
+                      className="text-xs border border-slate-200 hover:border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-800 px-3.5 py-1.5 rounded-xl transition"
+                    >
+                      Clear Draft
+                    </button>
+                    <button
+                      onClick={handleSendEmailSimulation}
+                      className="text-xs bg-brand-primary hover:bg-brand-primary/95 text-white font-bold px-4 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow hover:-translate-y-[1px] active:translate-y-0"
+                    >
+                      <Send className="w-3 h-3 rotate-90" />
+                      Send Outreach
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 border border-slate-200 bg-white rounded-2xl flex flex-col gap-2 items-center justify-center text-center py-10">
+                  <Mail className="w-10 h-10 text-slate-700 mb-2 animate-pulse" />
+                  <h4 className="text-xs font-bold text-slate-700">No Draft Active</h4>
+                  <p className="text-[11px] text-slate-500 max-w-[200px] mt-0.5">Ask the chatbot to draft an email (rejection, invite, offer) for a candidate to review it here.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </section>
+
+      {/* 4. PDF REPORT PREVIEW MODAL */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-white  z-50 flex items-center justify-center p-6 select-text animate-in fade-in duration-200">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-brand-primary" />
+                <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-900">Recruitment Summary Report</h3>
+              </div>
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="text-slate-500 hover:text-brand-primary transition text-xs font-semibold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl"
+              >
+                Close Preview
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-slate-700 custom-scrollbar">
+              
+              {/* Position Info */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2.5 text-brand-primary">1. Position target requirements</h4>
+                {jd ? (
+                  <div className="grid grid-cols-2 gap-2 text-sm text-slate-700">
+                    <div><span className="text-slate-500">Target Role:</span> <strong className="text-slate-900">{jd.role}</strong></div>
+                    <div><span className="text-slate-500">Experience Required:</span> <strong className="text-slate-900">{jd.experience_years}+ years</strong></div>
+                    <div><span className="text-slate-500">JD Tone & Culture:</span> <strong className="text-slate-900 capitalize">{jd.tone}</strong></div>
+                    <div><span className="text-slate-500">Core Skills:</span> <strong className="text-slate-900">{jd.required_skills?.join(', ') || 'None'}</strong></div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-550 italic">No Position target loaded.</p>
+                )}
+              </div>
+
+              {/* Candidates Table */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2.5 text-brand-primary">2. Shortlist Assessment</h4>
+                {(lastShortlist || candidates).length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 bg-white">
+                          <th className="py-2.5 px-3 font-semibold">Candidate Name</th>
+                          <th className="py-2.5 px-3 font-semibold">Match Score</th>
+                          <th className="py-2.5 px-3 font-semibold">Matched Skills</th>
+                          <th className="py-2.5 px-3 font-semibold">Gaps Identified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(lastShortlist || candidates).map((c, idx) => {
+                          const score = c.match_score || 0;
+                          const scoreColor = score >= 80 ? 'text-brand-emerald font-bold' : 
+                                             score >= 50 ? 'text-brand-primary font-bold' : 
+                                             'text-brand-rose font-bold';
+                          return (
+                            <tr key={idx} className="border-b border-slate-200 hover:bg-white">
+                              <td className="py-2.5 px-3 text-slate-800">{c.name}</td>
+                              <td className={`py-2.5 px-3 ${scoreColor}`}>{score.toFixed(0)}/100</td>
+                              <td className="py-2.5 px-3 text-slate-500">{c.matched_skills?.join(', ') || 'None'}</td>
+                              <td className="py-2.5 px-3 text-slate-500">{c.gaps?.join(', ') || 'None'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-550 italic">No candidates screened or shortlisted yet.</p>
+                )}
+              </div>
+
+              {/* Salary Data */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2.5 text-brand-primary">3. Market Salary expectations</h4>
+                <MarkdownText text={reportSalary} />
+              </div>
+
+              {/* Interview prep questions */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2.5 text-brand-primary">4. Interview prep questions</h4>
+                <MarkdownText text={reportQs} />
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3 bg-white">
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="text-xs border border-slate-200 hover:border-slate-200 bg-slate-50 text-slate-500 hover:text-brand-primary px-4 py-2 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={downloadPdfReport}
+                className="text-xs bg-brand-primary hover:bg-indigo-700 text-white font-black px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-sm hover:shadow-sm"
+              >
+                <Send className="w-3.5 h-3.5 rotate-90 text-white" />
+                Download PDF Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. CANDIDATE INSPECTION & RECRUITER RUBRIC MODAL */}
+      {inspectedCandidate && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 sm:p-6 select-text animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-brand-primary flex items-center justify-center font-bold text-sm">
+                  {formatCandidateName(inspectedCandidate).slice(0, 2)}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900">{formatCandidateName(inspectedCandidate)}</h3>
+                  {inspectedCandidate.headline && (
+                    <p className="text-xs text-slate-500 font-medium">{inspectedCandidate.headline}</p>
+                  )}
+                </div>
+              </div>
+              <button 
+                onClick={() => setInspectedCandidate(null)}
+                className="text-slate-500 hover:text-brand-primary transition p-2 bg-slate-100 rounded-xl"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-slate-700 custom-scrollbar">
+              
+              {/* Overview Metrics */}
+              <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Match Score</span>
+                  <span className="text-sm font-black text-brand-primary">{(inspectedCandidate.match_score || 0).toFixed(0)}%</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Experience</span>
+                  <span className="text-sm font-black text-slate-800">{inspectedCandidate.experience_years ? `${inspectedCandidate.experience_years.toFixed(1)} yrs` : 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Location</span>
+                  <span className="text-sm font-bold text-slate-800">{inspectedCandidate.location || 'Remote'}</span>
+                </div>
+              </div>
+
+              {/* Skills & Gaps */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3.5 border border-slate-200 rounded-xl bg-slate-50/30">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block mb-2">Matched Competencies</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(inspectedCandidate.matched_skills || inspectedCandidate.skills || []).map((s, idx) => (
+                      <span key={idx} className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
+                        ✓ {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-3.5 border border-slate-200 rounded-xl bg-slate-50/30">
+                  <span className="text-xs font-bold text-rose-600 uppercase tracking-wider block mb-2">Identified Skill Gaps</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(inspectedCandidate.gaps && inspectedCandidate.gaps.length > 0) ? (
+                      inspectedCandidate.gaps.map((g, idx) => (
+                        <span key={idx} className="bg-rose-50 text-rose-700 text-xs px-2.5 py-1 rounded-lg border border-rose-200 font-medium">
+                          ⚠ {g}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">No skill gaps identified</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Interactive Recruiter Evaluation Rubric */}
+              <div className="border border-indigo-200 bg-indigo-50/30 rounded-xl p-4 space-y-4">
+                <h4 className="font-extrabold text-xs uppercase tracking-wider text-brand-primary flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" /> Recruiter Assessment Rubric & Team Notes
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Technical Fit Score */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">Technical Architecture Fit (1-5 ⭐):</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(star => {
+                        const currentTech = evalNotes[inspectedCandidate.candidate_id]?.tech || 0;
+                        return (
+                          <button
+                            key={star}
+                            onClick={() => {
+                              const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                              setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, tech: star } });
+                            }}
+                            className={`text-lg p-1 transition ${star <= currentTech ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-300'}`}
+                          >
+                            ★
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Culture Fit Score */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">Communication & Culture Fit (1-5 ⭐):</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(star => {
+                        const currentComm = evalNotes[inspectedCandidate.candidate_id]?.comm || 0;
+                        return (
+                          <button
+                            key={star}
+                            onClick={() => {
+                              const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                              setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, comm: star } });
+                            }}
+                            className={`text-lg p-1 transition ${star <= currentComm ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-300'}`}
+                          >
+                            ★
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recruiter Notes */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">Recruiter & Interviewer Notes:</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Enter technical interview feedback, salary expectation notes, or team comments..."
+                    value={evalNotes[inspectedCandidate.candidate_id]?.notes || ''}
+                    onChange={e => {
+                      const existing = evalNotes[inspectedCandidate.candidate_id] || { tech: 0, comm: 0, notes: '' };
+                      setEvalNotes({ ...evalNotes, [inspectedCandidate.candidate_id]: { ...existing, notes: e.target.value } });
+                    }}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-brand-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Resume Context */}
+              {inspectedCandidate.raw_text && (
+                <div className="border border-slate-200 rounded-xl p-3.5 bg-slate-50">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Resume Snippet</span>
+                  <p className="text-xs text-slate-700 font-mono leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {inspectedCandidate.raw_text.slice(0, 1500)}...
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between bg-slate-50/50">
+              <span className="text-xs text-slate-500 italic">Assessment auto-saved in campaign session</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setInspectedCandidate(null)}
+                  className="text-xs px-4 py-2 bg-brand-primary text-white font-bold rounded-xl hover:bg-indigo-700 transition"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </main>
+  );
+}
