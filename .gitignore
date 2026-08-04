@@ -26,6 +26,7 @@ scratch/
 .gemini/
 .vscode/
 .idea/
+.agents/
 
 # Node & Package Managers
 node_modules/
