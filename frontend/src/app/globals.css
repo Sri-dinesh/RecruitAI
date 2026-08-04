@@ -1,30 +1,68 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc; /* slate-50 */
-  --foreground: #0f172a; /* slate-900 */
-  --brand-primary: #4f46e5;       /* Indigo 600 */
-  --brand-emerald: #059669;       /* Emerald 600 */
-  --brand-rose: #e11d48;          /* Rose 600 */
+  --background: #F8F6F2;
+  --foreground: #111111;
+  --accent: #1B2A4A;
+  --muted: #6b7280;
+  --border: #e5e7eb;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+
+  /* Legacy dashboard color mapping to premium theme */
+  --color-brand-primary: var(--accent);
+  --color-brand-emerald: #059669;
+  --color-brand-rose: #e11d48;
   
-  --color-brand-primary: var(--brand-primary);
-  --color-brand-emerald: var(--brand-emerald);
-  --color-brand-rose: var(--brand-rose);
+  --color-indigo-50: #f1f5f9; /* Map to a neutral light shade */
+  --color-indigo-100: #e2e8f0;
+  --color-indigo-600: var(--accent);
+  --color-indigo-700: #10192e; /* Darker accent */
   
-  --font-sans: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --color-slate-50: var(--background);
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: var(--border);
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: var(--muted);
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: var(--foreground);
+  --color-slate-900: #111111;
+  --color-slate-950: #0a0a0a;
+
+  
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Consistency rule: one border-radius site-wide (6px) */
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+  --radius-3xl: 6px;
+  --radius-full: 9999px;
+
+  /* Consistency rule: one shadow style */
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-xl: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-2xl: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -46,20 +84,4 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8; /* slate-400 */
-}
-
-/* Utility Animations */
-.animate-enter {
-  animation: enter 0.2s ease-out;
-}
-
-@keyframes enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }

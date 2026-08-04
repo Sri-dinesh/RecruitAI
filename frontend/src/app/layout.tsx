@@ -1,20 +1,30 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, DM_Sans } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
+  axes: ["opsz"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "RecruitAI Co-Pilot Dashboard",
-  description: "Conversational recruitment dashboard powered by LangGraph, FastAPI, and pgvector RAG.",
+  title: "RecruitAI | Precision Candidate Intelligence",
+  description: "RecruitAI automates technical evaluations, parses resumes instantly, and enforces blind screening with uncompromising accuracy. The intelligence layer for modern recruiting.",
+  keywords: ["AI Recruitment", "ATS Integration", "Candidate Screening", "Blind Hiring", "Talent Intelligence", "LangGraph"],
+  authors: [{ name: "RecruitAI Team" }],
+  openGraph: {
+    title: "RecruitAI | Precision Candidate Intelligence",
+    description: "Automate technical evaluations, parse resumes instantly, and enforce blind screening with perfect accuracy.",
+    url: "https://recruitai.io",
+    siteName: "RecruitAI",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +35,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${fraunces.variable} ${dmSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col font-sans bg-[#F8F6F2] text-[#111111]">{children}</body>
     </html>
   );
 }
