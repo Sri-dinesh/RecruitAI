@@ -15,32 +15,50 @@ class FallbackSupabaseClient:
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        # Create chat_sessions equivalent table
+
+        # ── chat_sessions table (mirrors Supabase schema 1-to-1) ──────────────
+        # user_id defaults to LOCAL_DEV_USER_ID for offline / local development.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chat_sessions (
                 id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                title TEXT NOT NULL DEFAULT 'New Hiring Campaign',
                 jd_structured TEXT,
-                resumes TEXT,
-                last_shortlist TEXT,
+                resumes TEXT DEFAULT '[]',
+                last_shortlist TEXT DEFAULT '[]',
                 pending_confirmation TEXT,
                 last_intent TEXT,
-                scheduled_interviews TEXT,
-                conversation_history TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                scheduled_interviews TEXT DEFAULT '[]',
+                conversation_history TEXT DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Create resume_chunks equivalent table
+
+        # Migrate: add user_id column if it doesn't exist (for existing DBs)
+        try:
+            cursor.execute("ALTER TABLE chat_sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        except Exception:
+            pass  # column already exists
+
+        # Migrate: add updated_at column if it doesn't exist (for existing DBs)
+        try:
+            cursor.execute("ALTER TABLE chat_sessions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        except Exception:
+            pass  # column already exists
+
+        # ── resume_chunks table ───────────────────────────────────────────────
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS resume_chunks (
                 id TEXT PRIMARY KEY,
                 candidate_id TEXT NOT NULL,
                 candidate_name TEXT NOT NULL,
                 chunk_text TEXT NOT NULL,
-                embedding TEXT,  -- JSON string of list of floats
+                embedding TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
         conn.commit()
         conn.close()
 
@@ -145,6 +163,9 @@ class TableBuilder:
                                     d[col] = json.loads(d[col])
                                 except Exception:
                                     pass
+                        # Ensure user_id is always present in returned rows
+                        if 'user_id' not in d:
+                            d['user_id'] = 'local_dev_user_123'
                     elif self.table_name == 'resume_chunks':
                         if 'embedding' in d and d['embedding']:
                             try:
