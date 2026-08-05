@@ -6,9 +6,12 @@ import {
   Cpu, Activity, Clock, Terminal, FileText, Paperclip,
   Calendar, Mail, AlertTriangle, CheckCircle,
   Trash2, ArrowRight, Check, X,
-  Sliders, Search, Sparkles
+  Sliders, Search, Sparkles, LogOut
 } from 'lucide-react';
 import MarkdownText from '@/components/MarkdownText';
+import { useAuth } from '@/context/AuthContext';
+import AuthModal from '@/components/AuthModal';
+import { fetchWithAuth } from '@/lib/apiClient';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -94,6 +97,9 @@ interface Session {
 }
 
 export default function Home() {
+  const { user, loading: authLoading, logout } = useAuth();
+
+  // ── All hooks declared unconditionally (React rule) ───────────────────────────────
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -104,15 +110,12 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [candidateFilter, setCandidateFilter] = useState('');
-
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  
   // Mobile responsive layout states
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
-  
   // Recruitment states synchronized from backend
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -122,9 +125,11 @@ export default function Home() {
   const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
   const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
 
+
+
   const handleLoadSessionsList = async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetchWithAuth('/api/sessions');
       if (res.ok) {
         const list = await res.json();
         setSessions(list);
@@ -175,7 +180,7 @@ export default function Home() {
 
   const handleCreateSession = async () => {
     try {
-      const res = await fetch('/api/sessions', { method: 'POST' });
+      const res = await fetchWithAuth('/api/sessions', { method: 'POST' });
       if (res.ok) {
         const newSession = await res.json();
         setSessions(prev => [newSession, ...prev]);
@@ -197,7 +202,7 @@ export default function Home() {
           if (list.length > 0) {
             handleSelectSession(list[0].id);
           } else {
-            const newRes = await fetch('/api/sessions', { method: 'POST' });
+            const newRes = await fetchWithAuth('/api/sessions', { method: 'POST' });
             if (newRes.ok) {
               const newS = await newRes.json();
               setSessions([newS]);
@@ -331,7 +336,7 @@ export default function Home() {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const res = await fetch('/api/health');
+        const res = await fetchWithAuth('/api/health');
         if (res.ok) setApiConnected(true);
       } catch {
         setApiConnected(false);
@@ -345,7 +350,7 @@ export default function Home() {
   useEffect(() => {
     const initSessions = async () => {
       try {
-        const res = await fetch('/api/sessions');
+        const res = await fetchWithAuth('/api/sessions');
         if (!res.ok) return;
         const list = await res.json();
         setSessions(list);
@@ -357,7 +362,7 @@ export default function Home() {
           handleSelectSession(list[0].id);
         } else {
           // Create default first session
-          const newSessionRes = await fetch('/api/sessions', { method: 'POST' });
+          const newSessionRes = await fetchWithAuth('/api/sessions', { method: 'POST' });
           if (newSessionRes.ok) {
             const newSession = await newSessionRes.json();
             setSessions([newSession]);
@@ -429,7 +434,7 @@ export default function Home() {
     }]);
     
     try {
-      const res = await fetch('/api/ingest/upload-jd', {
+      const res = await fetchWithAuth('/api/ingest/upload-jd', {
         method: 'POST',
         body: formData
       });
@@ -496,7 +501,7 @@ export default function Home() {
     }]);
     
     try {
-      const res = await fetch('/api/ingest/upload', {
+      const res = await fetchWithAuth('/api/ingest/upload', {
         method: 'POST',
         body: formData
       });
@@ -574,7 +579,7 @@ export default function Home() {
       }]);
       
       try {
-        const res = await fetch('/api/ingest/upload-jd', {
+        const res = await fetchWithAuth('/api/ingest/upload-jd', {
           method: 'POST',
           body: formData
         });
@@ -634,7 +639,7 @@ export default function Home() {
       }]);
       
       try {
-        const res = await fetch('/api/ingest/upload', {
+        const res = await fetchWithAuth('/api/ingest/upload', {
           method: 'POST',
           body: formData
         });
@@ -729,7 +734,7 @@ export default function Home() {
         }
       }
       
-      const res = await fetch('/api/reports/generate', {
+      const res = await fetchWithAuth('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -773,7 +778,7 @@ export default function Home() {
     abortControllerRef.current = controller;
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetchWithAuth('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -843,7 +848,7 @@ export default function Home() {
     setLoading(true);
     setEmailStatus(null);
     try {
-      const res = await fetch('/api/email/send', {
+      const res = await fetchWithAuth('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -899,6 +904,19 @@ export default function Home() {
     c.name.toLowerCase().includes(candidateFilter.toLowerCase()) ||
     (c.matched_skills && c.matched_skills.some(s => s.toLowerCase().includes(candidateFilter.toLowerCase())))
   );
+
+  // ── Auth gate (early returns AFTER all hooks) ──────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f6f2]">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+  if (!user) {
+    return <AuthModal isGate />;
+  }
+
 
   return (
     <main className="flex h-screen w-screen bg-transparent text-foreground overflow-hidden font-sans select-none relative">
@@ -963,6 +981,32 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* User Profile Footer */}
+            <div className="p-3 border-t border-slate-200 mt-auto bg-slate-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-brand-primary font-bold text-xs shrink-0">
+                    {user?.user_metadata?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex flex-col truncate">
+                    <span className="text-xs font-semibold text-slate-800 truncate">
+                      {user?.user_metadata?.full_name || 'Recruiter'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 truncate">
+                      {user?.email}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                  title="Sign out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </aside>
         </>
