@@ -12,6 +12,8 @@
     "verify:build": "node scripts/verify-build.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.43.0",
     "gsap": "^3.15.0",
