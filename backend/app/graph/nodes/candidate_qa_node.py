@@ -64,7 +64,7 @@ def candidate_qa_node(state: RecruitState) -> dict:
         query_emb = embed_texts([user_query])
         if query_emb:
             c_id_filter = target_candidate.candidate_id if target_candidate else None
-            top_chunks = query_top_k(query_emb[0], k=3, candidate_id=c_id_filter)
+            top_chunks = query_top_k(query_emb[0], k=3, candidate_id=c_id_filter, user_id=state.get("user_id"))
             if top_chunks:
                 context_text += "\nVector Retrieval Snippets:\n"
                 for chunk in top_chunks:

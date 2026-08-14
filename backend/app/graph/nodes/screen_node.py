@@ -62,7 +62,7 @@ def screen_node(state: RecruitState) -> dict:
         index, candidate = item
         try:
             # Fetch 5 chunks to allow reranker selection
-            chunks = query_top_k(query_embedding, k=5, candidate_id=candidate.candidate_id)
+            chunks = query_top_k(query_embedding, k=5, candidate_id=candidate.candidate_id, user_id=state.get("user_id"))
             # Advanced RAG: Rerank chunks based on relevance
             reranked_chunks = rerank_chunks(expanded_query, chunks, top_n=3, jd=jd_dict)
             chunks_text = "\n\n".join([c["chunk_text"] for c in reranked_chunks])

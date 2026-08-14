@@ -1,3 +1,4 @@
+import re
 from langgraph.graph import StateGraph, END
 from app.graph.state import RecruitState
 from app.graph.router_node import route_and_log
@@ -12,7 +13,7 @@ from app.graph.nodes.salary_node import salary_node
 from app.graph.nodes.hitl_confirm_node import hitl_confirm_node
 from app.graph.nodes.fetch_jd_api_node import fetch_jd_api_node
 
-# Phase 10 nodes
+# Specialized nodes
 from app.graph.nodes.compare_node import compare_node
 from app.graph.nodes.email_node import email_node
 from app.graph.nodes.trend_node import trend_node
@@ -29,6 +30,7 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     """
     history = state.get("conversation_history", [])
     user_msg = history[-1]["content"] if history else ""
+    cleaned_msg = user_msg.lower().strip()
     
     # 1. Pre-classify the user query to see if it's a new task
     intent, confidence, resolved_candidate = route_and_log(user_msg, state)
@@ -36,21 +38,27 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     # 2. Conversational Context & Follow-Up prompt resolution
     if len(history) >= 2:
         last_assistant_msg = history[-2]["content"].lower() if history[-2]["role"] == "assistant" else ""
-        if "which candidate would you like to generate interview questions for" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+        
+        # Follow-up on interview questions
+        if "which candidate would you like to generate interview questions for" in last_assistant_msg or \
+           "interview questions" in last_assistant_msg:
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone|everybody|both|jd|job description|role)\b", cleaned_msg):
                 intent = "interview_questions"
-        elif "couldn't identify a candidate to draft the email for" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+                
+        # Follow-up on email drafting
+        elif "couldn't identify a candidate to draft the email for" in last_assistant_msg or \
+             "draft the email" in last_assistant_msg:
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
                 intent = "email"
+                
+        # Follow-up on red flag checks
         elif "which candidate would you like to check red flags for" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top)\b", user_msg.lower()):
+            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
                 intent = "redflags"
 
     pending = state.get("pending_confirmation")
     
     # 3. Check if the user is replying to the confirmation or starting a brand new task
-    import re
-    cleaned_msg = user_msg.lower().strip()
     is_confirmation_reply = cleaned_msg in ["yes", "confirm", "y", "go ahead", "sure", "no", "cancel", "n", "discard", "edit"] or \
                              re.match(r"^(?:slot|option|number|pick|choose|select|go with)?\s*\d+\b", cleaned_msg)
                              
@@ -135,7 +143,7 @@ def fallback_node(state: RecruitState) -> dict:
         "2. Count loaded resumes (e.g. 'how many candidates do we have?')\n"
         "3. Screen and rank candidates against the JD (e.g. 'screen candidates')\n"
         "4. Rewrite or polish the JD (e.g. 'rewrite this JD for a startup')\n"
-        "5. Generate interview prep questions (e.g. 'interview questions for Alice')\n"
+        "5. Generate interview prep questions (e.g. 'interview questions for Alice' or 'questions for the JD')\n"
         "6. Check market salary ranges (e.g. 'salary range for this role')\n"
         "7. Finalize candidate shortlists (e.g. 'finalize the shortlist')\n\n"
         "Could you please rephrase or clarify your request?"

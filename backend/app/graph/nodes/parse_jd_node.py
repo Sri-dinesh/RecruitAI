@@ -95,7 +95,8 @@ def parse_jd_node(state: RecruitState) -> dict:
         }
         
     try:
-        candidates = ingest_resumes_pipeline(str(resolved_resumes_dir))
+        user_id = state.get("user_id", "local_dev_user_123")
+        candidates = ingest_resumes_pipeline(str(resolved_resumes_dir), user_id)
     except Exception as e:
         return {
             "jd_structured": jd_structured,
