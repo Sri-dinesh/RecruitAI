@@ -2,10 +2,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 class JobDescription(BaseModel):
-    role: str
-    required_skills: List[str]
+    role: str = ""
+    required_skills: List[str] = []
     experience_years: int = 0
-    raw_text: str
+    raw_text: Optional[str] = ""
     tone: Optional[str] = "professional"
     company_name: Optional[str] = None
     department: Optional[str] = None
@@ -19,4 +19,3 @@ class JobDescription(BaseModel):
     benefits: List[str] = []
     industry: Optional[str] = None
     summary: Optional[str] = None
-

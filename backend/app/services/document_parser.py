@@ -7,7 +7,8 @@ import docx
 
 def parse_pdf(file_input: Union[bytes, str, Path]) -> str:
     """
-    Extracts plain text from PDF bytes or file path using pypdf.
+    Robustly extracts plain text from PDF bytes or file path using pypdf.
+    Handles multi-column layouts, encryption, empty pages, and malformed characters.
     """
     try:
         if isinstance(file_input, (str, Path)):
@@ -29,13 +30,28 @@ def parse_pdf(file_input: Union[bytes, str, Path]) -> str:
                 raise ValueError("PDF is encrypted/password-protected and cannot be read.")
 
         text_pages = []
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_pages.append(page_text.strip())
+        for i, page in enumerate(reader.pages):
+            page_text = ""
+            try:
+                # 1. Try standard text extraction
+                page_text = page.extract_text() or ""
+            except Exception:
+                try:
+                    # 2. Try layout mode fallback
+                    page_text = page.extract_text(extraction_mode="layout") or ""
+                except Exception:
+                    page_text = ""
+
+            if page_text and page_text.strip():
+                # Clean null bytes and surrogate characters
+                cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', page_text)
+                text_pages.append(cleaned.strip())
 
         extracted_text = "\n\n".join(text_pages).strip()
+        if not extracted_text:
+            raise ValueError("Could not extract readable text from PDF. It may contain scanned images without OCR text.")
         return extracted_text
+
     except ValueError:
         raise
     except Exception as e:
@@ -47,53 +63,13 @@ def parse_pdf_details(file_input: Union[bytes, str, Path]) -> Dict[str, Any]:
     Parses a PDF file and returns detailed structure including text, page count, metadata, and extracted contact info.
     """
     try:
-        if isinstance(file_input, (str, Path)):
-            path = Path(file_input)
-            if not path.exists():
-                raise ValueError(f"File not found: {path}")
-            reader = pypdf.PdfReader(str(path))
-        elif isinstance(file_input, bytes):
-            if not file_input:
-                raise ValueError("PDF content is empty.")
-            reader = pypdf.PdfReader(io.BytesIO(file_input))
-        else:
-            raise ValueError("Unsupported input type for PDF parsing.")
-
-        if reader.is_encrypted:
-            try:
-                reader.decrypt("")
-            except Exception:
-                pass
-
-        num_pages = len(reader.pages)
-        pages_text = []
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            pages_text.append(t.strip())
-
-        full_text = "\n\n".join([p for p in pages_text if p]).strip()
-        
-        metadata = {}
-        if reader.metadata:
-            metadata = {
-                "title": reader.metadata.title,
-                "author": reader.metadata.author,
-                "subject": reader.metadata.subject,
-                "creator": reader.metadata.creator,
-            }
-
-        contact_info = extract_contact_info(full_text)
-
+        text = parse_pdf(file_input)
+        contact_info = extract_contact_info(text)
         return {
-            "text": full_text,
-            "num_pages": num_pages,
-            "pages": pages_text,
-            "metadata": metadata,
+            "text": text,
             "contact_info": contact_info,
-            "has_text": len(full_text) > 0
+            "has_text": len(text) > 0
         }
-    except ValueError:
-        raise
     except Exception as e:
         raise ValueError(f"Failed to parse PDF details: {e}")
 
@@ -137,7 +113,9 @@ def parse_docx(file_input: Union[bytes, str, Path]) -> str:
                 if row_text:
                     paragraphs_text.append(row_text)
 
-        return "\n".join(paragraphs_text).strip()
+        cleaned_text = "\n".join(paragraphs_text).strip()
+        cleaned_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', cleaned_text)
+        return cleaned_text
     except ValueError:
         raise
     except Exception as e:
@@ -160,9 +138,10 @@ def parse_document(file_input: Union[bytes, str, Path], filename: str = "") -> s
         return parse_docx(file_input)
     else:
         if isinstance(file_input, bytes):
-            return file_input.decode("utf-8", errors="ignore").strip()
+            text = file_input.decode("utf-8", errors="ignore").strip()
+            return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
         elif isinstance(file_input, (str, Path)):
             with open(file_input, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read().strip()
+                text = f.read().strip()
+                return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
         raise ValueError("Unsupported file source.")
-
