@@ -36,14 +36,14 @@ export default function FeatureHighlights() {
               </motion.div>
               <div>
                 <motion.div 
-                  animate={{ filter: ["blur(0px)", "blur(8px)", "blur(8px)", "blur(0px)"], backgroundColor: ["transparent", "#f3f4f6", "#f3f4f6", "transparent"] }}
+                  animate={{ filter: ["blur(0px)", "blur(8px)", "blur(8px)", "blur(0px)"], backgroundColor: ["rgba(255,255,255,0)", "#f3f4f6", "#f3f4f6", "rgba(255,255,255,0)"] }}
                   transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
                   className="text-lg font-semibold text-foreground px-1 -mx-1"
                 >
                   John Doe
                 </motion.div>
                 <motion.div 
-                  animate={{ filter: ["blur(0px)", "blur(8px)", "blur(8px)", "blur(0px)"], backgroundColor: ["transparent", "#f3f4f6", "#f3f4f6", "transparent"] }}
+                  animate={{ filter: ["blur(0px)", "blur(8px)", "blur(8px)", "blur(0px)"], backgroundColor: ["rgba(255,255,255,0)", "#f3f4f6", "#f3f4f6", "rgba(255,255,255,0)"] }}
                   transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
                   className="text-sm text-muted px-1 -mx-1 mt-0.5"
                 >

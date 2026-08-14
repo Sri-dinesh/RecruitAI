@@ -145,7 +145,7 @@ export default function Home() {
     setActiveSessionId(sessionId);
     localStorage.setItem('recruitai_session_id', sessionId);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`);
+      const res = await fetchWithAuth(`/api/sessions/${sessionId}`);
       if (!res.ok) return;
       const data = await res.json();
       
@@ -194,7 +194,7 @@ export default function Home() {
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`/api/sessions/${sessionId}`, { method: 'DELETE' });
       if (res.ok) {
         const list = sessions.filter(s => s.id !== sessionId);
         setSessions(list);
@@ -348,6 +348,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (authLoading || !user) return;
+
     const initSessions = async () => {
       try {
         const res = await fetchWithAuth('/api/sessions');
@@ -374,7 +376,7 @@ export default function Home() {
       }
     };
     initSessions();
-  }, []);
+  }, [user, authLoading]);
 
   // Intercept messages to dynamically switch tabs and prepopulate widgets
   useEffect(() => {
@@ -440,8 +442,17 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Job Description upload ingestion failed');
+        let errorMsg = 'Job Description upload failed';
+        try {
+          const errData = await res.json();
+          errorMsg = Array.isArray(errData.detail)
+            ? errData.detail.map((e: any) => `${e.loc?.join('.')} ${e.msg}`).join(', ')
+            : errData.detail || 'Job Description upload ingestion failed';
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          errorMsg = rawText || `Server error (${res.status})`;
+        }
+        throw new Error(errorMsg);
       }
       
       const structuredJd = await res.json();
@@ -457,9 +468,8 @@ export default function Home() {
       // Persist JD to session
       const storedId = localStorage.getItem('recruitai_session_id');
       if (storedId) {
-        await fetch(`/api/sessions/${storedId}`, {
+        await fetchWithAuth(`/api/sessions/${storedId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jd_structured: structuredJd,
             title: `Hiring: ${structuredJd.role}`,
@@ -507,8 +517,17 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Resume upload ingestion failed');
+        let errorMsg = 'Resume upload failed';
+        try {
+          const errData = await res.json();
+          errorMsg = Array.isArray(errData.detail)
+            ? errData.detail.map((e: any) => `${e.loc?.join('.')} ${e.msg}`).join(', ')
+            : errData.detail || 'Resume upload failed';
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          errorMsg = rawText || `Server error (${res.status})`;
+        }
+        throw new Error(errorMsg);
       }
       
       const newCandidates = await res.json();
@@ -531,9 +550,8 @@ export default function Home() {
       
       const storedId = localStorage.getItem('recruitai_session_id');
       if (storedId) {
-        await fetch(`/api/sessions/${storedId}`, {
+        await fetchWithAuth(`/api/sessions/${storedId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             resumes: updatedCandidates,
             conversation_history: [...messages, successMsg]
@@ -585,8 +603,15 @@ export default function Home() {
         });
         
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || 'Job Description upload ingestion failed');
+          let errorMsg = 'Job Description upload failed';
+          try {
+            const errData = await res.json();
+            errorMsg = errData.detail || 'Job Description upload ingestion failed';
+          } catch {
+            const rawText = await res.text().catch(() => '');
+            errorMsg = rawText || `Server error (${res.status})`;
+          }
+          throw new Error(errorMsg);
         }
         
         const structuredJd = await res.json();
@@ -602,9 +627,8 @@ export default function Home() {
         // Persist JD to session
         const storedId = localStorage.getItem('recruitai_session_id');
         if (storedId) {
-          await fetch(`/api/sessions/${storedId}`, {
+          await fetchWithAuth(`/api/sessions/${storedId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               jd_structured: structuredJd,
               title: `Hiring: ${structuredJd.role}`,
@@ -645,8 +669,15 @@ export default function Home() {
         });
         
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || 'Resume upload ingestion failed');
+          let errorMsg = 'Resume upload failed';
+          try {
+            const errData = await res.json();
+            errorMsg = errData.detail || 'Resume upload ingestion failed';
+          } catch {
+            const rawText = await res.text().catch(() => '');
+            errorMsg = rawText || `Server error (${res.status})`;
+          }
+          throw new Error(errorMsg);
         }
         
         const newCandidates = await res.json();
@@ -670,9 +701,8 @@ export default function Home() {
         // Persist updated candidate list and conversation history to session
         const storedId = localStorage.getItem('recruitai_session_id');
         if (storedId) {
-          await fetch(`/api/sessions/${storedId}`, {
+          await fetchWithAuth(`/api/sessions/${storedId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               resumes: updatedCandidates,
               conversation_history: [...messages, successMsg]
@@ -795,7 +825,19 @@ export default function Home() {
         signal: controller.signal
       });
 
-      if (!res.ok) throw new Error('API server returned an error');
+      if (!res.ok) {
+        let errorMsg = `API server returned an error (${res.status})`;
+        try {
+          const errData = await res.json();
+          errorMsg = Array.isArray(errData.detail)
+            ? errData.detail.map((e: any) => `${e.loc?.join('.')} ${e.msg}`).join(', ')
+            : errData.detail || errorMsg;
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          errorMsg = rawText || errorMsg;
+        }
+        throw new Error(errorMsg);
+      }
 
       const data = await res.json();
       
@@ -820,7 +862,7 @@ export default function Home() {
         console.error(err);
         setMessages(prev => [...prev, { 
           role: 'assistant', 
-          content: "⚠️ **System Connection Error**: I was unable to connect to the backend agent server. Please make sure the backend agent server is running." 
+          content: `⚠️ **Agent Error**: ${error.message || 'I was unable to process your request. Please try again.'}` 
         }]);
       }
     } finally {
@@ -905,11 +947,11 @@ export default function Home() {
     (c.matched_skills && c.matched_skills.some(s => s.toLowerCase().includes(candidateFilter.toLowerCase())))
   );
 
-  // ── Auth gate (early returns AFTER all hooks) ──────────────────────────────
+  // ── Auth gate ────────────────────────────────────────────────────────────
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8f6f2]">
-        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex h-screen w-screen items-center justify-center bg-transparent">
+        <div className="animate-spin h-8 w-8 border-4 border-brand-primary border-t-transparent rounded-full" />
       </div>
     );
   }
