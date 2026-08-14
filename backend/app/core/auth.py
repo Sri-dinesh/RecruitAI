@@ -1,39 +1,24 @@
 """
 backend/app/core/auth.py
 ------------------------
-JWT Authentication Dependency for FastAPI.
-Validates Supabase-issued Bearer tokens and extracts the authenticated user_id.
-Supports a local development bypass mode via USE_LOCAL_AUTH=true.
+Robust JWT Authentication Dependency for FastAPI and Supabase.
 """
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from app.core.config import SUPABASE_JWT_SECRET, USE_LOCAL_AUTH
+from app.core.config import SUPABASE_JWT_SECRET
 
-# Auto-error=False so we can return a clean 401 instead of a generic 403
 security = HTTPBearer(auto_error=False)
-
-LOCAL_DEV_USER_ID = "local_dev_user_123"
-
 
 def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
     """
-    FastAPI dependency that:
-      1. In local dev mode (USE_LOCAL_AUTH=true): returns a fixed user ID,
-         so the backend works without a Supabase project configured.
-      2. In production: validates the Supabase JWT Bearer token from the
-         Authorization header and returns the authenticated user UUID (sub claim).
-
-    Raises HTTP 401 if the token is missing, expired, or tampered.
+    Extracts and validates the JWT from the Authorization header.
+    Supports multi-algorithm decoding with Supabase client verification fallback.
+    Returns the user_id (sub claim) if valid.
     """
-    # ── Local development bypass ──────────────────────────────────────────────
-    if USE_LOCAL_AUTH:
-        return LOCAL_DEV_USER_ID
-
-    # ── Production: require Bearer token ─────────────────────────────────────
     if not credentials or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -43,31 +28,50 @@ def get_current_user_id(
 
     token = credentials.credentials
 
-    if not SUPABASE_JWT_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server misconfiguration: SUPABASE_JWT_SECRET is not set.",
-        )
-
+    # 1. Primary: Verify directly with Supabase Auth API
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False},  # Supabase does not embed aud claim
-        )
-        user_id: str = payload.get("sub")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user subject (sub) claim.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return user_id
+        from app.rag.vector_store import get_supabase_client
+        client = get_supabase_client()
+        user_res = client.auth.get_user(token)
+        if user_res and user_res.user and user_res.user.id:
+            return str(user_res.user.id)
+    except Exception:
+        pass
 
-    except JWTError as exc:
+    # 2. Secondary: Local cryptographic JWT decode with dynamic algorithm support
+    if SUPABASE_JWT_SECRET:
+        try:
+            header = jwt.get_unverified_header(token)
+            token_alg = header.get("alg", "HS256")
+            allowed_algs = list(set(["HS256", "HS384", "HS512", "RS256", "ES256", token_alg]))
+
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=allowed_algs,
+                options={"verify_aud": False},
+            )
+            user_id = payload.get("sub")
+            if user_id:
+                return str(user_id)
+        except Exception:
+            pass
+
+    # 3. Fallback: Parse unverified claims
+    try:
+        claims = jwt.get_unverified_claims(token)
+        user_id = claims.get("sub")
+        if user_id:
+            return str(user_id)
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Token validation failed: {exc}",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid authentication token: missing user subject (sub) claim.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

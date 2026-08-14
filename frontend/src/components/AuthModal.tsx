@@ -43,7 +43,7 @@ export default function AuthModal({ isGate = false, onClose }: AuthModalProps) {
         if (error) {
           setError(error.message);
         } else {
-          setSuccess('Account created! Please check your email to confirm your account.');
+          setSuccess('Account created successfully!');
         }
       }
     } finally {

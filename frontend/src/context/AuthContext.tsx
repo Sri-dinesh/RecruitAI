@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { createSupabaseClient } from '@/lib/supabaseClient';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
+import { createSupabaseClient } from '@/lib/supabaseClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,49 +30,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const supabase = createSupabaseClient();
 
   useEffect(() => {
-    // Hydrate existing session on mount
-    const initAuth = async () => {
-      const { data: { session: existing } } = await supabase.auth.getSession();
-      setSession(existing);
-      setUser(existing?.user ?? null);
+    // Fetch initial session
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      setUser(session?.user ?? null);
       setLoading(false);
     };
-    initAuth();
+    
+    fetchSession();
 
-    // Subscribe to auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        setLoading(false);
-      }
-    );
+    // Listen to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
 
-    return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
-
-  // ── Auth Actions ─────────────────────────────────────────────────────────
 
   const loginWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error as Error | null };
+    return { error };
   };
 
   const signupWithEmail = async (email: string, password: string, fullName: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
     });
-    return { error: error as Error | null };
+    return { error };
   };
 
   const loginWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
   };

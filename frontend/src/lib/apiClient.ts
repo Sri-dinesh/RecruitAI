@@ -1,27 +1,29 @@
-import { createSupabaseClient } from './supabaseClient';
+import { createSupabaseClient } from '@/lib/supabaseClient';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 /**
- * A drop-in replacement for fetch() that automatically attaches the
- * Supabase JWT Bearer token to every request sent to the FastAPI backend.
+ * A drop-in replacement for fetch() that hits the FastAPI backend
+ * and automatically attaches the user's Supabase JWT.
  *
- * Usage (identical to native fetch):
+ * Usage:
  *   const res = await fetchWithAuth('/api/sessions');
- *   const res = await fetchWithAuth('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
  */
 export async function fetchWithAuth(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const supabase = createSupabaseClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
   const headers = new Headers(options.headers || {});
-  headers.set('Content-Type', 'application/json');
 
+  // Only force application/json if the body isn't FormData
+  if (!(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  // Get active session from Supabase
+  const supabase = createSupabaseClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }
