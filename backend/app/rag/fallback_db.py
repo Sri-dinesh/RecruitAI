@@ -16,45 +16,105 @@ class FallbackSupabaseClient:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # ── chat_sessions table (mirrors Supabase schema 1-to-1) ──────────────
-        # user_id defaults to LOCAL_DEV_USER_ID for offline / local development.
+        # ── 1. jobs table ───────────────────────────────────────────────────
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_sessions (
+            CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
-                title TEXT NOT NULL DEFAULT 'New Hiring Campaign',
+                title TEXT NOT NULL,
+                raw_jd TEXT,
                 jd_structured TEXT,
-                resumes TEXT DEFAULT '[]',
-                last_shortlist TEXT DEFAULT '[]',
-                pending_confirmation TEXT,
-                last_intent TEXT,
-                scheduled_interviews TEXT DEFAULT '[]',
-                conversation_history TEXT DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Migrate: add user_id column if it doesn't exist (for existing DBs)
-        try:
-            cursor.execute("ALTER TABLE chat_sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local_dev_user_123'")
-        except Exception:
-            pass  # column already exists
+        # ── 2. candidates table ─────────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS candidates (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                full_name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                resume_file_url TEXT,
+                raw_resume_text TEXT,
+                metadata TEXT DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
-        # Migrate: add updated_at column if it doesn't exist (for existing DBs)
-        try:
-            cursor.execute("ALTER TABLE chat_sessions ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        except Exception:
-            pass  # column already exists
-
-        # ── resume_chunks table ───────────────────────────────────────────────
+        # ── 3. resume_chunks table ──────────────────────────────────────────
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS resume_chunks (
                 id TEXT PRIMARY KEY,
                 candidate_id TEXT NOT NULL,
-                candidate_name TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
                 chunk_text TEXT NOT NULL,
+                chunk_index INTEGER DEFAULT 0,
                 embedding TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── 4. applications table ───────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS applications (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                match_score REAL,
+                match_reasoning TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── 5. interviews table ─────────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS interviews (
+                id TEXT PRIMARY KEY,
+                application_id TEXT,
+                candidate_id TEXT,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                scheduled_at TIMESTAMP NOT NULL,
+                duration_minutes INTEGER DEFAULT 30,
+                mode TEXT DEFAULT 'video',
+                meeting_link TEXT,
+                status TEXT NOT NULL DEFAULT 'scheduled',
+                feedback TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── 6. chat_sessions table ──────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                job_id TEXT,
+                title TEXT NOT NULL DEFAULT 'New Hiring Campaign',
+                last_intent TEXT,
+                pending_confirmation TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ── 7. chat_messages table ──────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                metadata TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -118,6 +178,61 @@ class TableBuilder:
         self.limit_val = val
         return self
 
+    def _deserialize_row(self, row_dict: dict) -> dict:
+        d = dict(row_dict)
+        if self.table_name == 'jobs' and 'jd_structured' in d and d['jd_structured']:
+            try:
+                d['jd_structured'] = json.loads(d['jd_structured'])
+            except Exception:
+                pass
+        elif self.table_name == 'candidates' and 'metadata' in d and d['metadata']:
+            try:
+                d['metadata'] = json.loads(d['metadata'])
+            except Exception:
+                pass
+        elif self.table_name == 'applications' and 'match_reasoning' in d and d['match_reasoning']:
+            try:
+                d['match_reasoning'] = json.loads(d['match_reasoning'])
+            except Exception:
+                pass
+        elif self.table_name == 'interviews' and 'feedback' in d and d['feedback']:
+            try:
+                d['feedback'] = json.loads(d['feedback'])
+            except Exception:
+                pass
+        elif self.table_name == 'chat_sessions' and 'pending_confirmation' in d and d['pending_confirmation']:
+            try:
+                d['pending_confirmation'] = json.loads(d['pending_confirmation'])
+            except Exception:
+                pass
+        elif self.table_name == 'chat_messages' and 'metadata' in d and d['metadata']:
+            try:
+                d['metadata'] = json.loads(d['metadata'])
+            except Exception:
+                pass
+        elif self.table_name == 'resume_chunks' and 'embedding' in d and d['embedding']:
+            try:
+                d['embedding'] = json.loads(d['embedding'])
+            except Exception:
+                pass
+        return d
+
+    def _serialize_row(self, row_dict: dict) -> dict:
+        d = dict(row_dict)
+        json_fields = {
+            'jobs': ['jd_structured'],
+            'candidates': ['metadata'],
+            'applications': ['match_reasoning'],
+            'interviews': ['feedback'],
+            'chat_sessions': ['pending_confirmation'],
+            'chat_messages': ['metadata'],
+            'resume_chunks': ['embedding'],
+        }
+        for field in json_fields.get(self.table_name, []):
+            if field in d and (isinstance(d[field], (dict, list)) or d[field] is not None):
+                d[field] = json.dumps(d[field])
+        return d
+
     def execute(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -126,7 +241,6 @@ class TableBuilder:
 
         try:
             if self.query_type == 'select':
-                # Convert * select columns or space-separated to comma-separated
                 cols = self.select_columns
                 if cols != "*":
                     cols = ", ".join([c.strip() for c in cols.split(",") if c.strip()])
@@ -154,42 +268,15 @@ class TableBuilder:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 for row in rows:
-                    d = dict(row)
-                    # Deserialize JSON columns for chat_sessions
-                    if self.table_name == 'chat_sessions':
-                        for col in ['jd_structured', 'resumes', 'last_shortlist', 'pending_confirmation', 'scheduled_interviews', 'conversation_history']:
-                            if col in d and d[col]:
-                                try:
-                                    d[col] = json.loads(d[col])
-                                except Exception:
-                                    pass
-                        # Ensure user_id is always present in returned rows
-                        if 'user_id' not in d:
-                            d['user_id'] = 'local_dev_user_123'
-                    elif self.table_name == 'resume_chunks':
-                        if 'embedding' in d and d['embedding']:
-                            try:
-                                d['embedding'] = json.loads(d['embedding'])
-                            except Exception:
-                                pass
-                    result_data.append(d)
+                    result_data.append(self._deserialize_row(row))
 
             elif self.query_type == 'insert':
                 rows_to_insert = self.insert_data if isinstance(self.insert_data, list) else [self.insert_data]
                 inserted_rows = []
                 for row_data in rows_to_insert:
-                    d = dict(row_data)
+                    d = self._serialize_row(row_data)
                     if 'id' not in d:
                         d['id'] = str(uuid.uuid4())
-                    
-                    # Serialize JSON columns
-                    if self.table_name == 'chat_sessions':
-                        for col in ['jd_structured', 'resumes', 'last_shortlist', 'pending_confirmation', 'scheduled_interviews', 'conversation_history']:
-                            if col in d and (isinstance(d[col], (dict, list)) or d[col] is not None):
-                                d[col] = json.dumps(d[col])
-                    elif self.table_name == 'resume_chunks':
-                        if 'embedding' in d and isinstance(d['embedding'], list):
-                            d['embedding'] = json.dumps(d['embedding'])
                     
                     cols_list = list(d.keys())
                     placeholders = ", ".join(["?"] * len(cols_list))
@@ -198,36 +285,14 @@ class TableBuilder:
                     
                     # Get back the inserted row
                     cursor.execute(f"SELECT * FROM {self.table_name} WHERE id = ?", (d['id'],))
-                    res_row = dict(cursor.fetchone())
-                    # Deserialize
-                    if self.table_name == 'chat_sessions':
-                        for col in ['jd_structured', 'resumes', 'last_shortlist', 'pending_confirmation', 'scheduled_interviews', 'conversation_history']:
-                            if col in res_row and res_row[col]:
-                                try:
-                                    res_row[col] = json.loads(res_row[col])
-                                except Exception:
-                                    pass
-                    elif self.table_name == 'resume_chunks':
-                        if 'embedding' in res_row and res_row['embedding']:
-                            try:
-                                res_row['embedding'] = json.loads(res_row['embedding'])
-                            except Exception:
-                                pass
-                    inserted_rows.append(res_row)
+                    res_row = cursor.fetchone()
+                    if res_row:
+                        inserted_rows.append(self._deserialize_row(res_row))
                 
                 result_data = inserted_rows
 
             elif self.query_type == 'update':
-                d = dict(self.update_data)
-                # Serialize JSON columns
-                if self.table_name == 'chat_sessions':
-                    for col in ['jd_structured', 'resumes', 'last_shortlist', 'pending_confirmation', 'scheduled_interviews', 'conversation_history']:
-                        if col in d and (isinstance(d[col], (dict, list)) or d[col] is not None):
-                            d[col] = json.dumps(d[col])
-                elif self.table_name == 'resume_chunks':
-                    if 'embedding' in d and isinstance(d['embedding'], list):
-                        d['embedding'] = json.dumps(d['embedding'])
-                
+                d = self._serialize_row(self.update_data)
                 set_clauses = []
                 params = []
                 for col, val in d.items():
@@ -255,15 +320,7 @@ class TableBuilder:
                 cursor.execute(fetch_sql, fetch_params)
                 rows = cursor.fetchall()
                 for row in rows:
-                    res_row = dict(row)
-                    if self.table_name == 'chat_sessions':
-                        for col in ['jd_structured', 'resumes', 'last_shortlist', 'pending_confirmation', 'scheduled_interviews', 'conversation_history']:
-                            if col in res_row and res_row[col]:
-                                try:
-                                    res_row[col] = json.loads(res_row[col])
-                                except Exception:
-                                    pass
-                    result_data.append(res_row)
+                    result_data.append(self._deserialize_row(row))
 
             elif self.query_type == 'delete':
                 sql = f"DELETE FROM {self.table_name}"
@@ -303,16 +360,25 @@ class RpcBuilder:
             match_threshold = self.params.get('match_threshold', 0.0)
             match_count = self.params.get('match_count', 3)
             filter_candidate_id = self.params.get('filter_candidate_id')
+            filter_user_id = self.params.get('filter_user_id')
             
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            sql = "SELECT id, candidate_id, candidate_name, chunk_text, embedding FROM resume_chunks"
+            sql = """
+                SELECT rc.id, rc.candidate_id, c.full_name, rc.chunk_text, rc.embedding 
+                FROM resume_chunks rc
+                LEFT JOIN candidates c ON c.id = rc.candidate_id
+                WHERE 1=1
+            """
             params = []
             if filter_candidate_id:
-                sql += " WHERE candidate_id = ?"
+                sql += " AND rc.candidate_id = ?"
                 params.append(filter_candidate_id)
+            if filter_user_id:
+                sql += " AND rc.user_id = ?"
+                params.append(filter_user_id)
             
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -342,7 +408,7 @@ class RpcBuilder:
                         matches.append({
                             "id": d['id'],
                             "candidate_id": d['candidate_id'],
-                            "candidate_name": d['candidate_name'],
+                            "full_name": d['full_name'] or 'Candidate',
                             "chunk_text": d['chunk_text'],
                             "similarity": sim
                         })

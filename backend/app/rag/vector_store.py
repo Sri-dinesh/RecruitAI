@@ -42,7 +42,7 @@ def upsert_chunks(chunks: List[Dict]):
     response = client.table("resume_chunks").insert(chunks).execute()
     return response
 
-def query_top_k(query_embedding: List[float], k: int = 3, candidate_id: Optional[str] = None, threshold: float = 0.0) -> List[Dict]:
+def query_top_k(query_embedding: List[float], k: int = 3, candidate_id: Optional[str] = None, threshold: float = 0.0, user_id: Optional[str] = None) -> List[Dict]:
     """
     Queries the pgvector store for the top-k chunks matching the query embedding.
     Optionally filters by candidate_id to fetch top-k chunks for a specific candidate.
@@ -55,14 +55,19 @@ def query_top_k(query_embedding: List[float], k: int = 3, candidate_id: Optional
     }
     if candidate_id is not None:
         params["filter_candidate_id"] = candidate_id
+    if user_id is not None:
+        params["filter_user_id"] = user_id
         
     response = client.rpc("match_resume_chunks", params).execute()
     return response.data
 
-def clear_all_chunks():
+def clear_all_chunks(user_id: Optional[str] = None):
     """
     Deletes all chunks from the resume_chunks table (useful for re-indexing).
     """
     client = get_supabase_client()
-    response = client.table("resume_chunks").delete().neq("candidate_id", "").execute()
+    query = client.table("resume_chunks").delete().neq("chunk_text", "")
+    if user_id:
+        query = query.eq("user_id", user_id)
+    response = query.execute()
     return response
