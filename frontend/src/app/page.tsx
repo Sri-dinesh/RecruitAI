@@ -111,16 +111,17 @@ export default function PremiumLanding() {
           RecruitAI.
         </Link>
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="text-sm font-medium relative group text-foreground">
+          <Link href="/auth?tab=login" className="text-sm font-medium relative group text-foreground">
             Login
             <span className="absolute -bottom-1 left-0 w-full h-[1px] bg-foreground origin-left scale-x-0 transition-transform duration-300 group-hover:scale-x-100"></span>
           </Link>
           <motion.div
-            whileHover={{ backgroundColor: '#263a66' }}
+            whileHover={{ backgroundColor: '#263a66', scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             transition={{ duration: 0.12 }}
-            className="bg-accent rounded-md"
+            className="bg-accent rounded-md shadow-xs"
           >
-            <Link href="/dashboard" className="text-sm font-medium text-white px-5 py-2.5 block transition-colors">
+            <Link href="/auth?tab=signup" className="text-sm font-medium text-white px-5 py-2.5 block transition-colors">
               Signup
             </Link>
           </motion.div>
@@ -176,7 +177,7 @@ export default function PremiumLanding() {
           <Link href="/dashboard" className="hover:text-foreground transition-colors">Privacy</Link>
           <Link href="/dashboard" className="hover:text-foreground transition-colors">Terms</Link>
         </div>
-        <Link href="/dashboard" className="text-sm font-semibold text-accent relative group">
+        <Link href="/auth?tab=login" className="text-sm font-semibold text-accent relative group">
           Log in to platform
           <span className="absolute -bottom-1 left-0 w-full h-[1px] bg-accent origin-left scale-x-0 transition-transform duration-300 group-hover:scale-x-100"></span>
         </Link>
