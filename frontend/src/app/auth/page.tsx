@@ -23,7 +23,7 @@ function AuthContent() {
   const { user, loading } = useAuth();
   
   const tabParam = searchParams.get('tab') as AuthTab;
-  const initialTab: AuthTab = tabParam === 'signup' ? 'signup' : 'login';
+  const initialTab: AuthTab = tabParam === 'signup' ? 'signup' : tabParam === 'forgot' ? 'forgot' : 'login';
 
   // If already logged in, redirect to dashboard smoothly
   useEffect(() => {
