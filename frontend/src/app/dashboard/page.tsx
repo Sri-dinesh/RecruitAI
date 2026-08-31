@@ -6,12 +6,13 @@ import {
   Cpu, Activity, Clock, Terminal, FileText, Paperclip,
   Calendar, Mail, AlertTriangle, CheckCircle,
   Trash2, ArrowRight, Check, X,
-  Sliders, Search, Sparkles, LogOut
+  Sliders, Search, Sparkles, LogOut, BarChart3
 } from 'lucide-react';
 import MarkdownText from '@/components/MarkdownText';
 import { useAuth } from '@/context/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { fetchWithAuth } from '@/lib/apiClient';
+import Link from 'next/link';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -125,7 +126,11 @@ export default function Home() {
   const [routerLogs, setRouterLogs] = useState<RouterLog[]>([]);
   const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
 
-
+  // Candidate status management (shortlisted / rejected / offered)
+  type CandidateStatus = 'shortlisted' | 'rejected' | 'offered';
+  const [candidateStatuses, setCandidateStatuses] = useState<Record<string, CandidateStatus>>({});
+  const [statusFilter, setStatusFilter] = useState<CandidateStatus | 'all'>('all');
+  const [statusSaving, setStatusSaving] = useState<string | null>(null); // candidate_id being saved
 
   const handleLoadSessionsList = async () => {
     try {
@@ -162,6 +167,12 @@ export default function Home() {
       setDraftBody("");
       setDraftSubject("");
       setDraftRecipient("");
+      // Load persisted statuses for this session
+      try {
+        const saved = localStorage.getItem(`recruitai_statuses_${sessionId}`);
+        setCandidateStatuses(saved ? JSON.parse(saved) : {});
+      } catch { setCandidateStatuses({}); }
+      setStatusFilter('all');
 
       if (data.conversation_history && data.conversation_history.length > 0) {
         setMessages(data.conversation_history);
@@ -224,6 +235,42 @@ export default function Home() {
   const [isBlindHiring, setIsBlindHiring] = useState(false);
   const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
   const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
+
+  // Set / toggle candidate status and persist to localStorage + backend
+  const handleSetStatus = async (candidateId: string, candidateName: string, status: CandidateStatus) => {
+    // Toggle off if same status clicked again
+    const next = candidateStatuses[candidateId] === status ? undefined : status;
+    const updated = { ...candidateStatuses };
+    if (next) updated[candidateId] = next;
+    else delete updated[candidateId];
+
+    setCandidateStatuses(updated);
+
+    // Persist to localStorage keyed by session
+    if (activeSessionId) {
+      localStorage.setItem(`recruitai_statuses_${activeSessionId}`, JSON.stringify(updated));
+    }
+
+    // Persist to backend evaluate endpoint (fire-and-forget, non-blocking)
+    if (next) {
+      setStatusSaving(candidateId);
+      try {
+        await fetchWithAuth('/api/candidates/evaluate', {
+          method: 'POST',
+          body: JSON.stringify({
+            candidate_id: candidateId,
+            tech_score: next === 'offered' ? 5 : next === 'shortlisted' ? 4 : 1,
+            comm_score: next === 'offered' ? 5 : next === 'shortlisted' ? 3 : 1,
+            notes: `Manually ${next} by recruiter.`,
+          }),
+        });
+      } catch (e) {
+        console.warn('[status] backend persist failed (non-blocking)', e);
+      } finally {
+        setStatusSaving(null);
+      }
+    }
+  };
 
   // Email draft states
   const [draftSubject, setDraftSubject] = useState("");
@@ -991,6 +1038,15 @@ export default function Home() {
                 <Sparkles className="w-3.5 h-3.5 text-white" />
                 <span>New Campaign</span>
               </button>
+
+              {/* Analytics link */}
+              <Link
+                href="/analytics"
+                className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:bg-indigo-50 text-slate-600 hover:text-brand-primary border border-transparent hover:border-indigo-100"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                Analytics Dashboard
+              </Link>
             </div>
             
             <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-4 space-y-1">
@@ -1191,25 +1247,43 @@ export default function Home() {
             )}
           </div>
 
-          {/* Hiring Analytics Summary Bar */}
+          {/* Hiring Analytics Summary Bar — uses real statuses */}
           {candidates.length > 0 && (
-            <div className="grid grid-cols-3 gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-center">
-              <div>
-                <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Pool</span>
+            <div className="grid grid-cols-4 gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-center">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`transition-all rounded-lg py-1 ${statusFilter === 'all' ? 'bg-white shadow-sm border border-slate-200' : 'hover:bg-white/60'}`}
+              >
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Total</span>
                 <span className="text-xs font-bold text-slate-900">{candidates.length}</span>
-              </div>
-              <div>
+              </button>
+              <button
+                onClick={() => setStatusFilter(statusFilter === 'shortlisted' ? 'all' : 'shortlisted')}
+                className={`transition-all rounded-lg py-1 ${statusFilter === 'shortlisted' ? 'bg-white shadow-sm border border-emerald-200' : 'hover:bg-white/60'}`}
+              >
                 <span className="text-[9px] uppercase font-bold text-slate-400 block">Shortlisted</span>
                 <span className="text-xs font-bold text-emerald-700">
-                  {candidates.filter(c => (c.match_score || 0) >= 80).length}
+                  {Object.values(candidateStatuses).filter(s => s === 'shortlisted').length}
                 </span>
-              </div>
-              <div>
-                <span className="text-[9px] uppercase font-bold text-slate-400 block">Avg Match</span>
-                <span className="text-xs font-bold text-indigo-700">
-                  {candidates.length ? (candidates.reduce((a, c) => a + (c.match_score || 0), 0) / candidates.length).toFixed(0) : 0}%
+              </button>
+              <button
+                onClick={() => setStatusFilter(statusFilter === 'offered' ? 'all' : 'offered')}
+                className={`transition-all rounded-lg py-1 ${statusFilter === 'offered' ? 'bg-white shadow-sm border border-amber-200' : 'hover:bg-white/60'}`}
+              >
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Offered</span>
+                <span className="text-xs font-bold text-amber-600">
+                  {Object.values(candidateStatuses).filter(s => s === 'offered').length}
                 </span>
-              </div>
+              </button>
+              <button
+                onClick={() => setStatusFilter(statusFilter === 'rejected' ? 'all' : 'rejected')}
+                className={`transition-all rounded-lg py-1 ${statusFilter === 'rejected' ? 'bg-white shadow-sm border border-rose-200' : 'hover:bg-white/60'}`}
+              >
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Rejected</span>
+                <span className="text-xs font-bold text-rose-600">
+                  {Object.values(candidateStatuses).filter(s => s === 'rejected').length}
+                </span>
+              </button>
             </div>
           )}
 
@@ -1248,11 +1322,19 @@ export default function Home() {
           </div>
 
           {/* Candidate list container */}
-          {filteredCandidates.length > 0 ? (
+          {(() => {
+            const filteredByStatus = statusFilter === 'all'
+              ? filteredCandidates
+              : statusFilter === 'rejected'
+              ? filteredCandidates.filter(c => candidateStatuses[c.candidate_id] === 'rejected')
+              : filteredCandidates.filter(c => candidateStatuses[c.candidate_id] === statusFilter);
+            return filteredByStatus.length > 0 ? (
             <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
-              {filteredCandidates.map((c) => {
+              {filteredByStatus.map((c) => {
                 const isSelected = selectedCandidates.has(c.candidate_id);
                 const score = c.match_score || 0;
+                const status = candidateStatuses[c.candidate_id];
+                const isSaving = statusSaving === c.candidate_id;
                 const scoreBadge = score >= 80 
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                   : score >= 50 
@@ -1260,17 +1342,21 @@ export default function Home() {
                   : score > 0 
                   ? 'bg-rose-50 text-rose-700 border-rose-200' 
                   : 'bg-slate-100 text-slate-600 border-slate-200';
-                
+
+                // Card border reflects status
+                const cardBorder =
+                  status === 'shortlisted' ? 'bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-200' :
+                  status === 'offered'     ? 'bg-amber-50/40 border-amber-300 ring-1 ring-amber-200' :
+                  status === 'rejected'    ? 'bg-rose-50/30 border-rose-200 opacity-70' :
+                  isSelected              ? 'bg-indigo-50/50 border-brand-primary shadow-sm ring-1 ring-brand-primary/30' :
+                                            'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm';
                 return (
                   <div 
                     key={c.candidate_id} 
-                    className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all ${
-                      isSelected 
-                        ? 'bg-indigo-50/50 border-brand-primary shadow-sm ring-1 ring-brand-primary/30' 
-                        : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                    }`}
+                    className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all ${cardBorder}`}
+
                   >
-                    {/* Header: Checkbox + Name + Headline + Score */}
+                    {/* Header: Checkbox + Name + Headline + Badges */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-2.5 min-w-0">
                         <input 
@@ -1292,11 +1378,23 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {score > 0 && (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${scoreBadge}`}>
-                          {score.toFixed(0)}% Match
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Status badge */}
+                        {status === 'shortlisted' && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Shortlisted</span>
+                        )}
+                        {status === 'offered' && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">★ Offered</span>
+                        )}
+                        {status === 'rejected' && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 border border-rose-200">✕ Rejected</span>
+                        )}
+                        {score > 0 && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${scoreBadge}`}>
+                            {score.toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Contact Badges */}
@@ -1345,7 +1443,48 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* Candidate actions */}
+                    {/* ── STATUS ACTION BUTTONS ── */}
+                    <div className="flex items-center gap-1.5 border border-slate-100 rounded-xl p-1.5 bg-slate-50">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mr-0.5 shrink-0">Decision:</span>
+                      <button
+                        onClick={() => handleSetStatus(c.candidate_id, c.name, 'shortlisted')}
+                        disabled={isSaving}
+                        title="Shortlist this candidate"
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                          status === 'shortlisted'
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300'
+                        } disabled:opacity-40`}
+                      >
+                        {isSaving && status !== 'shortlisted' ? '' : '✓'} Shortlist
+                      </button>
+                      <button
+                        onClick={() => handleSetStatus(c.candidate_id, c.name, 'offered')}
+                        disabled={isSaving}
+                        title="Mark as Offered"
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                          status === 'offered'
+                            ? 'bg-amber-400 text-white shadow-sm'
+                            : 'bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 hover:border-amber-300'
+                        } disabled:opacity-40`}
+                      >
+                        ★ Offer
+                      </button>
+                      <button
+                        onClick={() => handleSetStatus(c.candidate_id, c.name, 'rejected')}
+                        disabled={isSaving}
+                        title="Reject this candidate"
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                          status === 'rejected'
+                            ? 'bg-rose-500 text-white shadow-sm'
+                            : 'bg-white text-rose-500 border border-rose-200 hover:bg-rose-50 hover:border-rose-300'
+                        } disabled:opacity-40`}
+                      >
+                        ✕ Reject
+                      </button>
+                    </div>
+
+                    {/* Candidate quick actions */}
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <button
                         onClick={() => setInspectedCandidate(c)}
@@ -1383,9 +1522,12 @@ export default function Home() {
             </div>
           ) : (
             <div className="text-xs text-slate-500 italic py-6 text-center bg-slate-50 rounded-xl border border-slate-100">
-              No candidates found in talent pool. Upload PDF/DOCX resumes below.
+              {statusFilter !== 'all'
+                ? `No candidates marked as "${statusFilter}" yet. Use the decision buttons on each candidate.`
+                : 'No candidates found in talent pool. Upload PDF/DOCX resumes below.'}
             </div>
-          )}
+          );
+          })()}
 
           {/* Resume Upload Option */}
           <div className="pt-3 border-t border-slate-200 mt-1 flex flex-col gap-1.5">
