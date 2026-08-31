@@ -5,6 +5,7 @@ from app.api.routes_chat import router as chat_router
 from app.api.routes_reports import router as reports_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
+from app.api.routes_analytics import router as analytics_router
 
 app = FastAPI(title="RecruitAI API Server", version="2.0")
 
@@ -22,6 +23,7 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
 
 @app.get("/")
 def read_root():
