@@ -9,10 +9,10 @@ from app.api.routes_analytics import router as analytics_router
 
 app = FastAPI(title="RecruitAI API Server", version="2.0")
 
-# Enable CORS to allow connections from Next.js frontend
+# Enable CORS to allow connections from Next.js and Expo React Native mobile clients
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

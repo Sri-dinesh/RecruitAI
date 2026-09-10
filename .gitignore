@@ -1,3 +1,4 @@
+plans/
 # Environment variables
 .env
 .env.*

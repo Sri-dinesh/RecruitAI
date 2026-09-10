@@ -56,23 +56,25 @@ def call_llm(
             messages.append(HumanMessage(content=prompt))
             
             if provider == "gemini":
-                # Initialize LangChain ChatGoogleGenerativeAI
+                # Initialize LangChain ChatGoogleGenerativeAI with timeout
                 model = ChatGoogleGenerativeAI(
                     model="gemini-3.1-flash-lite",
                     google_api_key=GEMINI_API_KEY,
                     temperature=0.0,
-                    response_mime_type="application/json" if json_mode else None
+                    response_mime_type="application/json" if json_mode else None,
+                    timeout=30.0
                 )
                 response = model.invoke(messages)
                 
             elif provider == "groq":
-                # Initialize LangChain ChatGroq
+                # Initialize LangChain ChatGroq with timeout
                 model_kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
                 model = ChatGroq(
                     model="llama-3.1-8b-instant",
                     groq_api_key=GROQ_API_KEY,
                     temperature=0.0,
-                    model_kwargs=model_kwargs
+                    model_kwargs=model_kwargs,
+                    request_timeout=30.0
                 )
                 response = model.invoke(messages)
                 
