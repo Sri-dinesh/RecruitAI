@@ -15,6 +15,7 @@ export const COLORS = {
   brandHover: "#263A66",
   brandDark: "#10192E",
   accent: "#1B2A4A",
+  brandEmerald: "#059669",
 
   // Status Indicators
   statusShortlist: "#059669",
