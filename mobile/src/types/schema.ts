@@ -1,6 +1,4 @@
-/**
- * Shared Type Definitions for RecruitAI Mobile App
- */
+import type React from "react";
 
 export interface Candidate {
   candidate_id: string;
@@ -86,4 +84,38 @@ export interface ChatApiResponse {
   router_logs?: string[];
   scheduled_interviews?: ScheduledInterview[];
   session_id: string;
+}
+
+export type CandidateStatus = "shortlisted" | "offered" | "rejected";
+
+export interface RecruitContextType {
+  sessions: ChatSession[];
+  activeSessionId: string | null;
+  activeSession: ChatSession | null;
+  jd: JobDescription | null;
+  candidates: Candidate[];
+  candidateStatuses: Record<string, CandidateStatus>;
+  lastShortlist: Candidate[] | null;
+  scheduledInterviews: ScheduledInterview[];
+  messages: ChatMessage[];
+  isBlindHiring: boolean;
+  apiConnected: boolean;
+  loadingSession: boolean;
+  statusSaving: string | null;
+  loadSessions: () => Promise<ChatSession[]>;
+  selectSession: (sessionId: string) => Promise<void>;
+  createSession: (title?: string) => Promise<ChatSession | null>;
+  deleteSession: (sessionId: string) => Promise<boolean>;
+  renameSession: (sessionId: string, newTitle: string) => Promise<void>;
+  toggleCandidateStatus: (
+    candidateId: string,
+    candidateName: string,
+    status: CandidateStatus
+  ) => Promise<void>;
+  toggleBlindHiring: () => void;
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
+  setJd: React.Dispatch<React.SetStateAction<JobDescription | null>>;
+  refreshActiveSession: () => Promise<void>;
+  checkApiHealth: () => Promise<boolean>;
 }
