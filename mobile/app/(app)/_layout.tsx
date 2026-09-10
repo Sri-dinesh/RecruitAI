@@ -39,6 +39,14 @@ export default function AppLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="modals/candidate-inspector"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
         </Stack>
       </BottomSheetModalProvider>
     </RecruitProvider>
