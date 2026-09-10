@@ -116,6 +116,8 @@ export interface RecruitContextType {
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
   setJd: React.Dispatch<React.SetStateAction<JobDescription | null>>;
+  setScheduledInterviews: React.Dispatch<React.SetStateAction<ScheduledInterview[]>>;
+  bookInterview: (candidateName: string, slot: string) => Promise<void>;
   refreshActiveSession: () => Promise<void>;
   checkApiHealth: () => Promise<boolean>;
 }

@@ -284,6 +284,36 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     setIsBlindHiring((prev) => !prev);
   }, []);
 
+  // Book an interview slot
+  const bookInterview = useCallback(
+    async (candidateName: string, slot: string) => {
+      const newBooking: ScheduledInterview = {
+        candidate_name: candidateName,
+        slot,
+        booked_at: new Date().toISOString(),
+      };
+      setScheduledInterviews((prev) => [...prev, newBooking]);
+      successHaptic();
+
+      // Fire non-blocking chat sync so backend agent knows interview is booked
+      if (activeSessionId) {
+        try {
+          await fetchWithAuth("/api/chat", {
+            method: "POST",
+            body: JSON.stringify({
+              message: `Confirm booking interview with ${candidateName} for ${slot}`,
+              session_id: activeSessionId,
+              scheduled_interviews: [...scheduledInterviews, newBooking],
+            }),
+          });
+        } catch (err) {
+          console.warn("[RecruitContext] Non-blocking interview book sync failed:", err);
+        }
+      }
+    },
+    [activeSessionId, scheduledInterviews]
+  );
+
   // Refresh current active session
   const refreshActiveSession = useCallback(async () => {
     if (activeSessionId) {
@@ -332,6 +362,8 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       setMessages,
       setCandidates,
       setJd,
+      setScheduledInterviews,
+      bookInterview,
       refreshActiveSession,
       checkApiHealth,
     }),
@@ -356,6 +388,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       renameSession,
       toggleCandidateStatus,
       toggleBlindHiring,
+      bookInterview,
       refreshActiveSession,
       checkApiHealth,
     ]
