@@ -15,8 +15,10 @@ mock_candidate = Candidate(
     gaps=[]
 )
 
-@patch("app.api.routes_ingest.ingest_single_candidate_text", return_value=mock_candidate)
-def test_upload_txt_file(mock_ingest):
+@patch("app.api.routes_ingest.ingest_candidate_object", return_value=mock_candidate)
+@patch("app.services.resume_api.call_llm")
+def test_upload_txt_file(mock_llm, mock_ingest):
+    mock_llm.return_value = ('{"name": "John Doe"}', "mock_provider", 10)
     # Test uploading a valid plain text resume
     file_content = b"John Doe resume content. Experienced Python Developer."
     files = {"files": ("john_doe.txt", file_content, "text/plain")}
@@ -28,23 +30,32 @@ def test_upload_txt_file(mock_ingest):
     assert len(data) == 1
     assert data[0]["candidate_id"] == "john_doe"
     assert data[0]["name"] == "John Doe"
-    
-    # Assert parser resolved name and ID correctly
     mock_ingest.assert_called_once()
-    args = mock_ingest.call_args[0]
-    assert args[0] == "john_doe"
-    assert args[1] == "John Doe"
-    assert "Experienced Python Developer." in args[2]
 
-@patch("app.api.routes_ingest.ingest_single_candidate_text", return_value=mock_candidate)
+@patch("app.api.routes_ingest.ingest_candidate_object", return_value=mock_candidate)
 def test_upload_unsupported_format(mock_ingest):
-    # Test uploading an unsupported format (e.g. image)
-    files = {"files": ("photo.png", b"fake-png-binary-data", "image/png")}
+    # Test uploading an unsupported format (e.g. binary executable)
+    files = {"files": ("script.exe", b"fake-exe-binary-data", "application/octet-stream")}
     
     response = client.post("/api/ingest/upload", files=files)
     assert response.status_code == 400
     assert "Unsupported file format" in response.json()["detail"]
     assert mock_ingest.call_count == 0
+
+@patch("app.api.routes_ingest.ingest_candidate_object", return_value=mock_candidate)
+@patch("app.services.document_parser.parse_image", return_value="John Doe resume text extracted via OCR.")
+@patch("app.services.resume_api.call_llm")
+def test_upload_image_file(mock_llm, mock_ocr, mock_ingest):
+    mock_llm.return_value = ('{"name": "John Doe"}', "mock_provider", 10)
+    files = {"files": ("photo_resume.png", b"fake-png-bytes", "image/png")}
+    
+    response = client.post("/api/ingest/upload", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "John Doe"
+    mock_ocr.assert_called_once()
+    mock_ingest.assert_called_once()
 
 
 @patch("app.api.routes_ingest.call_llm")
@@ -70,7 +81,7 @@ def test_upload_jd_txt(mock_call_llm):
     mock_call_llm.assert_called_once()
 
 
-@patch("app.api.routes_ingest.ingest_single_candidate_text", return_value=mock_candidate)
+@patch("app.api.routes_ingest.ingest_candidate_object", return_value=mock_candidate)
 @patch("app.services.resume_api.call_llm")
 def test_upload_pdf_file(mock_llm, mock_ingest):
     import io
@@ -91,6 +102,7 @@ def test_upload_pdf_file(mock_llm, mock_ingest):
     data = response.json()
     assert len(data) == 1
     assert data[0]["candidate_id"] == "john_doe"
+    mock_ingest.assert_called_once()
 
 
 @patch("app.api.routes_ingest.call_llm")

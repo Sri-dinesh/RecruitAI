@@ -5,7 +5,11 @@ import json
 
 from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
-from app.services.ingestion_service import ingest_candidate_object, save_job_description
+from app.services.ingestion_service import (
+    ingest_candidate_object,
+    save_job_description,
+    ingest_single_candidate_text,
+)
 from app.services.resume_api import parse_resume_via_api
 from app.services.document_parser import parse_document
 from app.core.llm_router import call_llm
@@ -30,10 +34,11 @@ async def upload_resumes_endpoint(
         file_path = Path(filename)
         extension = file_path.suffix.lower()
         
-        if extension not in [".pdf", ".docx", ".txt", ".text"]:
+        SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".text", ".png", ".jpg", ".jpeg"]
+        if extension not in SUPPORTED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file format '{extension}'. Only PDF, DOCX, and TXT are supported."
+                detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
             )
             
         file_bytes = await file.read()
@@ -72,10 +77,11 @@ async def upload_jd_endpoint(
     filename = file.filename or "jd.txt"
     extension = Path(filename).suffix.lower()
     
-    if extension not in [".pdf", ".docx", ".txt", ".text"]:
+    SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".text", ".png", ".jpg", ".jpeg"]
+    if extension not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file format '{extension}'. Only PDF, DOCX, and TXT are supported."
+            detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
         )
         
     file_bytes = await file.read()

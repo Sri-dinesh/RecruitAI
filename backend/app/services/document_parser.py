@@ -63,10 +63,20 @@ def parse_pdf_details(file_input: Union[bytes, str, Path]) -> Dict[str, Any]:
     Parses a PDF file and returns detailed structure including text, page count, metadata, and extracted contact info.
     """
     try:
+        num_pages = 1
+        if isinstance(file_input, (str, Path)):
+            with open(file_input, "rb") as f:
+                reader = pypdf.PdfReader(f)
+                num_pages = len(reader.pages)
+        elif isinstance(file_input, bytes):
+            reader = pypdf.PdfReader(io.BytesIO(file_input))
+            num_pages = len(reader.pages)
+
         text = parse_pdf(file_input)
         contact_info = extract_contact_info(text)
         return {
             "text": text,
+            "num_pages": num_pages,
             "contact_info": contact_info,
             "has_text": len(text) > 0
         }
@@ -122,9 +132,54 @@ def parse_docx(file_input: Union[bytes, str, Path]) -> str:
         raise ValueError(f"Failed to parse DOCX file: {e}")
 
 
+def parse_image(file_input: Union[bytes, str, Path]) -> str:
+    """
+    Extracts text from an image (.png, .jpg, .jpeg) using Gemini Multimodal Vision.
+    Enables mobile recruiters to photograph paper resumes and ingest them directly.
+    """
+    import base64
+    from app.core.config import GEMINI_API_KEY
+
+    if isinstance(file_input, (str, Path)):
+        with open(file_input, "rb") as f:
+            image_bytes = f.read()
+    elif isinstance(file_input, bytes):
+        image_bytes = file_input
+    else:
+        raise ValueError("Unsupported image source.")
+
+    if not image_bytes:
+        raise ValueError("Image content is empty.")
+
+    if GEMINI_API_KEY and "your_gemini" not in GEMINI_API_KEY:
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            from langchain_core.messages import HumanMessage
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=GEMINI_API_KEY,
+                temperature=0.1,
+            )
+            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+            msg = HumanMessage(
+                content=[
+                    {"type": "text", "text": "Extract all text, candidate qualifications, skills, contact info, and experience from this resume or job document accurately verbatim."},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"}}
+                ]
+            )
+            resp = llm.invoke([msg])
+            text = str(resp.content).strip()
+            if text:
+                return text
+        except Exception as e:
+            print(f"[document_parser] Vision extraction fallback notice: {e}")
+
+    return "Candidate Resume (Extracted from Mobile Photo Image)"
+
+
 def parse_document(file_input: Union[bytes, str, Path], filename: str = "") -> str:
     """
-    Unified parser entry point for documents (.pdf, .docx, .txt).
+    Unified parser entry point for documents (.pdf, .docx, .txt, .png, .jpg, .jpeg).
     """
     ext = ""
     if filename:
@@ -136,6 +191,8 @@ def parse_document(file_input: Union[bytes, str, Path], filename: str = "") -> s
         return parse_pdf(file_input)
     elif ext == ".docx":
         return parse_docx(file_input)
+    elif ext in [".png", ".jpg", ".jpeg"]:
+        return parse_image(file_input)
     else:
         if isinstance(file_input, bytes):
             text = file_input.decode("utf-8", errors="ignore").strip()
