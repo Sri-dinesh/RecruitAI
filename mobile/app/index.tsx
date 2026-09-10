@@ -39,7 +39,7 @@ export default function HomeScreen() {
             <View className="flex-row items-center bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
               <ShieldCheck size={14} color={COLORS.statusShortlist} />
               <Text className="font-sans-medium text-xs text-emerald-800 ml-1">
-                Phase 3 Auth Ready
+                Phase 4 App Shell Ready
               </Text>
             </View>
           </View>
@@ -51,29 +51,46 @@ export default function HomeScreen() {
         {/* User Session Banner */}
         <View className="bg-white border border-border rounded-[6px] p-4 my-2 shadow-xs">
           {user ? (
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center flex-1 mr-2">
-                <View className="w-8 h-8 rounded-full bg-emerald-100 items-center justify-center border border-emerald-200">
-                  <UserCheck size={16} color={COLORS.statusShortlist} />
+            <View>
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center flex-1 mr-2">
+                  <View className="w-8 h-8 rounded-full bg-emerald-100 items-center justify-center border border-emerald-200">
+                    <UserCheck size={16} color={COLORS.statusShortlist} />
+                  </View>
+                  <View className="ml-2.5 flex-1">
+                    <Text className="font-sans-bold text-xs text-foreground" numberOfLines={1}>
+                      {user.user_metadata?.full_name || "Recruiter"}
+                    </Text>
+                    <Text className="font-sans text-[11px] text-muted" numberOfLines={1}>
+                      {user.email}
+                    </Text>
+                  </View>
                 </View>
-                <View className="ml-2.5 flex-1">
-                  <Text className="font-sans-bold text-xs text-foreground" numberOfLines={1}>
-                    {user.user_metadata?.full_name || "Recruiter"}
-                  </Text>
-                  <Text className="font-sans text-[11px] text-muted" numberOfLines={1}>
-                    {user.email}
-                  </Text>
-                </View>
+                <TouchableOpacity
+                  onPress={async () => {
+                    selectionHaptic();
+                    await logout();
+                  }}
+                  className="bg-slate-100 border border-border px-3 py-1.5 rounded-[6px] flex-row items-center"
+                >
+                  <LogOut size={13} color={COLORS.muted} />
+                  <Text className="font-sans-medium text-xs text-muted ml-1">Sign Out</Text>
+                </TouchableOpacity>
               </View>
+
               <TouchableOpacity
-                onPress={async () => {
+                onPress={() => {
                   selectionHaptic();
-                  await logout();
+                  router.push("/(app)/(tabs)");
                 }}
-                className="bg-slate-100 border border-border px-3 py-1.5 rounded-[6px] flex-row items-center"
+                activeOpacity={0.8}
+                className="bg-accent py-2.5 px-4 rounded-[6px] flex-row items-center justify-center shadow-xs"
               >
-                <LogOut size={13} color={COLORS.muted} />
-                <Text className="font-sans-medium text-xs text-muted ml-1">Sign Out</Text>
+                <Sparkles size={14} color="#FFFFFF" />
+                <Text className="font-sans-bold text-xs text-white ml-2">
+                  Open Recruitment Workspace (4 Tabs)
+                </Text>
+                <ArrowRight size={14} color="#FFFFFF" className="ml-1.5" />
               </TouchableOpacity>
             </View>
           ) : (
@@ -100,12 +117,22 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Phase 3 Auth Screens Quick Navigator */}
+        {/* Phase 3 & 4 Navigation Controls */}
         <View className="my-3">
           <Text className="font-sans-bold text-xs text-muted uppercase tracking-wider mb-2">
-            Auth Flow Navigation
+            Navigation Controls
           </Text>
           <View className="flex-row flex-wrap gap-2">
+            <TouchableOpacity
+              onPress={() => {
+                selectionHaptic();
+                router.push("/(app)/(tabs)");
+              }}
+              className="bg-accent/10 border border-accent/30 px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <Sparkles size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-bold text-xs text-accent ml-1.5">App Shell (Tabs)</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => router.push("/(auth)/welcome")}
               className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
@@ -256,7 +283,7 @@ export default function HomeScreen() {
         {/* Footer info */}
         <View className="mt-8 items-center">
           <Text className="font-sans text-xs text-muted">
-            Phase 3: Supabase PKCE Auth · Hardware Keychain Encryption
+            Phase 4: 4-Tab Bottom Nav · Campaign Session Switcher · RecruitContext
           </Text>
         </View>
       </ScrollView>
