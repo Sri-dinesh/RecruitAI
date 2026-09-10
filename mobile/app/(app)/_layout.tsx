@@ -47,6 +47,22 @@ export default function AppLayout() {
               animation: "slide_from_bottom",
             }}
           />
+          <Stack.Screen
+            name="modals/ats-export"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="modals/report-preview"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
         </Stack>
       </BottomSheetModalProvider>
     </RecruitProvider>
