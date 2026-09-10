@@ -26,6 +26,7 @@ import {
   ArrowRight,
   ShieldCheck,
   ChevronLeft,
+  Sparkles,
 } from "lucide-react-native";
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
@@ -33,7 +34,7 @@ import { selectionHaptic, warningHaptic, successHaptic } from "@/lib/haptics";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { loginWithEmail, loginWithGoogle } = useAuth();
+  const { loginWithEmail, loginWithGoogle, signupWithEmail } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,6 +42,7 @@ export default function LoginScreen() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState("");
 
   const shakeX = useSharedValue(0);
@@ -77,7 +79,7 @@ export default function LoginScreen() {
         triggerShake();
       } else {
         successHaptic();
-        router.replace("/");
+        router.replace("/(app)/(tabs)");
       }
     } catch (err: any) {
       warningHaptic();
@@ -85,6 +87,38 @@ export default function LoginScreen() {
       triggerShake();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setError("");
+    setDemoLoading(true);
+    const demoEmail = "demo.recruiter@recruitai.io";
+    const demoPassword = "DemoPassword2026!";
+
+    try {
+      // Try logging in first
+      const { error: loginErr } = await loginWithEmail(demoEmail, demoPassword);
+      if (loginErr) {
+        // If not found, try signing up the demo user
+        const { error: signupErr } = await signupWithEmail(
+          demoEmail,
+          demoPassword,
+          "Demo Recruiter"
+        );
+        if (!signupErr) {
+          await loginWithEmail(demoEmail, demoPassword);
+        } else {
+          throw signupErr;
+        }
+      }
+      successHaptic();
+      router.replace("/(app)/(tabs)");
+    } catch (err: any) {
+      warningHaptic();
+      setError(err?.message || "Could not initialize demo session.");
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -98,7 +132,7 @@ export default function LoginScreen() {
         triggerShake();
       } else {
         successHaptic();
-        router.replace("/");
+        router.replace("/(app)/(tabs)");
       }
     } catch (err: any) {
       setError(err?.message || "Google sign in error.");
@@ -110,43 +144,49 @@ export default function LoginScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background">
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
       >
         <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header Navigation */}
-          <View className="flex-row items-center justify-between mb-4">
+          {/* Top Bar Navigation */}
+          <View className="flex-row items-center justify-between pt-2 pb-4">
             <TouchableOpacity
-              onPress={() => router.back()}
-              className="flex-row items-center py-1 -ml-1"
+              onPress={() => {
+                selectionHaptic();
+                router.back();
+              }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              className="w-9 h-9 rounded-full bg-white border border-border items-center justify-center"
             >
-              <ChevronLeft size={20} color={COLORS.muted} />
-              <Text className="font-sans-medium text-xs text-muted ml-0.5">
-                Back
-              </Text>
+              <ChevronLeft size={18} color={COLORS.foreground} />
             </TouchableOpacity>
-            <Text className="font-serif-bold text-xl text-foreground">
+
+            <Text className="font-serif-bold text-lg text-foreground">
               RecruitAI<Text className="text-brand-emerald">.</Text>
             </Text>
+
+            <View className="w-9" />
           </View>
 
-          {/* Segmented Tab Switcher */}
-          <View className="flex-row bg-slate-200/70 p-1 rounded-[6px] my-3">
-            <View className="flex-1 bg-white py-2 rounded-[5px] items-center shadow-xs">
-              <Text className="font-sans-bold text-xs text-brand-dark">
+          {/* Segmented Switcher: Sign In vs Create Account */}
+          <View className="flex-row bg-slate-200/80 p-1 rounded-[8px] my-4">
+            <View className="flex-1 bg-white py-2 rounded-[6px] items-center">
+              <Text className="font-sans-bold text-xs text-foreground">
                 Sign In
               </Text>
             </View>
+
             <TouchableOpacity
               onPress={() => {
                 selectionHaptic();
                 router.replace("/(auth)/signup");
               }}
-              className="flex-1 py-2 items-center"
+              activeOpacity={0.7}
+              className="flex-1 py-2 rounded-[6px] items-center"
             >
               <Text className="font-sans-medium text-xs text-muted">
                 Create Account
@@ -154,13 +194,13 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Title & Subtitle */}
-          <View className="mt-4 mb-6">
-            <Text className="font-serif text-2xl text-foreground">
+          {/* Editorial Header */}
+          <View className="my-2">
+            <Text className="font-serif-bold text-2xl text-foreground">
               Welcome back
             </Text>
-            <Text className="font-sans text-xs text-muted mt-1">
-              Enter your recruiter credentials to access candidate pipelines.
+            <Text className="font-sans text-xs text-muted mt-1 leading-relaxed">
+              Access candidate intelligence, evaluation rubrics, and the recruitment Co-Pilot.
             </Text>
           </View>
 
@@ -168,18 +208,37 @@ export default function LoginScreen() {
           <TouchableOpacity
             onPress={handleGoogleLogin}
             disabled={googleLoading}
-            activeOpacity={0.7}
-            className="w-full bg-white border border-border rounded-[6px] py-3 px-4 flex-row items-center justify-center mb-5 shadow-xs"
+            activeOpacity={0.8}
+            className="w-full bg-white border border-border rounded-[6px] py-3 px-4 flex-row items-center justify-center my-3"
           >
             {googleLoading ? (
               <ActivityIndicator size="small" color={COLORS.brandPrimary} />
             ) : (
               <>
-                <Text className="font-sans-bold text-sm text-[#4285F4] mr-2">
-                  G
-                </Text>
-                <Text className="font-sans-medium text-xs text-foreground">
+                <View className="w-4 h-4 rounded-full bg-red-500 items-center justify-center mr-2">
+                  <Text className="text-[10px] font-bold text-white">G</Text>
+                </View>
+                <Text className="font-sans-bold text-xs text-foreground">
                   Continue with Google
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Demo Recruiter Quick Sign In */}
+          <TouchableOpacity
+            onPress={handleDemoLogin}
+            disabled={demoLoading}
+            activeOpacity={0.8}
+            className="w-full bg-emerald-50 border border-emerald-200 rounded-[6px] py-2.5 px-4 flex-row items-center justify-center mb-3"
+          >
+            {demoLoading ? (
+              <ActivityIndicator size="small" color={COLORS.statusShortlist} />
+            ) : (
+              <>
+                <Sparkles size={13} color={COLORS.statusShortlist} />
+                <Text className="font-sans-bold text-xs text-emerald-800 ml-1.5">
+                  Instant Access: Demo Recruiter
                 </Text>
               </>
             )}
@@ -197,8 +256,19 @@ export default function LoginScreen() {
           {/* Error Alert Box with Shake Animation */}
           {error ? (
             <Animated.View
-              style={shakeStyle}
-              className="flex-row items-center bg-rose-50 border border-rose-200 rounded-[6px] p-3 my-2"
+              style={[
+                shakeStyle,
+                {
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#FFF1F2",
+                  borderColor: "#FECDD3",
+                  borderWidth: 1,
+                  borderRadius: 6,
+                  padding: 12,
+                  marginVertical: 8,
+                },
+              ]}
             >
               <AlertCircle size={16} color={COLORS.statusReject} />
               <Text className="font-sans text-xs text-rose-800 ml-2 flex-1">
@@ -215,10 +285,10 @@ export default function LoginScreen() {
                 Work Email
               </Text>
               <View
-                className={`flex-row items-center bg-white border rounded-[6px] px-3 py-2.5 ${
+                className={`flex-row items-center bg-white rounded-[6px] px-3 py-2.5 ${
                   focusedInput === "email"
-                    ? "border-accent ring-1 ring-accent"
-                    : "border-border"
+                    ? "border-2 border-accent"
+                    : "border border-border"
                 }`}
               >
                 <Mail
@@ -255,10 +325,10 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
               <View
-                className={`flex-row items-center bg-white border rounded-[6px] px-3 py-2.5 ${
+                className={`flex-row items-center bg-white rounded-[6px] px-3 py-2.5 ${
                   focusedInput === "password"
-                    ? "border-accent ring-1 ring-accent"
-                    : "border-border"
+                    ? "border-2 border-accent"
+                    : "border border-border"
                 }`}
               >
                 <Lock
@@ -278,7 +348,7 @@ export default function LoginScreen() {
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   {showPassword ? (
                     <EyeOff size={16} color={COLORS.muted} />
@@ -290,30 +360,30 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Submit Button */}
+          {/* Sign In CTA Button */}
           <TouchableOpacity
             onPress={handleLogin}
             disabled={loading}
             activeOpacity={0.85}
-            className="w-full bg-accent rounded-[6px] py-3.5 px-4 flex-row items-center justify-center mt-6 shadow-sm"
+            className="w-full bg-accent rounded-[6px] py-3.5 px-4 flex-row items-center justify-center mt-6"
           >
             {loading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
                 <Text className="font-sans-bold text-sm text-white mr-2">
-                  Sign In to Workspace
+                  Sign In
                 </Text>
                 <ArrowRight size={16} color="#FFFFFF" />
               </>
             )}
           </TouchableOpacity>
 
-          {/* Footer Security Badge */}
-          <View className="flex-row items-center justify-center mt-10">
+          {/* Security Note */}
+          <View className="flex-row items-center justify-center mt-8">
             <ShieldCheck size={13} color={COLORS.statusShortlist} />
-            <Text className="font-sans text-xs text-muted ml-1.5">
-              Encrypted Session Storage (Keychain / Keystore)
+            <Text className="font-sans text-[11px] text-muted ml-1.5">
+              Encrypted Supabase Auth · Hardware Keystore
             </Text>
           </View>
         </ScrollView>

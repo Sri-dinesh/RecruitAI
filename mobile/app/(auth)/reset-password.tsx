@@ -162,10 +162,10 @@ export default function ResetPasswordScreen() {
                     New Password
                   </Text>
                   <View
-                    className={`flex-row items-center bg-white border rounded-[6px] px-3 py-2.5 ${
+                    className={`flex-row items-center bg-white rounded-[6px] px-3 py-2.5 ${
                       focusedInput === "password"
-                        ? "border-accent ring-1 ring-accent"
-                        : "border-border"
+                        ? "border-2 border-accent"
+                        : "border border-border"
                     }`}
                   >
                     <Lock
@@ -204,14 +204,14 @@ export default function ResetPasswordScreen() {
                     Confirm New Password
                   </Text>
                   <View
-                    className={`flex-row items-center bg-white border rounded-[6px] px-3 py-2.5 ${
+                    className={`flex-row items-center bg-white rounded-[6px] px-3 py-2.5 ${
                       focusedInput === "confirmPassword"
-                        ? "border-accent ring-1 ring-accent"
+                        ? "border-2 border-accent"
                         : passwordsMismatch
-                        ? "border-rose-400 bg-rose-50/20"
+                        ? "border border-rose-400 bg-rose-50/20"
                         : passwordsMatch
-                        ? "border-emerald-400 bg-emerald-50/20"
-                        : "border-border"
+                        ? "border border-emerald-400 bg-emerald-50/20"
+                        : "border border-border"
                     }`}
                   >
                     <Lock

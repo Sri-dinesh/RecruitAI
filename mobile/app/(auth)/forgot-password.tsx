@@ -137,10 +137,10 @@ export default function ForgotPasswordScreen() {
               Work Email
             </Text>
             <View
-              className={`flex-row items-center bg-white border rounded-[6px] px-3 py-2.5 ${
+              className={`flex-row items-center bg-white rounded-[6px] px-3 py-2.5 ${
                 focusedInput === "email"
-                  ? "border-accent ring-1 ring-accent"
-                  : "border-border"
+                  ? "border-2 border-accent"
+                  : "border border-border"
               }`}
             >
               <Mail

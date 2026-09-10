@@ -1,13 +1,21 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Bot, TrendingUp, Users, ArrowRight, ShieldCheck } from "lucide-react-native";
+import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
 import { selectionHaptic } from "@/lib/haptics";
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/(app)/(tabs)");
+    }
+  }, [user, loading, router]);
 
   return (
     <SafeAreaView className="flex-1 bg-background">
@@ -20,7 +28,7 @@ export default function WelcomeScreen() {
           <Text className="font-serif-bold text-3xl text-foreground tracking-tight">
             RecruitAI<Text className="text-brand-emerald">.</Text>
           </Text>
-          <View className="flex-row items-center bg-white border border-border px-3 py-1 rounded-full mt-2 shadow-xs">
+          <View className="flex-row items-center bg-white border border-border px-3 py-1 rounded-full mt-2">
             <Bot size={13} color={COLORS.brandPrimary} />
             <Text className="font-sans-medium text-xs text-foreground ml-1.5">
               Agentic Recruitment Engine
@@ -40,7 +48,7 @@ export default function WelcomeScreen() {
         </View>
 
         {/* Floating Live AI Screening Card Preview */}
-        <View className="bg-white border border-border rounded-[6px] p-5 my-6 shadow-sm">
+        <View className="bg-white border border-border rounded-[6px] p-5 my-6">
           <View className="flex-row items-center justify-between mb-3">
             <View className="flex-row items-center">
               <View className="w-10 h-10 rounded-full bg-slate-100 items-center justify-center border border-border">
@@ -93,7 +101,7 @@ export default function WelcomeScreen() {
               router.push("/(auth)/signup");
             }}
             activeOpacity={0.85}
-            className="w-full bg-accent rounded-[6px] py-3.5 px-4 flex-row items-center justify-center shadow-sm"
+            className="w-full bg-accent rounded-[6px] py-3.5 px-4 flex-row items-center justify-center"
           >
             <Text className="font-sans-bold text-sm text-white mr-2">
               Create Account
