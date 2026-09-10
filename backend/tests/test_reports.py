@@ -46,3 +46,17 @@ def test_report_api_endpoint():
     assert response.headers["content-type"] == "application/pdf"
     assert "attachment; filename=recruitment_report.pdf" in response.headers["content-disposition"]
     assert response.content.startswith(b"%PDF-")
+
+
+def test_session_report_api_endpoint():
+    # 1. Create a session
+    sess_res = client.post("/api/sessions")
+    assert sess_res.status_code == 200
+    session_id = sess_res.json()["id"]
+
+    # 2. Query the session PDF report download
+    rep_res = client.get(f"/api/reports/session/{session_id}")
+    assert rep_res.status_code == 200
+    assert rep_res.headers["content-type"] == "application/pdf"
+    assert "attachment; filename=" in rep_res.headers["content-disposition"]
+    assert rep_res.content.startswith(b"%PDF-")
