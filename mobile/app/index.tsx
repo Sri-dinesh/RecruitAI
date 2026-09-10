@@ -1,12 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Sparkles, Users, CheckCircle, ShieldCheck, ArrowRight } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import {
+  Sparkles,
+  Users,
+  CheckCircle,
+  ShieldCheck,
+  ArrowRight,
+  LogIn,
+  LogOut,
+  UserCheck,
+  KeyRound,
+  UserPlus,
+} from "lucide-react-native";
+import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
 import { ACTION_CHIPS } from "@/constants/prompts";
 import { selectionHaptic } from "@/lib/haptics";
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
 
   return (
@@ -24,7 +39,7 @@ export default function HomeScreen() {
             <View className="flex-row items-center bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
               <ShieldCheck size={14} color={COLORS.statusShortlist} />
               <Text className="font-sans-medium text-xs text-emerald-800 ml-1">
-                Phase 2 Core Ready
+                Phase 3 Auth Ready
               </Text>
             </View>
           </View>
@@ -33,8 +48,108 @@ export default function HomeScreen() {
           </Text>
         </View>
 
+        {/* User Session Banner */}
+        <View className="bg-white border border-border rounded-[6px] p-4 my-2 shadow-xs">
+          {user ? (
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1 mr-2">
+                <View className="w-8 h-8 rounded-full bg-emerald-100 items-center justify-center border border-emerald-200">
+                  <UserCheck size={16} color={COLORS.statusShortlist} />
+                </View>
+                <View className="ml-2.5 flex-1">
+                  <Text className="font-sans-bold text-xs text-foreground" numberOfLines={1}>
+                    {user.user_metadata?.full_name || "Recruiter"}
+                  </Text>
+                  <Text className="font-sans text-[11px] text-muted" numberOfLines={1}>
+                    {user.email}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={async () => {
+                  selectionHaptic();
+                  await logout();
+                }}
+                className="bg-slate-100 border border-border px-3 py-1.5 rounded-[6px] flex-row items-center"
+              >
+                <LogOut size={13} color={COLORS.muted} />
+                <Text className="font-sans-medium text-xs text-muted ml-1">Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 mr-3">
+                <Text className="font-sans-bold text-xs text-foreground">
+                  Recruiter Authentication
+                </Text>
+                <Text className="font-sans text-[11px] text-muted mt-0.5">
+                  Sign in or create account with Supabase PKCE Auth.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  selectionHaptic();
+                  router.push("/(auth)/welcome");
+                }}
+                className="bg-accent px-3 py-2 rounded-[6px] flex-row items-center"
+              >
+                <LogIn size={13} color="#FFFFFF" />
+                <Text className="font-sans-bold text-xs text-white ml-1.5">Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Phase 3 Auth Screens Quick Navigator */}
+        <View className="my-3">
+          <Text className="font-sans-bold text-xs text-muted uppercase tracking-wider mb-2">
+            Auth Flow Navigation
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/welcome")}
+              className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <Users size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-medium text-xs text-foreground ml-1.5">Welcome Portal</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/login")}
+              className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <LogIn size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-medium text-xs text-foreground ml-1.5">Sign In</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/signup")}
+              className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <UserPlus size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-medium text-xs text-foreground ml-1.5">Create Account</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/forgot-password")}
+              className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <KeyRound size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-medium text-xs text-foreground ml-1.5">Forgot Password</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/reset-password")}
+              className="bg-white border border-border px-3 py-2 rounded-[6px] flex-row items-center shadow-xs"
+            >
+              <ShieldCheck size={13} color={COLORS.brandPrimary} />
+              <Text className="font-sans-medium text-xs text-foreground ml-1.5">Reset Password</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Live Candidate Preview Card */}
-        <View className="bg-white border border-border rounded-[6px] p-5 my-4 shadow-sm">
+        <View className="bg-white border border-border rounded-[6px] p-5 my-3 shadow-sm">
           <View className="flex-row items-center justify-between mb-3">
             <View className="flex-row items-center space-x-2">
               <View className="w-10 h-10 rounded-full bg-slate-100 items-center justify-center border border-border">
@@ -138,45 +253,10 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Design System Verification Box */}
-        <View className="bg-white border border-border rounded-[6px] p-5 mt-4">
-          <Text className="font-serif text-base text-foreground mb-3">
-            Design Tokens Verified
-          </Text>
-          
-          <View className="space-y-2">
-            <View className="flex-row items-center justify-between py-1 border-b border-slate-100">
-              <Text className="font-sans text-xs text-muted">Canvas Ivory</Text>
-              <View className="flex-row items-center">
-                <View className="w-3.5 h-3.5 rounded-full bg-[#F8F6F2] border border-border mr-1.5" />
-                <Text className="font-mono text-xs text-foreground">#F8F6F2</Text>
-              </View>
-            </View>
-
-            <View className="flex-row items-center justify-between py-1 border-b border-slate-100">
-              <Text className="font-sans text-xs text-muted">Executive Navy</Text>
-              <View className="flex-row items-center">
-                <View className="w-3.5 h-3.5 rounded-full bg-[#1B2A4A] mr-1.5" />
-                <Text className="font-mono text-xs text-foreground">#1B2A4A</Text>
-              </View>
-            </View>
-
-            <View className="flex-row items-center justify-between py-1 border-b border-slate-100">
-              <Text className="font-sans text-xs text-muted">Typography</Text>
-              <Text className="font-sans-bold text-xs text-foreground">Fraunces & DM Sans</Text>
-            </View>
-
-            <View className="flex-row items-center justify-between py-1">
-              <Text className="font-sans text-xs text-muted">Uniform Radius</Text>
-              <Text className="font-sans-medium text-xs text-foreground">6px (rounded-[6px])</Text>
-            </View>
-          </View>
-        </View>
-
         {/* Footer info */}
         <View className="mt-8 items-center">
           <Text className="font-sans text-xs text-muted">
-            Phase 2: Expo 57 · NativeWind v4 · Supabase Core
+            Phase 3: Supabase PKCE Auth · Hardware Keychain Encryption
           </Text>
         </View>
       </ScrollView>
