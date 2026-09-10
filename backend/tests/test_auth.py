@@ -61,7 +61,6 @@ class TestMultiTenantIsolation:
         assert "id" in data
         assert data.get("user_id") == "user_A"
         app.dependency_overrides = {}
-        return data["id"]
 
     def test_user_B_cannot_access_user_A_session(self):
         # Create a session as user_A

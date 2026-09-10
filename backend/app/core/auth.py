@@ -7,7 +7,7 @@ Robust JWT Authentication Dependency for FastAPI and Supabase.
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
-from app.core.config import SUPABASE_JWT_SECRET
+from app.core.config import SUPABASE_JWT_SECRET, USE_LOCAL_AUTH
 
 security = HTTPBearer(auto_error=False)
 
@@ -20,6 +20,8 @@ def get_current_user_id(
     Returns the user_id (sub claim) if valid.
     """
     if not credentials or not credentials.credentials:
+        if USE_LOCAL_AUTH:
+            return "local_dev_user_123"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please log in to continue.",
@@ -27,6 +29,8 @@ def get_current_user_id(
         )
 
     token = credentials.credentials
+    if USE_LOCAL_AUTH and token in ("mock-token", "local-token", "test-token", "local_dev_user_123"):
+        return "local_dev_user_123"
 
     # 1. Primary: Verify directly with Supabase Auth API
     try:

@@ -3,6 +3,19 @@ import json
 import uuid
 from typing import List, Dict, Any, Optional
 
+class MockUser:
+    def __init__(self, uid: str = "local_dev_user_123", email: str = "recruiter@recruitai.local"):
+        self.id = uid
+        self.email = email
+
+class MockUserResponse:
+    def __init__(self, user: MockUser):
+        self.user = user
+
+class MockAuth:
+    def get_user(self, token: str = ""):
+        return MockUserResponse(MockUser("local_dev_user_123"))
+
 class FallbackSupabaseClient:
     """
     A lightweight, drop-in local SQLite fallback for the Supabase Client.
@@ -10,6 +23,7 @@ class FallbackSupabaseClient:
     """
     def __init__(self, db_path: str = "recruitai_fallback.db"):
         self.db_path = db_path
+        self.auth = MockAuth()
         self._init_db()
 
     def _init_db(self):
@@ -242,8 +256,27 @@ class TableBuilder:
         try:
             if self.query_type == 'select':
                 cols = self.select_columns
+                embedded_relations = {}
                 if cols != "*":
-                    cols = ", ".join([c.strip() for c in cols.split(",") if c.strip()])
+                    import re
+                    # Tokenize column list handling parentheses e.g. candidates(full_name, metadata)
+                    tokens = re.findall(r'(\w+\([^)]+\)|\w+)', cols)
+                    clean_cols = []
+                    for t in tokens:
+                        m = re.match(r'(\w+)\(([^)]+)\)', t.strip())
+                        if m:
+                            rel_tbl = m.group(1)
+                            rel_fields = [f.strip() for f in m.group(2).split(",")]
+                            embedded_relations[rel_tbl] = rel_fields
+                        else:
+                            clean_cols.append(t.strip())
+                    
+                    if clean_cols:
+                        if embedded_relations.get("candidates") and "candidate_id" not in clean_cols:
+                            clean_cols.append("candidate_id")
+                        cols = ", ".join(clean_cols)
+                    else:
+                        cols = "*"
                 
                 sql = f"SELECT {cols} FROM {self.table_name}"
                 params = []
@@ -268,7 +301,23 @@ class TableBuilder:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 for row in rows:
-                    result_data.append(self._deserialize_row(row))
+                    r_dict = self._deserialize_row(row)
+                    # Simulate foreign table join if candidates relation requested
+                    if embedded_relations.get("candidates") and r_dict.get("candidate_id"):
+                        try:
+                            c_cur = conn.cursor()
+                            c_cur.execute("SELECT * FROM candidates WHERE id = ?", (r_dict["candidate_id"],))
+                            c_row = c_cur.fetchone()
+                            if c_row:
+                                c_dict = self._deserialize_row(c_row)
+                                r_dict["candidates"] = {
+                                    f: c_dict.get(f) for f in embedded_relations["candidates"]
+                                }
+                            else:
+                                r_dict["candidates"] = {}
+                        except Exception:
+                            r_dict["candidates"] = {}
+                    result_data.append(r_dict)
 
             elif self.query_type == 'insert':
                 rows_to_insert = self.insert_data if isinstance(self.insert_data, list) else [self.insert_data]
