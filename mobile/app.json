@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "RecruitAI",
+    "slug": "recruitai",
+    "scheme": "recruitai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.recruitai.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F8F6F2",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.recruitai.app",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-font",
+      "expo-sharing",
+      "expo-splash-screen"
+    ]
+  }
+}
