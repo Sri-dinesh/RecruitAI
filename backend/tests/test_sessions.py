@@ -11,7 +11,7 @@ def test_session_lifecycle():
     assert create_res.status_code == 200
     session = create_res.json()
     assert "id" in session
-    assert session["title"] == "New Chat"
+    assert session["title"] == "New Hiring Campaign"
     session_id = session["id"]
 
     # 2. List sessions and verify it's present
@@ -25,7 +25,7 @@ def test_session_lifecycle():
     assert get_res.status_code == 200
     session_details = get_res.json()
     assert session_details["id"] == session_id
-    assert session_details["title"] == "New Chat"
+    assert session_details["title"] == "New Hiring Campaign"
 
     # 4. Trigger chat and assert it updates/saves context to the database
     chat_payload = {

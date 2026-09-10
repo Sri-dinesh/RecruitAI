@@ -91,21 +91,75 @@ async def chat_endpoint(
     except Exception as e:
         logging.warning(f"[chat] Failed to ensure session row: {e}")
 
-    # 2. Persist user message to `chat_messages`
     try:
-        client.table("chat_messages").insert({
-            "session_id": session_id,
-            "user_id": user_id,
-            "role": "user",
-            "content": req.message
-        }).execute()
-    except Exception as e:
-        logging.warning(f"[chat] Failed to persist user chat_message: {e}")
+        # 2. Mobile Bandwidth Optimization: Auto-hydrate state from database if omitted
+        jd_dict = req.jd_structured
+        if not jd_dict and session_id:
+            try:
+                sess_lookup = client.table("chat_sessions").select("job_id").eq("id", session_id).eq("user_id", user_id).limit(1).execute()
+                if sess_lookup.data and sess_lookup.data[0].get("job_id"):
+                    job_lk = client.table("jobs").select("jd_structured").eq("id", sess_lookup.data[0]["job_id"]).eq("user_id", user_id).limit(1).execute()
+                    if job_lk.data and job_lk.data[0].get("jd_structured"):
+                        jd_dict = job_lk.data[0]["jd_structured"]
+            except Exception as e:
+                logging.warning(f"[chat] Auto-hydrate JD error: {e}")
 
-    try:
-        # 3. Reconstruct Pydantic models from raw request dicts
-        jd_obj = JobDescription(**req.jd_structured) if req.jd_structured else None
-        resumes_objs = [Candidate(**r) for r in req.resumes]
+        resumes_data = list(req.resumes)
+        if not resumes_data:
+            try:
+                cands_db = client.table("candidates").select("id, full_name, email, phone, raw_resume_text, metadata").eq("user_id", user_id).limit(50).execute()
+                for c in (cands_db.data or []):
+                    meta = c.get("metadata") or {}
+                    resumes_data.append({
+                        "candidate_id": c["id"],
+                        "name": c["full_name"],
+                        "email": c.get("email"),
+                        "phone": c.get("phone"),
+                        "raw_text": c.get("raw_resume_text"),
+                        "skills": meta.get("skills", []),
+                        "work_experience": meta.get("work_experience", []),
+                        "education": meta.get("education", []),
+                        "experience_years": meta.get("experience_years", 0),
+                        "location": meta.get("location"),
+                        "match_score": meta.get("match_score"),
+                        "matched_skills": meta.get("matched_skills", []),
+                        "gaps": meta.get("gaps", []),
+                        "red_flags": meta.get("red_flags", []),
+                    })
+            except Exception as e:
+                logging.warning(f"[chat] Auto-hydrate candidates error: {e}")
+
+        history_items = list(req.conversation_history)
+        if not history_items and session_id:
+            try:
+                prev_msgs = (
+                    client.table("chat_messages")
+                    .select("role, content")
+                    .eq("session_id", session_id)
+                    .eq("user_id", user_id)
+                    .order("created_at", desc=False)
+                    .limit(20)
+                    .execute()
+                )
+                for pm in (prev_msgs.data or []):
+                    history_items.append(ChatMessage(role=pm["role"], content=pm["content"]))
+            except Exception as e:
+                logging.warning(f"[chat] Auto-hydrate conversation history error: {e}")
+
+        # 3. Persist incoming user message to `chat_messages`
+        try:
+            client.table("chat_messages").insert({
+                "session_id": session_id,
+                "user_id": user_id,
+                "role": "user",
+                "content": req.message
+            }).execute()
+        except Exception as e:
+            logging.warning(f"[chat] Failed to persist user chat_message: {e}")
+
+        # 4. Reconstruct Pydantic models
+        jd_obj = JobDescription(**jd_dict) if jd_dict else None
+        resumes_objs = [Candidate(**r) for r in resumes_data]
         shortlist_objs = (
             [Candidate(**s) for s in req.last_shortlist]
             if req.last_shortlist
@@ -114,7 +168,7 @@ async def chat_endpoint(
 
         history_dicts = [
             {"role": msg.role, "content": msg.content}
-            for msg in req.conversation_history
+            for msg in history_items
         ]
         history_dicts.append({"role": "user", "content": req.message})
 
