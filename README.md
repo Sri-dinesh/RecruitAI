@@ -4,6 +4,8 @@
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.0-61dafb?style=flat-square&logo=react)](https://react.dev/)
+[![Expo](https://img.shields.io/badge/Expo-57.0-000020?style=flat-square&logo=expo)](https://expo.dev/)
+[![React Native](https://img.shields.io/badge/React%20Native-0.86-61dafb?style=flat-square&logo=react)](https://reactnative.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-orange?style=flat-square&logo=chainlink)](https://langchain-ai.github.io/langgraph/)
 [![Supabase pgvector](https://img.shields.io/badge/Supabase-pgvector-3ecf8e?style=flat-square&logo=supabase)](https://supabase.com/)
@@ -283,6 +285,23 @@ RecruitAI/
 │   │       └── supabaseClient.ts    # Browser-safe Supabase client initialization
 │   ├── package.json                 # Next.js 16, React 19, Tailwind, Recharts
 │   └── tsconfig.json                # TypeScript compiler configuration
+│
+├── mobile/                          # NEW: Expo 57 / React Native Mobile Application
+│   ├── app/                         # Expo Router File-Based Routing
+│   │   ├── _layout.tsx              # Root Stack layout with ErrorBoundary & custom fonts
+│   │   ├── index.tsx                # Auth state router gateway
+│   │   ├── (auth)/                  # Split-Screen Authentication (Login, Signup, Recovery)
+│   │   ├── (app)/(tabs)/            # 4-Tab Bottom Navigation (Co-Pilot, Candidates, Tools, Analytics)
+│   │   └── modals/                  # Inspector, Session Picker, ATS Export, PDF Viewer
+│   ├── src/
+│   │   ├── components/              # NativeWind UI Components (Cards, Badges, Charts, Modals)
+│   │   ├── context/                 # AuthContext (SecureStore) & RecruitContext (Offline Cache)
+│   │   ├── hooks/                   # useAnalytics & useRecruitChat hooks
+│   │   └── lib/                     # apiClient (exponential retries), haptics, fileExport
+│   ├── __tests__/                   # Jest Unit Test Suite (12 tests)
+│   ├── .maestro/                    # Maestro Mobile E2E Automation flows
+│   ├── eas.json                     # EAS Build Profiles (Development, Preview, Production)
+│   └── package.json                 # Expo 57, React Native 0.86, NativeWind v4
 ```
 
 ---
@@ -378,6 +397,35 @@ RecruitAI/
    npm run dev
    ```
 5. Open `http://localhost:3000` in your browser.
+
+---
+
+### Step 4: Mobile Application Setup (Expo 57 / React Native)
+1. Navigate to the `mobile/` directory:
+   ```bash
+   cd ../mobile
+   ```
+2. Install npm dependencies:
+   ```bash
+   npm install
+   ```
+3. Configure environment variables (create `mobile/.env`):
+   ```env
+   EXPO_PUBLIC_BACKEND_URL=http://<YOUR_LOCAL_IP>:8000
+   EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+4. Start the Expo development server:
+   ```bash
+   npx expo start
+   ```
+   - Press `a` for Android emulator or `i` for iOS simulator.
+   - Scan the terminal QR code using **Expo Go** on a physical device.
+5. Run automated test suites:
+   ```bash
+   npm test
+   ```
+   *For detailed mobile architecture, offline caching, and EAS cloud deployment instructions, see [mobile/README.md](mobile/README.md).*
 
 ---
 
