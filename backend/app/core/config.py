@@ -32,8 +32,6 @@ def get_missing_keys():
     missing = []
     if not GEMINI_API_KEY:
         missing.append("GEMINI_API_KEY")
-    if not GROQ_API_KEY:
-        missing.append("GROQ_API_KEY")
     if not TAVILY_API_KEY:
         missing.append("TAVILY_API_KEY")
     if not SUPABASE_URL:
