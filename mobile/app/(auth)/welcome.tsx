@@ -47,49 +47,50 @@ export default function WelcomeScreen() {
           </Text>
         </View>
 
-        {/* Floating Live AI Screening Card Preview */}
+        {/* Value Proposition Highlights Card */}
         <View className="bg-white border border-border rounded-[6px] p-5 my-6">
-          <View className="flex-row items-center justify-between mb-3">
-            <View className="flex-row items-center">
-              <View className="w-10 h-10 rounded-full bg-slate-100 items-center justify-center border border-border">
-                <Users size={18} color={COLORS.brandPrimary} />
-              </View>
-              <View className="ml-3">
-                <Text className="font-sans-bold text-sm text-foreground">
-                  Alex Chen
-                </Text>
-                <Text className="font-sans text-xs text-muted">
-                  Staff Infrastructure Engineer
-                </Text>
-              </View>
+          <View className="flex-row items-center mb-4">
+            <View className="w-9 h-9 rounded-full bg-slate-100 items-center justify-center border border-border mr-3">
+              <Bot size={18} color={COLORS.brandPrimary} />
             </View>
-            <View className="flex-row items-center bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-              <TrendingUp size={12} color={COLORS.statusShortlist} />
-              <Text className="font-mono text-xs font-bold text-emerald-700 ml-1">
-                94% Match
+            <View className="flex-1">
+              <Text className="font-serif-bold text-sm text-foreground">
+                Autonomous Talent Intelligence
+              </Text>
+              <Text className="font-sans text-xs text-muted">
+                Enterprise-grade recruitment workflows
               </Text>
             </View>
           </View>
 
-          {/* Skill Tag Pills */}
-          <View className="flex-row flex-wrap gap-1.5 my-2">
-            {["✓ LangGraph", "✓ FastAPI", "✓ pgvector RAG", "✓ Python 3.14"].map((skill) => (
-              <View
-                key={skill}
-                className="bg-slate-100 border border-border px-2 py-0.5 rounded-full"
-              >
-                <Text className="font-sans-medium text-[11px] text-foreground">
-                  {skill}
+          <View className="space-y-3">
+            <View className="flex-row items-start">
+              <View className="w-5 h-5 rounded-full bg-emerald-50 items-center justify-center mt-0.5 mr-2.5">
+                <TrendingUp size={11} color={COLORS.statusShortlist} />
+              </View>
+              <View className="flex-1">
+                <Text className="font-sans-bold text-xs text-foreground">
+                  Multi-Agent LangGraph Screening
+                </Text>
+                <Text className="font-sans text-[11px] text-muted leading-relaxed">
+                  Dense semantic retrieval and rubric scoring against your active job descriptions.
                 </Text>
               </View>
-            ))}
-          </View>
+            </View>
 
-          {/* Candidate Evaluation Summary */}
-          <View className="mt-3 pt-3 border-t border-slate-100">
-            <Text className="font-sans text-xs text-muted leading-relaxed">
-              "Strong distributed systems track record with production LangGraph orchestration experience."
-            </Text>
+            <View className="flex-row items-start mt-2.5">
+              <View className="w-5 h-5 rounded-full bg-amber-50 items-center justify-center mt-0.5 mr-2.5">
+                <ShieldCheck size={11} color={COLORS.statusOffer} />
+              </View>
+              <View className="flex-1">
+                <Text className="font-sans-bold text-xs text-foreground">
+                  Blind Hiring & PII Redaction
+                </Text>
+                <Text className="font-sans text-[11px] text-muted leading-relaxed">
+                  Eliminates unconscious bias by masking contact info and demographics before grading.
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 

@@ -12,9 +12,7 @@ import {
   Sparkles, 
   CheckCircle2, 
   TrendingUp, 
-  Zap, 
-  Users, 
-  FileText
+  ShieldCheck
 } from 'lucide-react';
 
 function AuthContent() {
@@ -110,7 +108,7 @@ function AuthContent() {
               </p>
             </motion.div>
 
-            {/* Floating Live AI Screening Card Demo */}
+            {/* Autonomous Talent Intelligence Capability Card */}
             <motion.div
               initial={{ opacity: 0, y: 25 }}
               animate={{ opacity: 1, y: 0 }}
@@ -120,36 +118,54 @@ function AuthContent() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent font-semibold text-sm">
-                    AC
+                  <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+                    <Bot className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="font-semibold text-foreground text-sm flex items-center gap-1.5">
-                      Alex Chen
+                      Autonomous Intelligence
                       <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
-                        94% Match
+                        Live Engine
                       </span>
                     </div>
-                    <div className="text-xs text-muted">Senior AI Engineer Candidate</div>
+                    <div className="text-xs text-muted">Recruiter Co-Pilot & Workflow Automation</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Top Pick</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Agentic</span>
                 </div>
               </div>
 
-              {/* Matched Skills Pills */}
-              <div className="flex flex-wrap gap-1.5 text-[11px]">
-                <span className="bg-slate-100 text-foreground px-2.5 py-1 rounded-md font-medium">✓ LangGraph</span>
-                <span className="bg-slate-100 text-foreground px-2.5 py-1 rounded-md font-medium">✓ FastAPI</span>
-                <span className="bg-slate-100 text-foreground px-2.5 py-1 rounded-md font-medium">✓ pgvector RAG</span>
-                <span className="bg-slate-100 text-foreground px-2.5 py-1 rounded-md font-medium">✓ Python 3.14</span>
+              {/* Capabilities List */}
+              <div className="space-y-3 pt-1">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <TrendingUp className="w-3 h-3" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">Multi-Agent LangGraph Screening</div>
+                    <div className="text-[11px] text-muted leading-relaxed">
+                      Dense semantic retrieval and rubric scoring against your active job descriptions.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <ShieldCheck className="w-3 h-3" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">Blind Hiring & PII Masking</div>
+                    <div className="text-[11px] text-muted leading-relaxed">
+                      Eliminates unconscious bias by redacting candidate demographics before evaluation.
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* Mini AI Summary */}
+              {/* Engine Badge */}
               <div className="text-xs text-muted/90 bg-[#F8F6F2] p-3 rounded-xl border border-border/80 leading-relaxed font-sans">
-                &ldquo;Exceptional architectural depth with multi-agent orchestration. Exceeds experience criteria with verified production deployment history.&rdquo;
+                Real-time talent pool parsing, rubric generation, and single-click ATS exports.
               </div>
             </motion.div>
 

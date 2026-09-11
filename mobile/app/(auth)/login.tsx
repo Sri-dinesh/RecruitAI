@@ -42,7 +42,6 @@ export default function LoginScreen() {
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState("");
 
   const shakeX = useSharedValue(0);
@@ -90,37 +89,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleDemoLogin = async () => {
-    setError("");
-    setDemoLoading(true);
-    const demoEmail = "demo.recruiter@recruitai.io";
-    const demoPassword = "DemoPassword2026!";
-
-    try {
-      // Try logging in first
-      const { error: loginErr } = await loginWithEmail(demoEmail, demoPassword);
-      if (loginErr) {
-        // If not found, try signing up the demo user
-        const { error: signupErr } = await signupWithEmail(
-          demoEmail,
-          demoPassword,
-          "Demo Recruiter"
-        );
-        if (!signupErr) {
-          await loginWithEmail(demoEmail, demoPassword);
-        } else {
-          throw signupErr;
-        }
-      }
-      successHaptic();
-      router.replace("/(app)/(tabs)");
-    } catch (err: any) {
-      warningHaptic();
-      setError(err?.message || "Could not initialize demo session.");
-    } finally {
-      setDemoLoading(false);
-    }
-  };
 
   const handleGoogleLogin = async () => {
     setError("");
@@ -225,24 +193,6 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Demo Recruiter Quick Sign In */}
-          <TouchableOpacity
-            onPress={handleDemoLogin}
-            disabled={demoLoading}
-            activeOpacity={0.8}
-            className="w-full bg-emerald-50 border border-emerald-200 rounded-[6px] py-2.5 px-4 flex-row items-center justify-center mb-3"
-          >
-            {demoLoading ? (
-              <ActivityIndicator size="small" color={COLORS.statusShortlist} />
-            ) : (
-              <>
-                <Sparkles size={13} color={COLORS.statusShortlist} />
-                <Text className="font-sans-bold text-xs text-emerald-800 ml-1.5">
-                  Instant Access: Demo Recruiter
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
 
           {/* Or Divider */}
           <View className="flex-row items-center my-3">
