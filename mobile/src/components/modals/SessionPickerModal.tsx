@@ -33,6 +33,7 @@ export const SessionPickerModal = forwardRef<
   const {
     sessions,
     activeSessionId,
+    candidates,
     selectSession,
     createSession,
     deleteSession,
@@ -197,23 +198,31 @@ export const SessionPickerModal = forwardRef<
                       )}
                     </View>
 
-                    <View className="flex-row items-center mt-1 space-x-3">
-                      <View className="flex-row items-center">
-                        <Users size={11} color={COLORS.muted} />
-                        <Text className="font-sans text-xs text-muted ml-1">
-                          {s.resumes?.length || 0} candidates
-                        </Text>
-                      </View>
-                      <Text className="font-sans text-xs text-slate-300 mx-1">
-                        •
-                      </Text>
-                      <View className="flex-row items-center">
-                        <Calendar size={11} color={COLORS.muted} />
-                        <Text className="font-sans text-xs text-muted ml-1">
-                          {formattedDate}
-                        </Text>
-                      </View>
-                    </View>
+                    {(() => {
+                      const candCount =
+                        isActive && candidates?.length > 0
+                          ? candidates.length
+                          : ((s as any).candidate_count ?? s.resumes?.length ?? 0);
+                      return (
+                        <View className="flex-row items-center mt-1 space-x-3">
+                          <View className="flex-row items-center">
+                            <Users size={11} color={COLORS.muted} />
+                            <Text className="font-sans text-xs text-muted ml-1">
+                              {candCount} candidate{candCount === 1 ? "" : "s"}
+                            </Text>
+                          </View>
+                          <Text className="font-sans text-xs text-slate-300 mx-1">
+                            •
+                          </Text>
+                          <View className="flex-row items-center">
+                            <Calendar size={11} color={COLORS.muted} />
+                            <Text className="font-sans text-xs text-muted ml-1">
+                              {formattedDate}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })()}
                   </View>
 
                   {/* Actions */}

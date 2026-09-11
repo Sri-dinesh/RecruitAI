@@ -103,14 +103,22 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
             );
           } catch {}
 
-          // Load local candidate statuses for this session
+          // Hydrate candidate statuses from server resumes and local storage
+          const serverStatuses: Record<string, CandidateStatus> = {};
+          (data.resumes || []).forEach((c: Candidate) => {
+            if (c.status && c.status !== "new") {
+              serverStatuses[c.candidate_id] = c.status as CandidateStatus;
+            }
+          });
+
           try {
             const rawStatuses = await SecureStore.getItemAsync(
               `recruitai_statuses_${sessionId}`
             );
-            setCandidateStatuses(rawStatuses ? JSON.parse(rawStatuses) : {});
+            const localStatuses = rawStatuses ? JSON.parse(rawStatuses) : {};
+            setCandidateStatuses({ ...serverStatuses, ...localStatuses });
           } catch {
-            setCandidateStatuses({});
+            setCandidateStatuses(serverStatuses);
           }
         }
       } catch (err) {
@@ -308,11 +316,12 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
             method: "POST",
             body: JSON.stringify({
               candidate_id: candidateId,
+              status: nextStatus || "new",
               tech_score:
                 nextStatus === "offered" ? 5 : nextStatus === "shortlisted" ? 4 : 1,
               comm_score:
                 nextStatus === "offered" ? 5 : nextStatus === "shortlisted" ? 3 : 1,
-              notes: `Recruiter marked candidate as ${nextStatus} via mobile app.`,
+              notes: `Recruiter marked candidate as ${nextStatus || "new"} via mobile app.`,
             }),
           });
         } catch (err) {

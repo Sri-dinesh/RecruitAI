@@ -16,7 +16,9 @@ export function useCandidateTriage(
     let rejected = 0;
 
     candidates.forEach((c) => {
-      const status = candidateStatuses[c.candidate_id];
+      const status =
+        candidateStatuses[c.candidate_id] ||
+        (c.status && c.status !== "new" ? c.status : undefined);
       if (status === "shortlisted") shortlisted++;
       else if (status === "offered") offered++;
       else if (status === "rejected") rejected++;
@@ -34,7 +36,10 @@ export function useCandidateTriage(
     let result = candidates.filter((c) => {
       // Status filter
       if (filter !== "all") {
-        if (candidateStatuses[c.candidate_id] !== filter) return false;
+        const status =
+          candidateStatuses[c.candidate_id] ||
+          (c.status && c.status !== "new" ? c.status : undefined);
+        if (status !== filter) return false;
       }
 
       // Search filter
