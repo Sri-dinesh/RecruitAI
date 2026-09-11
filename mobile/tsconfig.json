@@ -4,6 +4,9 @@
     "strict": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
+    "types": [
+      "jest"
+    ],
     "paths": {
       "@/*": [
         "src/*"

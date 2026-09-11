@@ -1,0 +1,38 @@
+// Jest setup for Expo 57 / React Native 0.86+
+/* eslint-env jest */
+
+module.exports = {};
+
+jest.mock('lucide-react-native', () => {
+  return new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        const MockIcon = () => null;
+        MockIcon.displayName = `LucideIcon(${String(prop)})`;
+        return MockIcon;
+      },
+    }
+  );
+});
+
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///mock-cache/',
+  documentDirectory: 'file:///mock-documents/',
+  writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
+  readAsStringAsync: jest.fn().mockResolvedValue('mock-content'),
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: true, size: 1024 }),
+  EncodingType: { UTF8: 'utf8' },
+}));
+
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: jest.fn().mockResolvedValue(true),
+  shareAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn().mockResolvedValue(null),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
+  deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+}));
