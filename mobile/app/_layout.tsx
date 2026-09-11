@@ -18,6 +18,7 @@ import {
   DMSans_900Black,
 } from "@expo-google-fonts/dm-sans";
 import { AuthProvider } from "@/context/AuthContext";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { COLORS } from "@/constants/theme";
 
 // Keep splash screen visible while loading custom fonts
@@ -57,21 +58,23 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: COLORS.background }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <StatusBar style="dark" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: COLORS.background },
-              animation: "slide_from_right",
-            }}
-          >
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="(app)" options={{ headerShown: false }} />
-            <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-          </Stack>
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <StatusBar style="dark" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: COLORS.background },
+                animation: "slide_from_right",
+              }}
+            >
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(app)" options={{ headerShown: false }} />
+              <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+            </Stack>
+          </AuthProvider>
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
