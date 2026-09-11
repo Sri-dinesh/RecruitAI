@@ -1,233 +1,138 @@
-import React, { useMemo } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import React from "react";
 import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
+import {
+  RotateCcw,
+  FileDown,
   BarChart3,
-  Users,
-  CheckCircle,
-  Star,
-  Clock,
-  Briefcase,
   TrendingUp,
-  Award,
 } from "lucide-react-native";
-import { useRecruit } from "@/context/RecruitContext";
+import { useAnalytics } from "@/hooks/useAnalytics";
+import { KpiCardsGrid } from "@/components/analytics/KpiCard";
+import { FunnelChart } from "@/components/analytics/FunnelChart";
+import { IngestionChart } from "@/components/analytics/IngestionChart";
+import { QualityHistogram } from "@/components/analytics/QualityHistogram";
+import { TopSkillsBar } from "@/components/analytics/TopSkillsBar";
+import { VelocityCards } from "@/components/analytics/VelocityCards";
+import { JobsTable } from "@/components/analytics/JobsTable";
+import { ActivityFeed } from "@/components/analytics/ActivityFeed";
 import { COLORS } from "@/constants/theme";
-import { selectionHaptic } from "@/lib/haptics";
 
 export default function AnalyticsTab() {
-  const { candidates, candidateStatuses, scheduledInterviews, jd } = useRecruit();
-
-  const totalCandidates = candidates.length;
-  const shortlisted = useMemo(
-    () =>
-      candidates.filter((c) => candidateStatuses[c.candidate_id] === "shortlisted")
-        .length,
-    [candidates, candidateStatuses]
-  );
-  const offered = useMemo(
-    () =>
-      candidates.filter((c) => candidateStatuses[c.candidate_id] === "offered")
-        .length,
-    [candidates, candidateStatuses]
-  );
-  const avgMatchScore = useMemo(() => {
-    if (candidates.length === 0) return 0;
-    const total = candidates.reduce((acc, c) => acc + (c.match_score || 0), 0);
-    return Math.round(total / candidates.length);
-  }, [candidates]);
+  const {
+    summary,
+    pipeline,
+    timeSeries,
+    matchDistribution,
+    topSkills,
+    velocity,
+    jobs,
+    activity,
+    lookbackDays,
+    loading,
+    refreshing,
+    refresh,
+    changeLookback,
+    exportCsv,
+  } = useAnalytics();
 
   return (
     <View className="flex-1 bg-background">
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View className="mb-4">
-          <Text className="font-serif-bold text-lg text-foreground">
-            Recruitment Intelligence
-          </Text>
-          <Text className="font-sans text-xs text-muted mt-0.5">
-            Real-time pipeline metrics and funnel diagnostics.
-          </Text>
-        </View>
-
-        {/* Top KPI Cards Grid */}
-        <View className="flex-row flex-wrap gap-2.5 mb-4">
-          <View className="flex-1 min-w-[45%] bg-white border border-border rounded-[6px] p-3.5 shadow-xs">
-            <View className="flex-row items-center justify-between mb-1.5">
-              <Text className="font-sans text-xs text-muted">Total Pool</Text>
-              <Users size={14} color={COLORS.brandPrimary} />
-            </View>
-            <Text className="font-serif-bold text-2xl text-foreground">
-              {totalCandidates}
-            </Text>
-            <Text className="font-sans text-[10px] text-muted mt-1">
-              Active candidates
+      {/* Top Header & Control Bar */}
+      <View className="bg-white border-b border-border px-4 pt-3 pb-2.5 shadow-xs">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <BarChart3 size={18} color={COLORS.brandPrimary} />
+            <Text className="font-serif-bold text-sm text-foreground ml-2">
+              Recruitment Intelligence
             </Text>
           </View>
 
-          <View className="flex-1 min-w-[45%] bg-white border border-border rounded-[6px] p-3.5 shadow-xs">
-            <View className="flex-row items-center justify-between mb-1.5">
-              <Text className="font-sans text-xs text-muted">Avg Match</Text>
-              <Award size={14} color={COLORS.brandPrimary} />
-            </View>
-            <Text className="font-serif-bold text-2xl text-foreground">
-              {avgMatchScore}%
-            </Text>
-            <Text className="font-sans text-[10px] text-emerald-800 mt-1">
-              Across rubric criteria
-            </Text>
-          </View>
+          {/* Action Buttons: Refresh & CSV Export */}
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={refresh}
+              disabled={refreshing}
+              activeOpacity={0.7}
+              className="p-1.5 rounded-[6px] bg-[#F8F6F2] border border-border"
+            >
+              {refreshing ? (
+                <ActivityIndicator size="small" color={COLORS.brandPrimary} />
+              ) : (
+                <RotateCcw size={14} color={COLORS.brandPrimary} />
+              )}
+            </TouchableOpacity>
 
-          <View className="flex-1 min-w-[45%] bg-white border border-border rounded-[6px] p-3.5 shadow-xs">
-            <View className="flex-row items-center justify-between mb-1.5">
-              <Text className="font-sans text-xs text-muted">Shortlisted</Text>
-              <CheckCircle size={14} color={COLORS.statusShortlist} />
-            </View>
-            <Text className="font-serif-bold text-2xl text-foreground">
-              {shortlisted}
-            </Text>
-            <Text className="font-sans text-[10px] text-muted mt-1">
-              {totalCandidates > 0
-                ? `${Math.round((shortlisted / totalCandidates) * 100)}% conversion`
-                : "0% conversion"}
-            </Text>
-          </View>
-
-          <View className="flex-1 min-w-[45%] bg-white border border-border rounded-[6px] p-3.5 shadow-xs">
-            <View className="flex-row items-center justify-between mb-1.5">
-              <Text className="font-sans text-xs text-muted">Offers Extended</Text>
-              <Star size={14} color={COLORS.statusOffer} />
-            </View>
-            <Text className="font-serif-bold text-2xl text-foreground">
-              {offered}
-            </Text>
-            <Text className="font-sans text-[10px] text-amber-800 mt-1">
-              Final stage
-            </Text>
+            <TouchableOpacity
+              onPress={exportCsv}
+              activeOpacity={0.7}
+              className="flex-row items-center bg-accent px-2.5 py-1 rounded-[6px]"
+            >
+              <FileDown size={13} color="#FFFFFF" />
+              <Text className="font-sans-bold text-[11px] text-white ml-1.5">
+                Export CSV
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
+      </View>
 
-        {/* Pipeline Funnel Section */}
-        <View className="bg-white border border-border rounded-[6px] p-4 mb-4 shadow-xs">
-          <Text className="font-sans-bold text-xs text-foreground uppercase tracking-wider mb-3">
-            Hiring Funnel
+      {/* Main Dashboard Scrollable View */}
+      {loading && !refreshing ? (
+        <View className="flex-1 items-center justify-center p-6">
+          <ActivityIndicator size="large" color={COLORS.brandPrimary} />
+          <Text className="font-sans text-xs text-muted mt-3">
+            Loading recruitment intelligence metrics...
           </Text>
-
-          <View className="space-y-3">
-            {/* Stage 1: Ingested */}
-            <View>
-              <View className="flex-row justify-between mb-1">
-                <Text className="font-sans text-xs text-foreground">
-                  Ingested Resumes
-                </Text>
-                <Text className="font-sans-bold text-xs text-foreground">
-                  {totalCandidates}
-                </Text>
-              </View>
-              <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <View className="h-full bg-accent w-full" />
-              </View>
-            </View>
-
-            {/* Stage 2: Shortlisted */}
-            <View>
-              <View className="flex-row justify-between mb-1">
-                <Text className="font-sans text-xs text-foreground">
-                  Shortlisted for Review
-                </Text>
-                <Text className="font-sans-bold text-xs text-foreground">
-                  {shortlisted}
-                </Text>
-              </View>
-              <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <View
-                  className="h-full bg-emerald-600"
-                  style={{
-                    width: `${
-                      totalCandidates > 0 ? (shortlisted / totalCandidates) * 100 : 0
-                    }%`,
-                  }}
-                />
-              </View>
-            </View>
-
-            {/* Stage 3: Interviews */}
-            <View>
-              <View className="flex-row justify-between mb-1">
-                <Text className="font-sans text-xs text-foreground">
-                  Interviews Booked
-                </Text>
-                <Text className="font-sans-bold text-xs text-foreground">
-                  {scheduledInterviews.length}
-                </Text>
-              </View>
-              <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <View
-                  className="h-full bg-blue-600"
-                  style={{
-                    width: `${
-                      totalCandidates > 0
-                        ? (scheduledInterviews.length / totalCandidates) * 100
-                        : 0
-                    }%`,
-                  }}
-                />
-              </View>
-            </View>
-
-            {/* Stage 4: Offers */}
-            <View>
-              <View className="flex-row justify-between mb-1">
-                <Text className="font-sans text-xs text-foreground">
-                  Offers Extended
-                </Text>
-                <Text className="font-sans-bold text-xs text-foreground">
-                  {offered}
-                </Text>
-              </View>
-              <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <View
-                  className="h-full bg-amber-500"
-                  style={{
-                    width: `${
-                      totalCandidates > 0 ? (offered / totalCandidates) * 100 : 0
-                    }%`,
-                  }}
-                />
-              </View>
-            </View>
-          </View>
         </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 60 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor={COLORS.brandPrimary}
+              colors={[COLORS.brandPrimary]}
+            />
+          }
+        >
+          {/* 1. 8 KPI Summary Cards */}
+          <KpiCardsGrid summary={summary} />
 
-        {/* Campaign Info Card */}
-        <View className="bg-white border border-border rounded-[6px] p-4 shadow-xs">
-          <Text className="font-sans-bold text-xs text-foreground uppercase tracking-wider mb-2">
-            Target Role Specification
-          </Text>
-          <Text className="font-serif-bold text-sm text-foreground">
-            {jd?.role || "Staff Infrastructure Engineer"}
-          </Text>
-          <Text className="font-sans text-xs text-muted mt-1">
-            Required Experience: {jd?.experience_years || 5}+ Years
-          </Text>
-          {jd?.required_skills && jd.required_skills.length > 0 && (
-            <View className="flex-row flex-wrap gap-1.5 mt-2.5">
-              {jd.required_skills.map((s, idx) => (
-                <View
-                  key={idx}
-                  className="bg-[#F8F6F2] border border-border px-2 py-0.5 rounded-[4px]"
-                >
-                  <Text className="font-sans text-[11px] text-foreground">
-                    {s}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </ScrollView>
+          {/* 2. Hiring Velocity Milestone Cards */}
+          <VelocityCards velocity={velocity} />
+
+          {/* 3. Pipeline Funnel Conversion */}
+          <FunnelChart pipeline={pipeline} />
+
+          {/* 4. Ingestion Over Time Chart */}
+          <IngestionChart
+            data={timeSeries}
+            lookback={lookbackDays}
+            onChangeLookback={changeLookback}
+          />
+
+          {/* 5. Match Score Distribution Histogram */}
+          <QualityHistogram distribution={matchDistribution} />
+
+          {/* 6. Top Demanded Skills Ranking */}
+          <TopSkillsBar skills={topSkills} />
+
+          {/* 7. Active Campaign Positions Table */}
+          <JobsTable jobs={jobs} />
+
+          {/* 8. Live Activity Feed */}
+          <ActivityFeed activity={activity} />
+        </ScrollView>
+      )}
     </View>
   );
 }
