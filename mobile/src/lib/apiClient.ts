@@ -15,19 +15,26 @@ const getDefaultBackendUrl = () => {
 
 export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
 
+export interface FetchWithAuthOptions extends RequestInit {
+  retries?: number;
+  retryDelayMs?: number;
+}
+
 /**
  * Mobile fetchWithAuth:
  * Automatically retrieves and attaches the user's Supabase JWT Bearer token.
  * Correctly preserves multipart/form-data boundary headers for file and image uploads.
+ * Implements exponential backoff retries for resilient mobile networking.
  */
 export async function fetchWithAuth(
   path: string,
-  options: RequestInit = {}
+  options: FetchWithAuthOptions = {}
 ): Promise<Response> {
-  const headers = new Headers(options.headers || {});
+  const { retries = 2, retryDelayMs = 400, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers || {});
 
   // Do NOT override Content-Type if uploading FormData (let fetch set boundary)
-  if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
+  if (!(fetchOptions.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -43,8 +50,34 @@ export async function fetchWithAuth(
 
   const url = path.startsWith("http") ? path : `${BACKEND_URL}${path}`;
 
-  return fetch(url, {
-    ...options,
-    headers,
-  });
+  let lastError: any = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        ...fetchOptions,
+        headers,
+      });
+
+      // Retry on server temporary unavailable / gateway errors (502, 503, 504)
+      if (res.status >= 502 && res.status <= 504 && attempt < retries) {
+        const delay = retryDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      return res;
+    } catch (err: any) {
+      lastError = err;
+      // If client aborted manually, do not retry
+      if (fetchOptions.signal?.aborted) {
+        throw err;
+      }
+      if (attempt < retries) {
+        const delay = retryDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError || new Error(`Network request failed for ${path}`);
 }

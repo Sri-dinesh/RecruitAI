@@ -95,6 +95,14 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
             setMessages([DEFAULT_GREETING]);
           }
 
+          // Persist cached session state for offline operation
+          try {
+            await SecureStore.setItemAsync(
+              `recruitai_cached_session_${sessionId}`,
+              JSON.stringify(data)
+            );
+          } catch {}
+
           // Load local candidate statuses for this session
           try {
             const rawStatuses = await SecureStore.getItemAsync(
@@ -106,7 +114,27 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (err) {
-        console.error("[RecruitContext] Error loading session details:", err);
+        console.warn("[RecruitContext] Error loading session details, hydrating from cache:", err);
+        // Offline Fallback Hydration
+        try {
+          const cached = await SecureStore.getItemAsync(
+            `recruitai_cached_session_${sessionId}`
+          );
+          if (cached) {
+            const data = JSON.parse(cached);
+            setJd(data.jd_structured || null);
+            setCandidates(data.resumes || []);
+            setLastShortlist(data.last_shortlist || null);
+            setScheduledInterviews(data.scheduled_interviews || []);
+            if (data.conversation_history && data.conversation_history.length > 0) {
+              setMessages(data.conversation_history);
+            }
+          }
+          const rawStatuses = await SecureStore.getItemAsync(
+            `recruitai_statuses_${sessionId}`
+          );
+          setCandidateStatuses(rawStatuses ? JSON.parse(rawStatuses) : {});
+        } catch {}
       } finally {
         setLoadingSession(false);
       }
@@ -121,6 +149,14 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const list: ChatSession[] = await res.json();
         setSessions(list);
+
+        // Cache sessions list for offline use
+        try {
+          await SecureStore.setItemAsync(
+            "recruitai_cached_sessions_list",
+            JSON.stringify(list)
+          );
+        } catch {}
 
         if (list.length > 0) {
           // Check if previously selected session is still in list
@@ -143,7 +179,18 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
         return list;
       }
     } catch (err) {
-      console.error("[RecruitContext] Error fetching sessions:", err);
+      console.warn("[RecruitContext] Error fetching sessions, trying offline cache:", err);
+      try {
+        const cached = await SecureStore.getItemAsync("recruitai_cached_sessions_list");
+        if (cached) {
+          const list: ChatSession[] = JSON.parse(cached);
+          setSessions(list);
+          if (list.length > 0) {
+            await selectSession(list[0].id);
+          }
+          return list;
+        }
+      } catch {}
     }
     return [];
   }, [selectSession]);

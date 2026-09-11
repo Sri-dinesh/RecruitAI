@@ -7,6 +7,7 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  WifiOff,
 } from "lucide-react-native";
 import { useRecruit } from "@/context/RecruitContext";
 import { useAuth } from "@/context/AuthContext";
@@ -116,6 +117,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Ambient Offline Banner */}
+      {!apiConnected && (
+        <View className="bg-amber-500/10 border-t border-amber-500/20 -mx-4 -mb-2.5 mt-2 py-1 px-4 flex-row items-center justify-center">
+          <WifiOff size={11} color="#D97706" />
+          <Text className="font-sans-medium text-[10px] text-amber-800 ml-1.5">
+            Offline Mode — Changes will sync when reconnected
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
