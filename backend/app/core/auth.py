@@ -7,9 +7,21 @@ Robust JWT Authentication Dependency for FastAPI and Supabase.
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
+import uuid
 from app.core.config import SUPABASE_JWT_SECRET, USE_LOCAL_AUTH
 
 security = HTTPBearer(auto_error=False)
+
+LOCAL_DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def _ensure_valid_uuid(uid: str) -> str:
+    """Ensure user id is a valid UUID string compatible with Postgres schema."""
+    try:
+        return str(uuid.UUID(uid))
+    except (ValueError, AttributeError):
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, uid))
+
 
 def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -21,7 +33,7 @@ def get_current_user_id(
     """
     if not credentials or not credentials.credentials:
         if USE_LOCAL_AUTH:
-            return "local_dev_user_123"
+            return LOCAL_DEV_USER_ID
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please log in to continue.",
@@ -30,7 +42,7 @@ def get_current_user_id(
 
     token = credentials.credentials
     if USE_LOCAL_AUTH and token in ("mock-token", "local-token", "test-token", "local_dev_user_123"):
-        return "local_dev_user_123"
+        return LOCAL_DEV_USER_ID
 
     # 1. Primary: Verify directly with Supabase Auth API
     try:
@@ -57,7 +69,7 @@ def get_current_user_id(
             )
             user_id = payload.get("sub")
             if user_id:
-                return str(user_id)
+                return _ensure_valid_uuid(str(user_id))
         except Exception:
             pass
 
@@ -66,7 +78,7 @@ def get_current_user_id(
         claims = jwt.get_unverified_claims(token)
         user_id = claims.get("sub")
         if user_id:
-            return str(user_id)
+            return _ensure_valid_uuid(str(user_id))
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

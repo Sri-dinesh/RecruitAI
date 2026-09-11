@@ -369,7 +369,7 @@ async def send_email_endpoint(
 @router.get("/sessions")
 async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
     """
-    Returns all campaign sessions belonging to the authenticated user.
+    Returns all campaign sessions belonging to the authenticated user with candidate counts.
     """
     client = get_supabase_client()
     try:
@@ -380,7 +380,25 @@ async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
             .order("updated_at", desc=True)
             .execute()
         )
-        return res.data
+        sessions_list = res.data or []
+
+        # Calculate live candidate counts
+        cands_cnt = len(client.table("candidates").select("id").eq("user_id", user_id).execute().data or [])
+        apps_res = client.table("applications").select("job_id, candidate_id").eq("user_id", user_id).execute()
+        apps_by_job: Dict[str, set] = {}
+        for app in (apps_res.data or []):
+            jid = app.get("job_id")
+            if jid:
+                apps_by_job.setdefault(jid, set()).add(app["candidate_id"])
+
+        for s in sessions_list:
+            jid = s.get("job_id")
+            if jid and jid in apps_by_job:
+                s["candidate_count"] = len(apps_by_job[jid])
+            else:
+                s["candidate_count"] = cands_cnt
+
+        return sessions_list
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
@@ -477,7 +495,7 @@ async def get_session_details_endpoint(
             if job_res.data and job_res.data[0].get("jd_structured"):
                 jd_structured = job_res.data[0]["jd_structured"]
 
-        # 4. Fetch candidate records from `candidates`
+        # 4. Fetch candidate records from `candidates` and application statuses
         cand_res = (
             client.table("candidates")
             .select("id, full_name, email, phone, raw_resume_text, metadata")
@@ -485,21 +503,38 @@ async def get_session_details_endpoint(
             .order("created_at", desc=False)
             .execute()
         )
+
+        apps_res = (
+            client.table("applications")
+            .select("job_id, candidate_id, match_score, match_reasoning, status")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        apps_by_cand = {}
+        for a in (apps_res.data or []):
+            cid = a["candidate_id"]
+            if cid not in apps_by_cand or (job_id and a.get("job_id") == job_id):
+                apps_by_cand[cid] = a
+
         candidates_list = []
         for c in (cand_res.data or []):
             meta = c.get("metadata") or {}
+            app_data = apps_by_cand.get(c["id"]) or {}
+            cand_status = app_data.get("status") or meta.get("status") or "new"
+            cand_score = app_data.get("match_score") if app_data.get("match_score") is not None else meta.get("match_score")
             candidates_list.append({
                 "candidate_id": c["id"],
                 "name": c["full_name"],
                 "email": c.get("email"),
                 "phone": c.get("phone"),
                 "raw_text": c.get("raw_resume_text"),
+                "status": cand_status,
+                "match_score": cand_score,
                 "skills": meta.get("skills", []),
                 "work_experience": meta.get("work_experience", []),
                 "education": meta.get("education", []),
                 "experience_years": meta.get("experience_years", 0),
                 "location": meta.get("location"),
-                "match_score": meta.get("match_score"),
                 "matched_skills": meta.get("matched_skills", []),
                 "gaps": meta.get("gaps", []),
                 "red_flags": meta.get("red_flags", []),

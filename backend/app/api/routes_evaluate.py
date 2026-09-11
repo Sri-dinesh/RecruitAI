@@ -25,6 +25,7 @@ class CandidateEvaluationRequest(BaseModel):
     tech_score: int = Field(..., ge=1, le=5, description="Technical fit rating 1-5")
     comm_score: int = Field(..., ge=1, le=5, description="Communication & culture fit rating 1-5")
     notes: Optional[str] = Field(default="", description="Recruiter and interviewer notes")
+    status: Optional[str] = Field(default=None, description="Candidate status: shortlisted, offered, rejected, new")
 
 
 class ATSExportRequest(BaseModel):
@@ -38,8 +39,8 @@ def save_candidate_evaluation(
     user_id: str = Depends(get_current_user_id)
 ):
     """
-    Persists recruiter rubric assessment scores and interview notes for a candidate.
-    Saves to the multi-tenant PostgreSQL applications table and updates local cache.
+    Persists recruiter rubric assessment scores, status, and interview notes for a candidate.
+    Saves to the multi-tenant PostgreSQL applications table and candidates metadata.
     """
     now_iso = datetime.now(timezone.utc).isoformat()
     eval_dict = {
@@ -48,6 +49,7 @@ def save_candidate_evaluation(
         "tech_score": req.tech_score,
         "comm_score": req.comm_score,
         "notes": req.notes,
+        "status": req.status,
         "updated_at": now_iso
     }
 
@@ -80,7 +82,10 @@ def save_candidate_evaluation(
                 "notes": req.notes,
                 "updated_at": now_iso
             }
-            client.table("applications").update({"match_reasoning": reasoning}).eq("id", app_id).execute()
+            update_app_payload = {"match_reasoning": reasoning}
+            if req.status:
+                update_app_payload["status"] = req.status
+            client.table("applications").update(update_app_payload).eq("id", app_id).execute()
         else:
             # Check if job exists for this user to link application, otherwise link candidate directly
             cand_check = (
@@ -97,6 +102,7 @@ def save_candidate_evaluation(
                 job_res = client.table("jobs").select("id").eq("user_id", user_id).limit(1).execute()
                 job_id = job_res.data[0]["id"] if job_res.data else None
                 if job_id:
+                    app_status = req.status if req.status else ("shortlisted" if req.tech_score >= 4 else "new")
                     client.table("applications").insert({
                         "job_id": job_id,
                         "candidate_id": req.candidate_id,
@@ -110,8 +116,27 @@ def save_candidate_evaluation(
                                 "updated_at": now_iso
                             }
                         },
-                        "status": "shortlisted" if req.tech_score >= 4 else "new"
+                        "status": app_status
                     }).execute()
+
+        # Update candidate metadata with status and rubric scores
+        cand_meta_res = client.table("candidates").select("metadata").eq("id", req.candidate_id).eq("user_id", user_id).execute()
+        if cand_meta_res.data:
+            cm = cand_meta_res.data[0].get("metadata") or {}
+            if isinstance(cm, str):
+                try:
+                    cm = json.loads(cm)
+                except Exception:
+                    cm = {}
+            if req.status:
+                cm["status"] = req.status
+            cm["rubric"] = {
+                "tech_score": req.tech_score,
+                "comm_score": req.comm_score,
+                "notes": req.notes,
+                "updated_at": now_iso
+            }
+            client.table("candidates").update({"metadata": cm}).eq("id", req.candidate_id).eq("user_id", user_id).execute()
     except Exception as e:
         print(f"[routes_evaluate] Notice: DB sync error for candidate rubric (cache retained): {e}")
 

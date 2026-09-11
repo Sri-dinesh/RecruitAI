@@ -3,9 +3,12 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.rag.vector_store import get_supabase_client
 
+from app.core.auth import get_current_user_id
+
 client = TestClient(app)
 
 def test_session_lifecycle():
+    app.dependency_overrides[get_current_user_id] = lambda: "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3"
     # 1. Create a new session
     create_res = client.post("/api/sessions")
     assert create_res.status_code == 200
@@ -39,10 +42,24 @@ def test_session_lifecycle():
         "scheduled_interviews": [],
         "session_id": session_id
     }
-    chat_res = client.post("/api/chat", json=chat_payload)
-    assert chat_res.status_code == 200
-    chat_data = chat_res.json()
-    assert chat_data["session_id"] == session_id
+    from unittest.mock import patch
+    with patch("app.api.routes_chat.graph.invoke") as mock_graph:
+        mock_graph.return_value = {
+            "conversation_history": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "Hello! I can help you with hiring."}
+            ],
+            "jd_structured": None,
+            "resumes": [],
+            "last_shortlist": None,
+            "pending_confirmation": None,
+            "last_intent": "greeting",
+            "scheduled_interviews": []
+        }
+        chat_res = client.post("/api/chat", json=chat_payload)
+        assert chat_res.status_code == 200
+        chat_data = chat_res.json()
+        assert chat_data["session_id"] == session_id
     
     # 5. Fetch details again to assert state persistence and auto-rename (if applicable)
     get_res_2 = client.get(f"/api/sessions/{session_id}")

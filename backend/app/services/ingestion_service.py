@@ -137,6 +137,24 @@ def ingest_candidate_object(
         pass
 
     upsert_chunks(formatted_chunks)
+
+    # 4. Auto-link candidate to active job in public.applications
+    try:
+        active_job = client.table("jobs").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        if active_job.data:
+            job_id = active_job.data[0]["id"]
+            existing_app = client.table("applications").select("id").eq("job_id", job_id).eq("candidate_id", cand_uuid).eq("user_id", user_id).execute()
+            if not existing_app.data:
+                client.table("applications").insert({
+                    "job_id": job_id,
+                    "candidate_id": cand_uuid,
+                    "user_id": user_id,
+                    "match_score": candidate.match_score,
+                    "status": "new"
+                }).execute()
+    except Exception as exc:
+        print(f"[ingestion] Notice: Auto-link application skipped: {exc}")
+
     return candidate
 
 
