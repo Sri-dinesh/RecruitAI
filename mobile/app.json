@@ -9,7 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.recruitai.app"
+      "bundleIdentifier": "com.recruitai.app",
+      "infoPlist": {
+        "NSDocumentsFolderUsageDescription": "RecruitAI requires access to documents to ingest job descriptions and candidate resumes."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +22,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.recruitai.app",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",

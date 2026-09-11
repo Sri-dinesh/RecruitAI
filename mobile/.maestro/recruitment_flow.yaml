@@ -1,0 +1,59 @@
+# RecruitAI Mobile E2E Recruiter Flow
+# Framework: Maestro (https://maestro.mobile.dev)
+appId: com.sridinesh.recruitai
+---
+# Step 1: App Launch & Initial Welcome Screen
+- launchApp:
+    clearState: false
+
+# Step 2: Handle Authentication if not already signed in
+- runFlow:
+    when:
+      visible: "Sign In with Email"
+    commands:
+      - tapOn: "Sign In with Email"
+      - tapOn: "Work Email"
+      - inputText: "recruiter@recruitai.com"
+      - tapOn: "Password"
+      - inputText: "RecruitAI2026!"
+      - tapOn: "Sign In"
+
+# Step 3: Verify Co-Pilot Dashboard (Tab 1)
+- assertVisible: "Co-Pilot"
+- assertVisible: "Campaign"
+
+# Step 4: Navigate to Candidates Pool (Tab 2)
+- tapOn: "Candidates"
+- assertVisible: "Talent Pool"
+- assertVisible: "All"
+- assertVisible: "Shortlisted"
+
+# Step 5: Test Blind Hiring Masking Toggle
+- tapOn:
+    id: "blind-hiring-toggle"
+    optional: true
+
+# Step 6: Inspect Candidate Scorecard
+- tapOn:
+    text: ".*"
+    index: 0
+    optional: true
+
+# Step 7: Navigate to Dynamic Workspace (Tab 3)
+- tapOn: "Workspace"
+- assertVisible: "Compare"
+- assertVisible: "Schedule"
+- assertVisible: "Email"
+
+# Step 8: Switch to Recruiter Email Drafter
+- tapOn: "Email"
+- assertVisible: "Outreach Message"
+
+# Step 9: Navigate to Recruitment Analytics (Tab 4)
+- tapOn: "Analytics"
+- assertVisible: "Recruitment Intelligence"
+- assertVisible: "Pipeline Funnel"
+
+# Step 10: Toggle Analytics Lookback Window
+- tapOn: "7D"
+- tapOn: "30D"
