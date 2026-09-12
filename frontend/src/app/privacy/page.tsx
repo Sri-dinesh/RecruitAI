@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Logo from '@/components/brand/Logo';
 
 export const metadata = {
   title: 'Privacy Policy — RecruitAI',
@@ -33,7 +34,7 @@ export default function PrivacyPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/80 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="font-serif font-semibold text-xl tracking-tight">RecruitAI<span className="text-accent">.</span></Link>
+          <Logo href="/" size="md" priority />
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <Link href="/" className="text-muted hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="text-foreground">Privacy</Link>
@@ -107,7 +108,7 @@ export default function PrivacyPage() {
               <div className="text-sm font-semibold">Need help with data?</div>
               <p className="text-sm text-white/70 leading-relaxed mt-2">Access, export or delete your data — we respond within 30 days.</p>
               <a href={`mailto:${contactEmail}?subject=Privacy%20request%20—%20RecruitAI`} className="mt-4 inline-flex items-center justify-center w-full bg-white text-foreground text-sm font-semibold px-4 py-2.5 rounded-md hover:bg-[#f3f4f6] transition-colors">Email Privacy Support</a>
-              <Link href="/delete-account" className="mt-2 inline-flex justify-center w-full text-sm font-medium text-white/80 hover:text-white underline underline-offset-4">View deletion steps →</Link>
+              <Link href="/data-deletion" className="mt-2 inline-flex justify-center w-full text-sm font-medium text-white/80 hover:text-white underline underline-offset-4">View deletion steps →</Link>
             </div>
 
             <div className="mt-4 bg-white border border-border rounded-xl p-5">
@@ -115,7 +116,7 @@ export default function PrivacyPage() {
               <div className="mt-3 flex flex-col gap-2 text-sm">
                 <Link href="/terms" className="text-muted hover:text-foreground transition-colors">→ Terms & Conditions</Link>
                 <Link href="/support" className="text-muted hover:text-foreground transition-colors">→ Support & Contact</Link>
-                <Link href="/delete-account" className="text-muted hover:text-foreground transition-colors">→ Data Deletion</Link>
+                <Link href="/data-deletion" className="text-muted hover:text-foreground transition-colors">→ Data Deletion</Link>
                 <a href={siteUrl} target="_blank" rel="noopener" className="text-muted hover:text-foreground transition-colors">→ {siteUrl.replace('https://','')}</a>
               </div>
             </div>
@@ -372,8 +373,10 @@ export default function PrivacyPage() {
       <footer className="border-t border-border bg-white mt-10">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex gap-6 text-sm font-medium">
+          <div className="flex flex-wrap gap-6 text-sm font-medium">
+            <Link href="/privacy" className="text-foreground font-semibold">Privacy</Link>
             <Link href="/terms" className="text-muted hover:text-foreground">Terms</Link>
+            <Link href="/data-deletion" className="text-muted hover:text-foreground">Data Deletion</Link>
             <Link href="/support" className="text-muted hover:text-foreground">Support</Link>
             <Link href="/" className="text-muted hover:text-foreground">Home</Link>
           </div>

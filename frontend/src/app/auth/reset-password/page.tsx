@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { createSupabaseClient } from '@/lib/supabaseClient';
+import Logo from '@/components/brand/Logo';
 import { 
   Lock, 
   Eye, 
@@ -160,9 +161,7 @@ function ResetPasswordContent() {
           <span>Back to Sign In</span>
         </Link>
 
-        <Link href="/" className="font-serif font-semibold text-xl md:text-2xl tracking-tight text-foreground">
-          RecruitAI<span className="text-accent">.</span>
-        </Link>
+        <Logo href="/" size="md" priority />
       </header>
 
       {/* Main Content */}

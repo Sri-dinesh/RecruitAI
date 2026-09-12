@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Logo from '@/components/brand/Logo';
 import SupportContactForm from '@/components/forms/SupportContactForm';
 
 export const metadata = {
@@ -14,7 +15,7 @@ export default function SupportPage() {
     <div className="min-h-screen bg-[#F8F6F2] text-foreground selection:bg-accent selection:text-white">
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/80 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="font-serif font-semibold text-xl tracking-tight">RecruitAI<span className="text-accent">.</span></Link>
+          <Logo href="/" size="md" priority />
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <Link href="/" className="text-muted hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="text-muted hover:text-foreground transition-colors">Privacy</Link>
@@ -33,7 +34,7 @@ export default function SupportPage() {
         <div className="relative max-w-7xl mx-auto px-6 md:px-8 py-12 md:py-16">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/15 text-[11px] font-semibold tracking-widest uppercase text-accent">Support • Contact</span>
           <h1 className="font-serif text-4xl md:text-5xl tracking-tight leading-[0.95] mt-4">We’re here to help.</h1>
-          <p className="text-muted text-lg leading-relaxed mt-4 max-w-2xl">Support for web and Android. We respond within <span className="font-semibold text-foreground">2 business days</span> — often faster. For Play Store orders, include your order ID (GPA.XXXX) and device details.</p>
+          <p className="text-muted text-lg leading-relaxed mt-4 max-w-2xl">Support for web and Android. We respond within <span className="font-semibold text-foreground">2 business days</span> — often faster. Include your account email and a clear description for fastest resolution.</p>
 
           <div className="mt-8 grid md:grid-cols-3 gap-4 max-w-4xl">
             <a href={`mailto:${contactEmail}`} className="group bg-foreground text-white rounded-xl p-5 flex flex-col hover:bg-[#1a1f2e] transition-colors">
@@ -68,24 +69,6 @@ export default function SupportPage() {
         <div className="grid lg:grid-cols-[1.35fr_0.85fr] gap-8 items-start">
           {/* Left */}
           <div className="space-y-6">
-            <div className="bg-white border border-border rounded-2xl shadow-sm p-6 md:p-8">
-              <h2 className="font-serif text-xl">Before you write — quick checks</h2>
-              <p className="text-sm text-muted mt-1">Try these first — they resolve most issues instantly.</p>
-              <div className="mt-6 grid sm:grid-cols-2 gap-4">
-                {[
-                  { title: 'Auth errors', desc: 'Sign out and sign in again — your JWT may have expired.' },
-                  { title: 'Self-hosted setup', desc: 'Verify NEXT_PUBLIC_BACKEND_URL and Supabase keys in .env.' },
-                  { title: 'Mobile — stale bundle', desc: 'Clear cache or reinstall. Ensure EXPO_PUBLIC_BACKEND_URL is reachable.' },
-                  { title: 'Outreach not sending?', desc: 'Type “yes / confirm” in chat — HITL requires explicit approval.' },
-                ].map((c) => (
-                  <div key={c.title} className="border border-border rounded-xl p-4 bg-[#faf9f7]">
-                    <div className="text-sm font-semibold text-foreground">{c.title}</div>
-                    <div className="text-sm text-muted leading-relaxed mt-1">{c.desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <SupportContactForm />
 
             <div className="bg-white border border-border rounded-2xl shadow-sm p-6 md:p-8">
@@ -96,7 +79,6 @@ export default function SupportPage() {
                   'Account email & campaign/session ID (if relevant)',
                   'Expected vs actual behavior',
                   'Steps to reproduce + device/OS + screenshots',
-                  'For Play Store: order ID (GPA.XXXX)',
                 ].map((t, i) => (
                   <li key={t} className="flex gap-3 text-sm">
                     <span className="shrink-0 w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold">{i + 1}</span>
@@ -140,18 +122,18 @@ export default function SupportPage() {
                   { label: 'Support', path: '/support' },
                   { label: 'Privacy', path: '/privacy' },
                   { label: 'Terms', path: '/terms' },
-                  { label: 'Data Deletion', path: '/delete-account' },
+                  { label: 'Data Deletion', path: '/data-deletion' },
                 ].map((r) => (
-                  <div key={r.path} className="flex items-center justify-between gap-3 bg-[#F8F6F2] border border-border rounded-lg px-3 py-2.5">
+                  <div key={r.path} className="flex flex-col gap-1 bg-[#F8F6F2] border border-border rounded-lg px-3 py-2.5">
                     <span className="text-xs font-semibold text-foreground">{r.label}</span>
-                    <a href={`${siteUrl}${r.path}`} target="_blank" rel="noopener" className="font-mono text-xs text-accent underline truncate">{siteUrl}{r.path}</a>
+                    <a href={`${siteUrl}${r.path}`} target="_blank" rel="noopener" className="font-mono text-xs text-accent underline break-all leading-relaxed">{siteUrl}{r.path}</a>
                   </div>
                 ))}
               </div>
               <div className="mt-4 flex gap-2">
                 <Link href="/privacy" className="flex-1 text-center bg-white border border-border rounded-md px-3 py-2 text-sm font-medium hover:bg-[#F8F6F2]">Privacy</Link>
                 <Link href="/terms" className="flex-1 text-center bg-white border border-border rounded-md px-3 py-2 text-sm font-medium hover:bg-[#F8F6F2]">Terms</Link>
-                <Link href="/delete-account" className="flex-1 text-center bg-accent text-white rounded-md px-3 py-2 text-sm font-semibold hover:bg-[#263a66]">Deletion</Link>
+                <Link href="/data-deletion" className="flex-1 text-center bg-accent text-white rounded-md px-3 py-2 text-sm font-semibold hover:bg-[#263a66]">Deletion</Link>
               </div>
             </div>
 
@@ -166,9 +148,11 @@ export default function SupportPage() {
       <footer className="border-t border-border bg-white mt-6">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex gap-6 text-sm font-medium">
+          <div className="flex flex-wrap gap-6 text-sm font-medium">
             <Link href="/privacy" className="text-muted hover:text-foreground">Privacy</Link>
             <Link href="/terms" className="text-muted hover:text-foreground">Terms</Link>
+            <Link href="/data-deletion" className="text-muted hover:text-foreground">Data Deletion</Link>
+            <Link href="/support" className="text-foreground font-semibold">Support</Link>
             <Link href="/" className="text-muted hover:text-foreground">Home</Link>
           </div>
         </div>

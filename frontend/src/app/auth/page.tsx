@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import AuthModal, { AuthTab } from '@/components/AuthModal';
+import Logo from '@/components/brand/Logo';
 import { 
   ArrowLeft, 
   Bot, 
@@ -70,9 +71,7 @@ function AuthContent() {
           </motion.div>
         </Link>
 
-        <Link href="/" className="font-serif font-semibold text-xl md:text-2xl tracking-tight text-foreground">
-          RecruitAI<span className="text-accent">.</span>
-        </Link>
+        <Logo href="/" size="md" priority />
       </header>
 
       {/* Main Split Grid */}

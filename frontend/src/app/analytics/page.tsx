@@ -16,6 +16,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { fetchWithAuth } from '@/lib/apiClient';
+import Logo from '@/components/brand/Logo';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -467,6 +468,8 @@ export default function AnalyticsPage() {
       {/* ── Top Nav (matches dashboard style) ── */}
       <header className="sticky top-0 z-20 bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
+          <Logo href="/" size="sm" />
+          <span className="text-slate-200">|</span>
           <Link
             href="/dashboard"
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-brand-primary transition-colors"

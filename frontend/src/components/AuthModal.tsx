@@ -3,6 +3,7 @@
 import { useState, useEffect, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
+import Logo from './brand/Logo';
 import { 
   Lock, 
   Mail, 
@@ -179,6 +180,9 @@ export default function AuthModal({
 
       {/* Header & Logo */}
       <div className="mb-6 text-center">
+        <div className="flex justify-center mb-3">
+          <Logo variant="mark" size="lg" />
+        </div>
         <motion.div 
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}

@@ -10,6 +10,7 @@ import HeroSection from '@/components/landing/HeroSection';
 import FeatureHighlights from '@/components/landing/FeatureHighlights';
 import AgenticWorkflow from '@/components/landing/AgenticWorkflow';
 import TechnologyStack from '@/components/landing/TechnologyStack';
+import Logo from '@/components/brand/Logo';
 
 if (typeof window !== 'undefined') {
   gsap.registerPlugin(ScrollTrigger);
@@ -91,9 +92,7 @@ export default function PremiumLanding() {
       {/* Navbar */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/80 border-b border-border/60">
         <div className="flex items-center justify-between px-6 md:px-8 py-4 max-w-7xl mx-auto">
-          <Link href="/" className="font-serif font-semibold text-xl tracking-tight text-foreground">
-            RecruitAI<span className="text-accent">.</span>
-          </Link>
+          <Logo href="/" size="md" priority />
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <a href="#how-it-works" className="text-muted hover:text-foreground transition-colors">How it works</a>
             <a href="#features" className="text-muted hover:text-foreground transition-colors">Features</a>
@@ -190,7 +189,7 @@ export default function PremiumLanding() {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                   Data you control
                 </h4>
-                <p className="text-sm text-muted leading-relaxed">Resumes and JDs you upload are stored under your account. Delete campaigns or request account deletion at any time — see <Link href="/delete-account" className="underline">Data Deletion</Link>.</p>
+                <p className="text-sm text-muted leading-relaxed">Resumes and JDs you upload are stored under your account. Delete campaigns or request account deletion at any time — see <Link href="/data-deletion" className="underline">Data Deletion</Link>.</p>
               </div>
               <div className="border border-border rounded-xl p-6 bg-[#faf9f7]">
                 <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
@@ -210,7 +209,7 @@ export default function PremiumLanding() {
               </div>
               <div className="border border-border rounded-xl p-6 bg-white">
                 <h4 className="font-semibold text-foreground mb-2">Your rights</h4>
-                <p className="text-sm text-muted leading-relaxed">Access, correct, export, or delete your data by contacting support. For step-by-step deletion see <Link href="/delete-account" className="underline">Delete Account</Link>.</p>
+                <p className="text-sm text-muted leading-relaxed">Access, correct, export, or delete your data by contacting support. For step-by-step deletion see <Link href="/data-deletion" className="underline">Delete Account</Link>.</p>
               </div>
             </div>
             <div className="mt-8 text-center">
@@ -282,7 +281,7 @@ export default function PremiumLanding() {
                 How do I delete my data?
                 <span className="ml-4 text-muted group-open:rotate-180 transition-transform">▾</span>
               </summary>
-              <p className="text-sm text-muted leading-relaxed mt-3">Delete individual campaigns from the dashboard, or request full account and data deletion via <Link href="/delete-account" className="underline">Data Deletion</Link> or by emailing support with your account email.</p>
+              <p className="text-sm text-muted leading-relaxed mt-3">Delete individual campaigns from the dashboard, or request full account and data deletion via <Link href="/data-deletion" className="underline">Data Deletion</Link> or by emailing support with your account email.</p>
             </details>
             <details className="group bg-white border border-border rounded-xl px-6 py-5">
               <summary className="flex justify-between items-center cursor-pointer font-semibold text-foreground list-none">
@@ -318,7 +317,7 @@ export default function PremiumLanding() {
         <div className="max-w-7xl mx-auto px-8 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
             <div>
-              <div className="font-serif font-semibold text-xl text-foreground">RecruitAI<span className="text-accent">.</span></div>
+              <Logo href="/" size="md" />
               <p className="text-sm text-muted mt-3 leading-relaxed">Candidate intelligence for modern hiring teams. Multi-agent screening, blind evaluations, and human-in-the-loop outreach.</p>
               <p className="text-xs text-muted mt-4">© {new Date().getFullYear()} RecruitAI. All rights reserved.</p>
             </div>
@@ -336,7 +335,7 @@ export default function PremiumLanding() {
               <ul className="space-y-2 text-sm text-muted">
                 <li><Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="hover:text-foreground transition-colors">Terms & Conditions</Link></li>
-                <li><Link href="/delete-account" className="hover:text-foreground transition-colors">Data Deletion</Link></li>
+                <li><Link href="/data-deletion" className="hover:text-foreground transition-colors">Data Deletion</Link></li>
                 <li><Link href="/support" className="hover:text-foreground transition-colors">Support & Contact</Link></li>
               </ul>
             </div>
@@ -358,9 +357,11 @@ export default function PremiumLanding() {
             <p className="text-xs text-muted text-center md:text-left leading-relaxed max-w-2xl">
               RecruitAI is a hiring assistance tool. Outputs are suggestions based on your inputs and rubric. Verify all candidate information independently before making employment decisions. No personal demo data is displayed on this site.
             </p>
-            <div className="flex gap-6 text-xs font-medium text-muted">
+            <div className="flex flex-wrap gap-6 text-xs font-medium text-muted">
               <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
               <Link href="/terms" className="hover:text-foreground">Terms</Link>
+              <Link href="/data-deletion" className="hover:text-foreground">Data Deletion</Link>
+              <Link href="/support" className="hover:text-foreground">Support</Link>
               <Link href="/dashboard" className="hover:text-foreground">Dashboard</Link>
             </div>
           </div>

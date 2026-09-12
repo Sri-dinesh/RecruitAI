@@ -13,6 +13,7 @@ import { useAuth } from '@/context/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { fetchWithAuth } from '@/lib/apiClient';
 import Link from 'next/link';
+import Logo from '@/components/brand/Logo';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -1019,8 +1020,8 @@ export default function Home() {
             onClick={() => setIsSidebarOpen(false)}
           />
           <aside className="fixed inset-y-0 left-0 z-50 w-[230px] border-r border-slate-200 bg-white  flex flex-col shrink-0 lg:relative lg:translate-x-0">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <span className="font-extrabold text-[10px] uppercase tracking-wider text-slate-500">Conversations</span>
+            <div className="p-3.5 border-b border-slate-200 flex items-center justify-between">
+              <Logo href="/" size="sm" />
               <button 
                 onClick={() => setIsSidebarOpen(false)}
                 className="text-slate-500 hover:text-slate-400 transition p-1 hover:bg-slate-50 rounded-lg animate-in fade-in"
@@ -1112,7 +1113,7 @@ export default function Home() {
 
       {/* Sidebar toggle button when closed */}
       {!isSidebarOpen && (
-        <div className="absolute left-3 top-3.5 z-40">
+        <div className="absolute left-3 top-3.5 z-40 flex items-center gap-2">
           <button 
             onClick={() => setIsSidebarOpen(true)}
             className="p-2.5 bg-white border border-slate-200 hover:border-slate-200 text-slate-700 rounded-xl shadow-lg transition-all"
@@ -1120,6 +1121,7 @@ export default function Home() {
           >
             <Bot className="w-4 h-4 text-brand-primary" />
           </button>
+          <Logo href="/" size="sm" className="hidden md:inline-flex bg-white/80 backdrop-blur px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-sm" />
         </div>
       )}
       

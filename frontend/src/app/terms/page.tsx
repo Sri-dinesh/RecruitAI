@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Logo from '@/components/brand/Logo';
 
 export const metadata = {
   title: 'Terms & Conditions — RecruitAI',
@@ -34,7 +35,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-[#F8F6F2] text-foreground selection:bg-accent selection:text-white">
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/80 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="font-serif font-semibold text-xl tracking-tight">RecruitAI<span className="text-accent">.</span></Link>
+          <Logo href="/" size="md" priority />
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <Link href="/" className="text-muted hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="text-muted hover:text-foreground transition-colors">Privacy</Link>
@@ -97,7 +98,7 @@ export default function TermsPage() {
               <div className="text-xs font-semibold text-foreground">Related</div>
               <div className="mt-3 flex flex-col gap-2 text-sm">
                 <Link href="/privacy" className="text-muted hover:text-foreground">→ Privacy Policy</Link>
-                <Link href="/delete-account" className="text-muted hover:text-foreground">→ Data Deletion</Link>
+                <Link href="/data-deletion" className="text-muted hover:text-foreground">→ Data Deletion</Link>
                 <Link href="/support" className="text-muted hover:text-foreground">→ Support</Link>
               </div>
             </div>
@@ -195,7 +196,7 @@ export default function TermsPage() {
                 <section id="privacy" className="scroll-mt-28">
                   <div className="flex items-center gap-3 mb-3"><span className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold">9</span><h2 className="font-serif text-xl md:text-2xl">Data Protection</h2></div>
                   <div className="h-px bg-border mb-4" />
-                  <p className="text-sm text-muted leading-relaxed">Handling described in <Link href="/privacy" className="underline">Privacy Policy</Link>. For deletion steps see <Link href="/delete-account" className="underline">Data Deletion</Link>.</p>
+                  <p className="text-sm text-muted leading-relaxed">Handling described in <Link href="/privacy" className="underline">Privacy Policy</Link>. For deletion steps see <Link href="/data-deletion" className="underline">Data Deletion</Link>.</p>
                 </section>
 
                 <section id="disclaimers" className="scroll-mt-28">
@@ -221,7 +222,7 @@ export default function TermsPage() {
                   <div className="flex items-center gap-3 mb-3"><span className="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold">13</span><h2 className="font-serif text-xl md:text-2xl">Termination</h2></div>
                   <div className="h-px bg-border mb-4" />
                   <ul className="list-disc pl-5 text-sm text-muted space-y-2 leading-relaxed">
-                    <li>You may terminate by deleting account or discontinuing use — see <Link href="/delete-account" className="underline">Delete Account</Link>.</li>
+                    <li>You may terminate by deleting account or discontinuing use — see <Link href="/data-deletion" className="underline">Delete Account</Link>.</li>
                     <li>We may suspend/terminate for breach, misuse, or legal requirement. On termination, rights cease; data deleted/anonymized per retention unless law requires longer.</li>
                   </ul>
                 </section>
@@ -268,8 +269,10 @@ export default function TermsPage() {
       <footer className="border-t border-border bg-white mt-10">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex gap-6 text-sm font-medium">
+          <div className="flex flex-wrap gap-6 text-sm font-medium">
             <Link href="/privacy" className="text-muted hover:text-foreground">Privacy</Link>
+            <Link href="/terms" className="text-foreground font-semibold">Terms</Link>
+            <Link href="/data-deletion" className="text-muted hover:text-foreground">Data Deletion</Link>
             <Link href="/support" className="text-muted hover:text-foreground">Support</Link>
             <Link href="/" className="text-muted hover:text-foreground">Home</Link>
           </div>
