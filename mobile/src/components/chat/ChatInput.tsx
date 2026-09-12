@@ -3,10 +3,10 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  Alert,
   Platform,
 } from "react-native";
-import { Paperclip, Send, Square, ArrowUp } from "lucide-react-native";
+import { Paperclip, Send, Square, ArrowUp, Users, FileText } from "lucide-react-native";
+import { useAppModal } from "@/context/ModalContext";
 import { COLORS } from "@/constants/theme";
 import { selectionHaptic, impactHaptic } from "@/lib/haptics";
 
@@ -29,19 +29,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onAttachResume,
   onAttachJd,
 }) => {
+  const { showModal } = useAppModal();
+
   const handleAttachmentPress = () => {
     selectionHaptic();
-    Alert.alert("Upload Document", "Choose document type to upload into this session:", [
-      {
-        text: "Upload Candidate Resumes (.pdf, .docx)",
-        onPress: onAttachResume,
-      },
-      {
-        text: "Upload Job Description (.pdf, .txt)",
-        onPress: onAttachJd,
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    showModal({
+      title: "Upload Document",
+      message: "Choose document type to ingest into this campaign session:",
+      type: "actions",
+      actions: [
+        {
+          label: "Candidate Resumes (.pdf, .docx)",
+          icon: Users,
+          variant: "primary",
+          onPress: onAttachResume,
+        },
+        {
+          label: "Job Description (.pdf, .txt)",
+          icon: FileText,
+          variant: "secondary",
+          onPress: onAttachJd,
+        },
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
   };
 
   const handleActionPress = () => {
@@ -81,6 +95,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           multiline
           maxLength={2000}
           style={{ maxHeight: 110 }}
+          textAlignVertical="center"
           className="flex-1 font-sans text-xs text-foreground py-2 leading-relaxed"
           editable={!isLoading}
           returnKeyType="default"

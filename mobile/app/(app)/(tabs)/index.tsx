@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Briefcase, EyeOff, FileUp, Sparkles } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRecruit } from "@/context/RecruitContext";
 import { useRecruitChat } from "@/hooks/useRecruitChat";
 import { MessageBubble } from "@/components/chat/MessageBubble";
@@ -17,6 +18,7 @@ import { TypingDots } from "@/components/chat/TypingDots";
 import { COLORS } from "@/constants/theme";
 
 export default function CopilotTab() {
+  const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   const {
     activeSession,
@@ -49,8 +51,8 @@ export default function CopilotTab() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 56 : 0}
       className="flex-1 bg-background"
     >
       {/* Campaign Context Strip with Live API Dot */}
@@ -113,6 +115,8 @@ export default function CopilotTab() {
         contentContainerStyle={{ padding: 16, paddingBottom: 16 }}
         className="flex-1"
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         onContentSizeChange={() =>
           scrollViewRef.current?.scrollToEnd({ animated: true })
         }

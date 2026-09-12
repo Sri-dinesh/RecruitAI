@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -255,6 +256,8 @@ export default function CandidatesTab() {
         ListEmptyComponent={renderEmptyComponent}
         contentContainerStyle={{ paddingBottom: 88 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

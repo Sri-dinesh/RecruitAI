@@ -25,6 +25,7 @@
     },
     "android": {
       "versionCode": 4,
+      "softwareKeyboardLayoutMode": "pan",
       "usesCleartextTraffic": false,
       "adaptiveIcon": {
         "backgroundColor": "#F8F6F2",
