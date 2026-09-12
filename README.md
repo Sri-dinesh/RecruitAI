@@ -45,7 +45,7 @@ Modern technical recruiting suffers from critical bottlenecks: unstructured resu
 **RecruitAI** replaces manual screening workflows with a **deterministic, multi-agent AI system**:
 - **Eliminates Bias via Blind Mode:** Automatically redacts names, contact info, and demographic markers before evaluation, ensuring purely skill-driven assessments.
 - **Supervisor-Worker Agent Coordination:** Employs LangGraph to coordinate specialized sub-agents for JD parsing, dense vector screening, interview question generation, salary benchmarking, and scheduling.
-- **Advanced RAG (pgvector):** Leverages dense vector embeddings (`all-MiniLM-L6-v2`), query expansion, and cross-encoder relevance reranking to find the closest semantic fit between job requirements and applicant resumes.
+- **Advanced RAG (pgvector):** Leverages Google Gemini Embedding 2 Cloud embeddings (`gemini-embedding-2`), query expansion, and semantic relevance scoring to find the closest semantic fit between job requirements and applicant resumes.
 - **Candidate Decision Pipeline:** Real-time action triggers to **Shortlist (✓)**, **Offer (★)**, or **Reject (✕)** candidates, synced to an enterprise PostgreSQL database.
 - **Recruitment Intelligence & Analytics Dashboard:** Visualizes hiring velocity, pipeline funnels, candidate quality distribution, and skill demand via interactive Recharts visualizations.
 - **Human-in-the-Loop (HITL) Safeguards:** Outbound recruiter emails and calendar reservations are strictly gated behind human approval.
@@ -166,8 +166,8 @@ graph TD;
 | **Data Visualization** | **Recharts** | Pipeline funnels, area ingestion timelines, match score histograms, skill demand bars |
 | **Backend API Server** | **FastAPI**, Uvicorn, Python 3.11+ | Asynchronous REST endpoints, multipart streaming, Pydantic data validation |
 | **AI & Multi-Agent** | **LangGraph**, **LangChain**, Pydantic v2 | Stateful multi-agent graph orchestration, intent routing, structured JSON outputs |
-| **LLM Inference & Failover** | **Google Gemini 2.5 Flash / 1.5 Pro**, **Groq (Llama 3.3 70B)** | High-throughput inference with sticky round-robin automatic provider failover |
-| **Embeddings & Vector Store** | **sentence-transformers (`all-MiniLM-L6-v2`)**, **pgvector** | 384-dimensional dense semantic embeddings with cosine similarity distance |
+| **LLM Inference & Failover** | **Google Gemini 2.5 Flash / 3.1 Flash Lite** | High-throughput inference with automatic model failover and exponential backoff |
+| **Embeddings & Vector Store** | **Google Gemini Embedding 2 Cloud (`gemini-embedding-2`)**, **pgvector** | Cloud-based 384-dimensional dense semantic embeddings with cosine similarity distance |
 | **Database & Auth** | **Supabase (PostgreSQL)**, Supabase Auth | Relational multi-tenant schema, Row-Level Security (RLS), JWT Bearer tokens |
 | **Document Processing** | **pypdf**, **python-docx** | Robust plain text and metadata extraction from uploaded resumes and job descriptions |
 | **Reporting & Search Tools** | **ReportLab**, **Tavily Search API** | PDF recruitment report generation and live web market salary/skill search |
@@ -226,7 +226,7 @@ RecruitAI/
 │   │   ├── core/                    # Core Infrastructure
 │   │   │   ├── auth.py              # JWT Bearer token validator & user_id extractor
 │   │   │   ├── config.py            # Environment settings and API key loader
-│   │   │   ├── llm_router.py        # Gemini <-> Groq round-robin failover router
+│   │   │   ├── llm_router.py        # Google Gemini model failover router (2.5-flash <-> 3.1-flash-lite)
 │   │   │   └── logging.py           # Turn tracer & agent latency logger
 │   │   ├── graph/                   # LangGraph Multi-Agent Engine
 │   │   │   ├── builder.py           # StateGraph assembly & conditional routing edges
@@ -244,9 +244,9 @@ RecruitAI/
 │   │   │       ├── hitl_confirm_node.py     # Human confirmation gate
 │   │   │       └── candidate_qa_node.py     # Applicant deep-dive Q&A
 │   │   ├── rag/                     # Retrieval-Augmented Generation
-│   │   │   ├── advanced_rag.py      # Query expansion & cross-encoder reranking
+│   │   │   ├── advanced_rag.py      # Query expansion & semantic scoring
 │   │   │   ├── chunking.py          # Semantic boundary text chunker
-│   │   │   ├── embeddings.py        # sentence-transformers (all-MiniLM-L6-v2)
+│   │   │   ├── embeddings.py        # Google Gemini Embedding 2 Cloud (384-d MRL)
 │   │   │   ├── vector_store.py      # Supabase pgvector client integration
 │   │   │   └── fallback_db.py       # SQLite drop-in fallback for offline development
 │   │   ├── schemas/                 # Pydantic Schemas (Candidate, JobDescription)
@@ -312,7 +312,7 @@ RecruitAI/
 - **Python 3.10+**
 - **Node.js 18+** & **npm** (or **pnpm**)
 - **Supabase Account** (PostgreSQL with `vector` and `pgcrypto` extensions)
-- API Keys for **Google Gemini**, **Groq**, and **Tavily**
+- API Keys for **Google Gemini** and **Tavily**
 
 ---
 
@@ -342,9 +342,8 @@ RecruitAI/
    ```
 4. Configure environment variables (create `backend/.env` from `.env.example`):
    ```env
-   # LLM API Keys
+   # Google Gemini Cloud API Key (LLM & Embeddings)
    GEMINI_API_KEY=your_gemini_api_key
-   GROQ_API_KEY=your_groq_api_key
 
    # Search API Key
    TAVILY_API_KEY=your_tavily_api_key
@@ -478,8 +477,8 @@ All protected endpoints require an `Authorization: Bearer <supabase_jwt_token>` 
 
 ## 10. Engineering Principles & Resilience
 
-1. **Sticky Round-Robin LLM Failover:**
-   To insulate against provider rate limits and transient outages, the LLM router dynamically distributes requests between **Google Gemini** and **Groq (Llama 3.3)**. If provider A fails, the router automatically fails over to provider B without degrading the user session.
+1. **Automated Google Gemini Model Failover:**
+   To insulate against model rate limits and transient cloud outages, the LLM router dynamically distributes requests across **Google Gemini 2.5 Flash** and **Gemini 3.1 Flash Lite**. If a rate limit or service interruption occurs, the router automatically fails over to the secondary model with exponential backoff without degrading the user session.
 2. **Deterministic Output Guarantees:**
    All agent node outputs are validated through **Pydantic schemas** with strict JSON-mode enforcement, preventing schema drift or malformed responses from reaching the UI.
 3. **Multi-Tenant Row-Level Security:**
@@ -503,7 +502,7 @@ pytest -v
 Key test modules:
 - `tests/test_auth.py`: Verifies 401 unauthenticated rejections and cross-tenant session access denial.
 - `tests/test_nodes.py`: Unit tests for JD parsing, scoring, salary benchmarking, and red flag nodes.
-- `tests/test_failover.py`: Simulates API outages to verify Gemini <-> Groq automatic failover.
+- `tests/test_failover.py`: Simulates API outages to verify automated Gemini model failover.
 - `tests/test_advanced_rag.py`: Verifies dense vector similarity search and reranking.
 
 ### Frontend Quality & Type Checks

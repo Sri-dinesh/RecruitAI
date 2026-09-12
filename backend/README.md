@@ -41,10 +41,10 @@ backend/
 ## Key Components
 
 - **`core/config.py`** – Loads environment variables via `python‑dotenv`.
-- **`core/llm_router.py`** – Round‑robin provider selection (Gemini ↔ Groq) with fallback on rate‑limit errors.
+- **`core/llm_router.py`** – Google Gemini model router (gemini-2.5-flash ↔ gemini-3.1-flash-lite) with automated rate‑limit fallback.
 - **`graph/router_node.py`** – Intent classification (rule‑based fast path + LLM fallback) and confidence handling.
 - **`graph/nodes/`** – Individual intent handlers such as `count_node.py`, `screen_node.py`, `salary_node.py`, `hitl_confirm_node.py`.
-- **`rag/`** – Chunking (`chunking.py`), embedding (`embeddings.py`), and vector‑store interaction (`vector_store.py`).
+- **`rag/`** – Chunking (`chunking.py`), cloud embeddings via Gemini Embedding 2 (`embeddings.py`), and vector‑store interaction (`vector_store.py`).
 - **`services/resume_loader.py`** – Reads `.txt` resumes, returns `Candidate` objects.
 - **`tools/tavily_search.py`** – Wrapper around the Tavily API for live salary queries.
 - **`cli.py`** – Command‑line REPL that presents a Rich‑styled prompt and drives the graph.
@@ -64,7 +64,6 @@ Create a `.env` file (copy from `.env.example`) and fill in the required keys:
 
 ```
 GEMINI_API_KEY=...
-GROQ_API_KEY=...
 TAVILY_API_KEY=...
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
