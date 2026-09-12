@@ -1,7 +1,8 @@
-// Jest setup for Expo 57 / React Native 0.86+
-/* eslint-env jest */
+process.env.EXPO_PUBLIC_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co';
+process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'mock-anon-key';
 
 module.exports = {};
+
 
 jest.mock('lucide-react-native', () => {
   return new Proxy(

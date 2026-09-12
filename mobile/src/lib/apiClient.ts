@@ -130,7 +130,7 @@ export async function testBackendConnection(): Promise<{
     new Set([
       currentBase,
       CLOUD_BACKEND_URL,
-      "http://192.168.0.6:8000",
+      ...(process.env.EXPO_PUBLIC_DEV_LAN_URL ? [process.env.EXPO_PUBLIC_DEV_LAN_URL] : []),
       ...(Platform.OS === "android" ? ["http://10.0.2.2:8000"] : []),
       "http://localhost:8000",
       "http://127.0.0.1:8000",

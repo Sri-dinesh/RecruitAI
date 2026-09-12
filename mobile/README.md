@@ -82,8 +82,9 @@ The mobile application mirrors the desktop web interface:
 Create a `.env` file in the `mobile/` directory:
 
 ```env
-# Backend API Base URL (use your machine's LAN IP when testing on physical devices)
-EXPO_PUBLIC_BACKEND_URL=http://192.168.1.100:8000
+# Backend API Base URL (cloud production or custom local LAN)
+EXPO_PUBLIC_BACKEND_URL=https://recruitai-vpbe.onrender.com
+# For local LAN testing on physical devices: EXPO_PUBLIC_DEV_LAN_URL=http://<YOUR_LAN_IP>:8000
 
 # Supabase Auth Configuration
 EXPO_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co

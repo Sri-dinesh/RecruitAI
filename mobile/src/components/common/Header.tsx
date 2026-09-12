@@ -45,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
             } else {
               Alert.alert(
                 "Connection Failed",
-                `Unable to reach ${currentUrl}/api/health.\n\nTip: If you are running Expo Go with --tunnel, your phone cannot reach local IP 192.168.0.6 directly unless both phone and PC are connected to the exact same Wi-Fi without router AP isolation.`
+                `Unable to reach ${currentUrl}/api/health.\n\nTip: If you are testing over Expo tunnel or cellular, ensure you are connected to the Cloud / Render backend.`
               );
             }
           },
@@ -64,13 +64,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
                     await checkApiHealth();
                   },
                 },
-                {
-                  text: "LAN (192.168.0.6:8000)",
-                  onPress: async () => {
-                    await setCustomBackendUrl("http://192.168.0.6:8000");
-                    await checkApiHealth();
-                  },
-                },
+                ...(process.env.EXPO_PUBLIC_DEV_LAN_URL
+                  ? [
+                      {
+                        text: `Custom LAN (${process.env.EXPO_PUBLIC_DEV_LAN_URL})`,
+                        onPress: async () => {
+                          await setCustomBackendUrl(process.env.EXPO_PUBLIC_DEV_LAN_URL!);
+                          await checkApiHealth();
+                        },
+                      },
+                    ]
+                  : []),
                 {
                   text: "Android Emulator (10.0.2.2:8000)",
                   onPress: async () => {
