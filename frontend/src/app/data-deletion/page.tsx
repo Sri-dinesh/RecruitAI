@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Logo from '@/components/brand/Logo';
 import DeleteAccountForm from '@/components/forms/DeleteAccountForm';
 
 export const metadata = {
@@ -14,7 +15,7 @@ export default function DeleteAccountPage() {
     <div className="min-h-screen bg-[#F8F6F2] text-foreground selection:bg-accent selection:text-white">
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/80 border-b border-border/60">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
-          <Link href="/" className="font-serif font-semibold text-xl tracking-tight">RecruitAI<span className="text-accent">.</span></Link>
+          <Logo href="/" size="md" priority />
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <Link href="/" className="text-muted hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="text-muted hover:text-foreground transition-colors">Privacy</Link>
@@ -52,8 +53,8 @@ export default function DeleteAccountPage() {
             </div>
           </div>
           <div className="mt-6 flex flex-wrap items-center gap-3 text-xs">
-            <span className="inline-flex items-center gap-2 bg-white border border-border rounded-full px-3 py-1.5 font-mono text-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {siteUrl}/delete-account</span>
-            <span className="text-muted">Data Deletion URL for Play Console</span>
+            <span className="inline-flex items-center gap-2 bg-white border border-border rounded-full px-3 py-1.5 font-mono text-muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {siteUrl}/data-deletion</span>
+            <span className="text-muted">Play Console Data Deletion URL — no login required</span>
           </div>
         </div>
       </div>
@@ -178,9 +179,11 @@ export default function DeleteAccountPage() {
       <footer className="border-t border-border bg-white mt-6">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex gap-6 text-sm font-medium">
+          <div className="flex flex-wrap gap-6 text-sm font-medium">
             <Link href="/privacy" className="text-muted hover:text-foreground">Privacy</Link>
             <Link href="/terms" className="text-muted hover:text-foreground">Terms</Link>
+            <Link href="/data-deletion" className="text-foreground font-semibold">Data Deletion</Link>
+            <Link href="/support" className="text-muted hover:text-foreground">Support</Link>
             <Link href="/" className="text-muted hover:text-foreground">Home</Link>
           </div>
         </div>

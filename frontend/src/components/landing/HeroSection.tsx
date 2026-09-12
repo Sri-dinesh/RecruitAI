@@ -203,7 +203,7 @@ export default function HeroSection() {
         <span className="text-border">•</span>
         <Link href="/support" className="underline decoration-border underline-offset-4 hover:text-foreground text-muted">Support</Link>
         <span className="text-border">•</span>
-        <Link href="/delete-account" className="underline decoration-border underline-offset-4 hover:text-foreground text-muted">Data Deletion</Link>
+        <Link href="/data-deletion" className="underline decoration-border underline-offset-4 hover:text-foreground text-muted">Data Deletion</Link>
       </div>
     </section>
   );
