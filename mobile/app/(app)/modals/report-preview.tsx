@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -20,12 +19,14 @@ import {
   Printer,
 } from "lucide-react-native";
 import { useRecruit } from "@/context/RecruitContext";
+import { useAppModal } from "@/context/ModalContext";
 import { downloadAndSharePdfReport } from "@/lib/fileExport";
 import { COLORS } from "@/constants/theme";
 import { successHaptic, warningHaptic, selectionHaptic } from "@/lib/haptics";
 
 export default function ReportPreviewModal() {
   const router = useRouter();
+  const { showModal } = useAppModal();
   const { activeSessionId, activeSession, jd, candidates, lastShortlist } = useRecruit();
 
   const [downloading, setDownloading] = useState(false);
@@ -33,7 +34,11 @@ export default function ReportPreviewModal() {
 
   const handleDownloadAndShare = async () => {
     if (!activeSessionId) {
-      Alert.alert("Session Missing", "No active campaign session found to generate report.");
+      showModal({
+        type: "warning",
+        title: "Session Missing",
+        message: "No active campaign session found to generate report.",
+      });
       return;
     }
 
@@ -44,9 +49,12 @@ export default function ReportPreviewModal() {
       setDownloadedUri(uri);
       successHaptic();
     } catch (err: any) {
-      console.error("[ReportPreview] Error:", err);
       warningHaptic();
-      Alert.alert("Report Error", err.message || "Failed to download and share report.");
+      showModal({
+        type: "error",
+        title: "Report Error",
+        message: err.message || "Failed to download and share report.",
+      });
     } finally {
       setDownloading(false);
     }

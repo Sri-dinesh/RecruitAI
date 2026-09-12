@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -18,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import { useRecruit } from "@/context/RecruitContext";
+import { useAppModal } from "@/context/ModalContext";
 import { fetchWithAuth } from "@/lib/apiClient";
 import { shareAtsExport, convertAtsToCsv, type ATSExportData } from "@/lib/fileExport";
 import { COLORS } from "@/constants/theme";
@@ -25,6 +25,7 @@ import { selectionHaptic, successHaptic, warningHaptic } from "@/lib/haptics";
 
 export default function AtsExportModal() {
   const router = useRouter();
+  const { showModal } = useAppModal();
   const { activeSessionId } = useRecruit();
 
   const [format, setFormat] = useState<"json" | "csv">("json");
@@ -49,7 +50,7 @@ export default function AtsExportModal() {
           setAtsData(data);
         }
       } catch (err) {
-        console.warn("[AtsExport] Error loading data:", err);
+        // Silently caught in background fetch
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -68,9 +69,12 @@ export default function AtsExportModal() {
       await shareAtsExport(atsData, format);
       successHaptic();
     } catch (err: any) {
-      console.error("[AtsExport] Share error:", err);
       warningHaptic();
-      Alert.alert("Export Error", err.message || "Failed to share ATS file.");
+      showModal({
+        type: "error",
+        title: "Export Error",
+        message: err.message || "Failed to share ATS file.",
+      });
     } finally {
       setSharing(false);
     }

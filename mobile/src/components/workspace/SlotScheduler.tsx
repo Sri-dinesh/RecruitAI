@@ -4,9 +4,9 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
 } from "react-native";
+import { showAppModal } from "@/context/ModalContext";
 import {
   Calendar,
   Clock,
@@ -99,38 +99,50 @@ export const SlotScheduler: React.FC = () => {
 
   const handleBookSlot = (slot: SlotItem) => {
     if (!selectedCandidate) {
-      Alert.alert("Select Candidate", "Please select a candidate to schedule an interview.");
+      showAppModal({
+        title: "Select Candidate",
+        message: "Please select a candidate to schedule an interview.",
+        type: "info",
+      });
       return;
     }
 
     selectionHaptic();
 
-    Alert.alert(
-      "Confirm Interview Slot",
-      `Book 30-min interview for ${selectedCandidate.name} on ${slot.label}?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    showAppModal({
+      title: "Confirm Interview Slot",
+      message: `Book 30-minute interview for ${selectedCandidate.name} on ${slot.label}?`,
+      type: "confirm",
+      actions: [
         {
-          text: "Confirm Booking",
-          style: "default",
+          label: "Confirm Booking",
+          variant: "primary",
           onPress: async () => {
             setBookingSlot(slot.slot_number);
             try {
               await bookInterview(selectedCandidate.name, slot.label);
-              successHaptic();
-              Alert.alert(
-                "Interview Confirmed",
-                `Interview successfully scheduled with ${selectedCandidate.name} for ${slot.label}.`
-              );
+              showAppModal({
+                title: "Interview Confirmed",
+                message: `Interview successfully scheduled with ${selectedCandidate.name} for ${slot.label}.`,
+                type: "success",
+              });
             } catch (err: any) {
-              Alert.alert("Booking Error", err.message || "Failed to confirm slot.");
+              showAppModal({
+                title: "Booking Error",
+                message: err.message || "Failed to confirm slot.",
+                type: "error",
+              });
             } finally {
               setBookingSlot(null);
             }
           },
         },
-      ]
-    );
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
   };
 
   const getInitials = (name?: string) => {

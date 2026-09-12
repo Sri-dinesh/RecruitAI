@@ -6,7 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -27,12 +26,14 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import { useRecruit } from "@/context/RecruitContext";
+import { useAppModal } from "@/context/ModalContext";
 import { fetchWithAuth } from "@/lib/apiClient";
 import { COLORS } from "@/constants/theme";
 import { successHaptic, selectionHaptic, warningHaptic } from "@/lib/haptics";
 
 export default function CandidateInspectorModal() {
   const router = useRouter();
+  const { showModal } = useAppModal();
   const { candidateId } = useLocalSearchParams<{ candidateId: string }>();
   const { candidates, isBlindHiring, candidateStatuses, toggleCandidateStatus } = useRecruit();
 
@@ -62,7 +63,7 @@ export default function CandidateInspectorModal() {
           if (data.notes) setNotes(data.notes);
         }
       } catch (err) {
-        console.warn("[CandidateInspector] Error loading evaluation:", err);
+        // Silent evaluation fetch
       } finally {
         if (isMounted) setIsLoadingEval(false);
       }
@@ -77,10 +78,11 @@ export default function CandidateInspectorModal() {
   const handleSaveEvaluation = async () => {
     if (!candidateId) return;
     if (techScore < 1 && commScore < 1 && !notes.trim()) {
-      Alert.alert(
-        "Rubric Incomplete",
-        "Please select a Technical or Communication rating, or enter notes before saving."
-      );
+      showModal({
+        type: "warning",
+        title: "Rubric Incomplete",
+        message: "Please select a Technical or Communication rating, or enter notes before saving.",
+      });
       return;
     }
 
@@ -107,9 +109,12 @@ export default function CandidateInspectorModal() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
-      console.error("[CandidateInspector] Save error:", err);
       warningHaptic();
-      Alert.alert("Save Failed", err.message || "Failed to persist evaluation.");
+      showModal({
+        type: "error",
+        title: "Save Failed",
+        message: err.message || "Failed to persist evaluation.",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -220,6 +225,8 @@ export default function CandidateInspectorModal() {
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       >
         {/* Candidate Profile Summary Header */}
         <View className="bg-white border border-border rounded-[6px] p-4 mb-4 shadow-xs">

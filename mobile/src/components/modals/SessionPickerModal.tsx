@@ -1,5 +1,6 @@
 import React, { forwardRef, useMemo, useCallback } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
+import { showAppModal } from "@/context/ModalContext";
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -75,36 +76,48 @@ export const SessionPickerModal = forwardRef<
 
   const handleDeleteSession = (sessionId: string, title: string) => {
     impactHaptic();
-    Alert.alert(
-      "Delete Campaign",
-      `Are you sure you want to permanently delete "${title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
+    showAppModal({
+      title: "Delete Campaign",
+      message: `Are you sure you want to permanently delete "${title}"? This cannot be undone.`,
+      type: "confirm",
+      actions: [
         {
-          text: "Delete",
-          style: "destructive",
+          label: "Delete Campaign",
+          variant: "destructive",
           onPress: async () => {
             await deleteSession(sessionId);
           },
         },
-      ]
-    );
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
   };
 
   const handleSignOut = () => {
     impactHaptic();
-    Alert.alert("Sign Out", "Are you sure you want to sign out of RecruitAI?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          // @ts-ignore
-          ref?.current?.dismiss();
-          await logout();
+    showAppModal({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out of RecruitAI?",
+      type: "confirm",
+      actions: [
+        {
+          label: "Sign Out",
+          variant: "destructive",
+          onPress: async () => {
+            // @ts-ignore
+            ref?.current?.dismiss();
+            await logout();
+          },
         },
-      },
-    ]);
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
   };
 
   return (

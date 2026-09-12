@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from "react-native";
+import { showAppModal } from "@/context/ModalContext";
 import {
   Mail,
   Send,
@@ -119,7 +119,11 @@ export const EmailDrafter: React.FC = () => {
 
   const handleSendEmail = async () => {
     if (!recipient.trim() || !body.trim()) {
-      Alert.alert("Incomplete Email", "Please provide a recipient email and message body.");
+      showAppModal({
+        title: "Incomplete Email",
+        message: "Please provide a recipient email and message body.",
+        type: "warning",
+      });
       return;
     }
 
@@ -153,12 +157,19 @@ export const EmailDrafter: React.FC = () => {
         },
       ]);
 
-      Alert.alert("Email Sent", `Successfully sent outreach to ${recipient}.`);
+      showAppModal({
+        title: "Email Sent",
+        message: `Successfully sent outreach to ${recipient}.`,
+        type: "success",
+      });
       setTimeout(() => setSendSuccess(false), 3000);
     } catch (err: any) {
       console.error("[EmailDrafter] Send error:", err);
-      warningHaptic();
-      Alert.alert("Send Failed", err.message || "Failed to send email via SMTP.");
+      showAppModal({
+        title: "Send Failed",
+        message: err.message || "Failed to send email via SMTP.",
+        type: "error",
+      });
     } finally {
       setIsSending(false);
     }
