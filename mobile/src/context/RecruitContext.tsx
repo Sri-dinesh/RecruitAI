@@ -7,7 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import * as SecureStore from "expo-secure-store";
-import { fetchWithAuth } from "@/lib/apiClient";
+import { fetchWithAuth, testBackendConnection, getBackendUrl } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
 import { selectionHaptic, successHaptic, warningHaptic } from "@/lib/haptics";
 import type {
@@ -54,14 +54,21 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     return sessions.find((s) => s.id === activeSessionId) || null;
   }, [sessions, activeSessionId]);
 
-  // Check API Health
+  // Check API Health with diagnostic logging and candidate URL fallbacks
   const checkApiHealth = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetchWithAuth("/api/health");
-      const isOk = res.ok;
-      setApiConnected(isOk);
-      return isOk;
-    } catch {
+      const result = await testBackendConnection();
+      if (result.ok) {
+        console.log(`[RecruitContext] Connected to backend at ${result.url}`);
+        setApiConnected(true);
+        return true;
+      } else {
+        console.warn(`[RecruitContext] Backend disconnected (${result.url}):`, result.error);
+        setApiConnected(false);
+        return false;
+      }
+    } catch (err: any) {
+      console.warn(`[RecruitContext] Health check error:`, err?.message || err);
       setApiConnected(false);
       return false;
     }

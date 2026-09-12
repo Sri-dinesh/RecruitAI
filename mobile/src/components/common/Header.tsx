@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, Image, Alert, Platform } from "react-native";
+import { getBackendUrl, setCustomBackendUrl, resetBackendUrl } from "@/lib/apiClient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Briefcase,
@@ -26,7 +27,73 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
     isBlindHiring,
     toggleBlindHiring,
     apiConnected,
+    checkApiHealth,
   } = useRecruit();
+
+  const handleOfflineBannerPress = () => {
+    const currentUrl = getBackendUrl();
+    Alert.alert(
+      "Backend Server Connection",
+      `Target URL: ${currentUrl}\n\nStatus: Offline / Unreachable\n\nEnsure your FastAPI server is running on port 8000 and reachable from this network.`,
+      [
+        {
+          text: "Retry Now",
+          onPress: async () => {
+            const ok = await checkApiHealth();
+            if (ok) {
+              Alert.alert("Connected!", "Backend API is online and healthy.");
+            } else {
+              Alert.alert(
+                "Connection Failed",
+                `Unable to reach ${currentUrl}/api/health.\n\nTip: If you are running Expo Go with --tunnel, your phone cannot reach local IP 192.168.0.6 directly unless both phone and PC are connected to the exact same Wi-Fi without router AP isolation.`
+              );
+            }
+          },
+        },
+        {
+          text: "Switch Server Target",
+          onPress: () => {
+            Alert.alert(
+              "Select Server Target",
+              `Current: ${currentUrl}`,
+              [
+                {
+                  text: "LAN (192.168.0.6:8000)",
+                  onPress: async () => {
+                    await setCustomBackendUrl("http://192.168.0.6:8000");
+                    await checkApiHealth();
+                  },
+                },
+                {
+                  text: "Android Emulator (10.0.2.2:8000)",
+                  onPress: async () => {
+                    await setCustomBackendUrl("http://10.0.2.2:8000");
+                    await checkApiHealth();
+                  },
+                },
+                {
+                  text: "Localhost (127.0.0.1:8000)",
+                  onPress: async () => {
+                    await setCustomBackendUrl("http://127.0.0.1:8000");
+                    await checkApiHealth();
+                  },
+                },
+                {
+                  text: "Reset to Default",
+                  onPress: async () => {
+                    await resetBackendUrl();
+                    await checkApiHealth();
+                  },
+                },
+                { text: "Cancel", style: "cancel" },
+              ]
+            );
+          },
+        },
+        { text: "Close", style: "cancel" },
+      ]
+    );
+  };
 
   const userInitial = (
     user?.user_metadata?.full_name?.[0] ||
@@ -42,6 +109,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
       <View className="flex-row items-center justify-between">
         {/* Left: Brand + Campaign Selector Pill */}
         <View className="flex-row items-center flex-1 mr-2">
+          <Image
+            source={require("@/../assets/logo-mark.png")}
+            style={{ width: 22, height: 22, resizeMode: "contain", marginRight: 6 }}
+          />
           <Text className="font-serif-bold text-lg text-foreground tracking-tight">
             RecruitAI<Text className="text-brand-emerald">.</Text>
           </Text>
@@ -120,12 +191,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
 
       {/* Ambient Offline Banner */}
       {!apiConnected && (
-        <View className="bg-amber-500/10 border-t border-amber-500/20 -mx-4 -mb-2.5 mt-2 py-1 px-4 flex-row items-center justify-center">
-          <WifiOff size={11} color="#D97706" />
-          <Text className="font-sans-medium text-[10px] text-amber-800 ml-1.5">
-            Offline Mode — Changes will sync when reconnected
-          </Text>
-        </View>
+        <TouchableOpacity
+          onPress={handleOfflineBannerPress}
+          activeOpacity={0.8}
+          className="bg-amber-500/10 border-t border-amber-500/20 -mx-4 -mb-2.5 mt-2 py-1.5 px-4 flex-row items-center justify-between"
+        >
+          <View className="flex-row items-center flex-1 mr-2">
+            <WifiOff size={11} color="#D97706" />
+            <Text className="font-sans-medium text-[10px] text-amber-800 ml-1.5" numberOfLines={1}>
+              Offline Mode — Tap to test or configure server
+            </Text>
+          </View>
+          <Text className="font-sans-bold text-[10px] text-brand-primary underline">Settings</Text>
+        </TouchableOpacity>
       )}
     </View>
   );

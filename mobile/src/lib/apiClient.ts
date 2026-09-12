@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { supabase } from "./supabase";
 
 /**
@@ -13,7 +14,35 @@ const getDefaultBackendUrl = () => {
   return "http://localhost:8000";
 };
 
-export const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
+let activeBackendUrl: string =
+  process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
+
+// Hydrate saved custom backend URL from SecureStore if available
+SecureStore.getItemAsync("recruitai_backend_url")
+  .then((saved) => {
+    if (saved && saved.trim()) {
+      activeBackendUrl = saved.trim().replace(/\/$/, "");
+      console.log("[apiClient] Loaded custom backend URL from storage:", activeBackendUrl);
+    }
+  })
+  .catch(() => {});
+
+export const getBackendUrl = (): string => activeBackendUrl;
+
+export const setCustomBackendUrl = async (url: string): Promise<void> => {
+  const clean = url.trim().replace(/\/$/, "");
+  activeBackendUrl = clean;
+  await SecureStore.setItemAsync("recruitai_backend_url", clean);
+  console.log("[apiClient] Set custom backend URL:", clean);
+};
+
+export const resetBackendUrl = async (): Promise<void> => {
+  activeBackendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
+  await SecureStore.deleteItemAsync("recruitai_backend_url");
+  console.log("[apiClient] Reset backend URL to default:", activeBackendUrl);
+};
+
+export const BACKEND_URL = activeBackendUrl;
 
 export interface FetchWithAuthOptions extends RequestInit {
   retries?: number;
@@ -48,7 +77,8 @@ export async function fetchWithAuth(
     console.warn("[apiClient] Unable to retrieve auth session token:", err);
   }
 
-  const url = path.startsWith("http") ? path : `${BACKEND_URL}${path}`;
+  const baseUrl = getBackendUrl();
+  const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
 
   let lastError: any = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -79,5 +109,54 @@ export async function fetchWithAuth(
     }
   }
 
-  throw lastError || new Error(`Network request failed for ${path}`);
+  throw lastError || new Error(`Network request failed for ${path} at ${baseUrl}`);
+}
+
+/**
+ * Diagnostic helper to test backend connectivity with candidate URL fallbacks.
+ */
+export async function testBackendConnection(): Promise<{
+  ok: boolean;
+  url: string;
+  status?: number;
+  message?: string;
+  error?: string;
+}> {
+  const currentBase = getBackendUrl();
+  const testUrls = [
+    currentBase,
+    ...(Platform.OS === "android" && !currentBase.includes("10.0.2.2")
+      ? ["http://10.0.2.2:8000"]
+      : []),
+    ...(Platform.OS === "android" && !currentBase.includes("192.168.0.6")
+      ? ["http://192.168.0.6:8000"]
+      : []),
+  ];
+
+  let lastErr = "";
+  for (const base of testUrls) {
+    const fullUrl = `${base}/api/health`;
+    try {
+      console.log("[apiClient] Testing backend health at:", fullUrl);
+      const res = await fetch(fullUrl, { method: "GET" });
+      if (res.ok) {
+        if (base !== currentBase) {
+          await setCustomBackendUrl(base);
+          console.log("[apiClient] Switched active backend URL to:", base);
+        }
+        return {
+          ok: true,
+          url: base,
+          status: res.status,
+          message: "Connected successfully",
+        };
+      } else {
+        lastErr = `HTTP ${res.status}`;
+      }
+    } catch (e: any) {
+      lastErr = e?.message || "Network request failed";
+    }
+  }
+
+  return { ok: false, url: currentBase, error: lastErr };
 }
