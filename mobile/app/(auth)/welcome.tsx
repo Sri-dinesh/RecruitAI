@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Bot, TrendingUp, Users, ArrowRight, ShieldCheck } from "lucide-react-native";
@@ -25,6 +25,10 @@ export default function WelcomeScreen() {
       >
         {/* Brand Header */}
         <View className="items-center mt-4 mb-6">
+          <Image
+            source={require("@/../assets/logo-mark.png")}
+            style={{ width: 56, height: 56, resizeMode: "contain", marginBottom: 12 }}
+          />
           <Text className="font-serif-bold text-3xl text-foreground tracking-tight">
             RecruitAI<Text className="text-brand-emerald">.</Text>
           </Text>

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -155,9 +156,15 @@ export default function SignupScreen() {
               <ChevronLeft size={18} color={COLORS.foreground} />
             </TouchableOpacity>
 
-            <Text className="font-serif-bold text-lg text-foreground">
-              RecruitAI<Text className="text-brand-emerald">.</Text>
-            </Text>
+            <View className="flex-row items-center">
+              <Image
+                source={require("@/../assets/logo-mark.png")}
+                style={{ width: 22, height: 22, resizeMode: "contain", marginRight: 6 }}
+              />
+              <Text className="font-serif-bold text-lg text-foreground">
+                RecruitAI<Text className="text-brand-emerald">.</Text>
+              </Text>
+            </View>
 
             <View className="w-9" />
           </View>
