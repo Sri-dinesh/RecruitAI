@@ -18,24 +18,71 @@ function CallbackContent() {
   useEffect(() => {
     const supabase = createSupabaseClient();
     const typeParam = searchParams.get('type');
-    const isRecovery = typeParam === 'recovery' || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'));
+    const code = searchParams.get('code');
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    const search = typeof window !== 'undefined' ? window.location.search : '';
+    const isRecovery =
+      typeParam === 'recovery' ||
+      hash.includes('type=recovery') ||
+      search.includes('type=recovery');
 
     // Set up auth state listener for PASSWORD_RECOVERY event
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        router.replace('/auth/reset-password');
+        router.replace(`/auth/reset-password${search}${hash}`);
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const processAuth = async () => {
+      // 1. If PKCE authorization code is present in query parameters, exchange it
+      if (code) {
+        try {
+          await supabase.auth.exchangeCodeForSession(code);
+        } catch (e) {
+          console.warn('[AuthCallback] Error exchanging auth code:', e);
+        }
+      }
+
+      // 2. If access_token and refresh_token are in the hash fragment, set session
+      if (hash && hash.includes('access_token=')) {
+        try {
+          const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+          }
+        } catch (e) {
+          console.warn('[AuthCallback] Error setting session from hash:', e);
+        }
+      }
+
+      // 3. Verify session state
+      const { data: { session } } = await supabase.auth.getSession();
+
       if (isRecovery) {
-        router.replace('/auth/reset-password');
+        router.replace(`/auth/reset-password${search}${hash}`);
       } else if (session) {
         router.replace('/dashboard');
       } else {
-        router.replace('/auth?tab=login');
+        // Fallback retry after 500ms
+        setTimeout(async () => {
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (isRecovery) {
+            router.replace(`/auth/reset-password${search}${hash}`);
+          } else if (retrySession) {
+            router.replace('/dashboard');
+          } else {
+            router.replace('/auth?tab=login');
+          }
+        }, 500);
       }
-    });
+    };
+
+    processAuth();
 
     return () => {
       subscription.unsubscribe();

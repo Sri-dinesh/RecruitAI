@@ -22,6 +22,7 @@ import {
   KeyRound,
 } from "lucide-react-native";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 import PasswordMeter from "@/components/common/PasswordMeter";
 import { COLORS } from "@/constants/theme";
 import { warningHaptic, successHaptic } from "@/lib/haptics";
@@ -36,9 +37,18 @@ export default function ResetPasswordScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [hasValidSession, setHasValidSession] = useState<boolean | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [countdown, setCountdown] = useState(3);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setHasValidSession(!!session);
+      setCheckingSession(false);
+    });
+  }, []);
 
   useEffect(() => {
     let timer: any;
@@ -104,8 +114,15 @@ export default function ResetPasswordScreen() {
             </Text>
           </View>
 
-          {/* Success Screen */}
-          {success ? (
+          {/* Checking Session Spinner */}
+          {checkingSession ? (
+            <View className="bg-white border border-border rounded-[6px] p-8 items-center justify-center my-6">
+              <ActivityIndicator size="small" color={COLORS.brandPrimary} />
+              <Text className="font-sans text-xs text-muted mt-3">
+                Verifying recovery credentials...
+              </Text>
+            </View>
+          ) : success ? (
             <View className="bg-white border border-border rounded-[6px] p-6 items-center text-center shadow-sm my-6">
               <View className="w-14 h-14 bg-emerald-50 rounded-full items-center justify-center border border-emerald-200 mb-3">
                 <CheckCircle2 size={32} color={COLORS.statusShortlist} />
@@ -125,6 +142,29 @@ export default function ResetPasswordScreen() {
               >
                 <Text className="font-sans-bold text-sm text-white mr-2">
                   Go to Workspace Now
+                </Text>
+                <ArrowRight size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : hasValidSession === false ? (
+            <View className="bg-white border border-border rounded-[6px] p-6 items-center shadow-sm my-6">
+              <View className="w-12 h-12 bg-rose-50 rounded-full items-center justify-center border border-rose-200 mb-3">
+                <AlertCircle size={24} color={COLORS.statusReject} />
+              </View>
+              <Text className="font-serif text-xl text-foreground text-center">
+                Recovery Link Expired
+              </Text>
+              <Text className="font-sans text-xs text-muted text-center mt-2 leading-relaxed">
+                This password recovery link has expired or has already been used. Please dispatch a fresh link to your email.
+              </Text>
+
+              <TouchableOpacity
+                onPress={() => router.replace("/(auth)/forgot-password")}
+                activeOpacity={0.85}
+                className="w-full bg-accent rounded-[6px] py-3.5 px-4 flex-row items-center justify-center mt-6 shadow-sm"
+              >
+                <Text className="font-sans-bold text-sm text-white mr-2">
+                  Request New Reset Link
                 </Text>
                 <ArrowRight size={16} color="#FFFFFF" />
               </TouchableOpacity>

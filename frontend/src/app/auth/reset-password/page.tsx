@@ -41,19 +41,61 @@ function ResetPasswordContent() {
   // Check if recovery session or user session is active
   useEffect(() => {
     const supabase = createSupabaseClient();
-    
-    supabase.auth.getSession().then(({ data: { session } }) => {
+
+    const initAuth = async () => {
+      // 1. Check for PKCE authorization code in query parameters
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        if (code) {
+          try {
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            if (!error && data.session) {
+              setHasValidSession(true);
+              return;
+            }
+          } catch (e) {
+            console.warn('[ResetPassword] Code exchange error:', e);
+          }
+        }
+
+        // 2. Check for access_token in hash fragment
+        const hash = window.location.hash || '';
+        if (hash.includes('access_token=')) {
+          try {
+            const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
+            if (accessToken && refreshToken) {
+              const { data, error } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+              if (!error && data.session) {
+                setHasValidSession(true);
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn('[ResetPassword] Hash token session error:', e);
+          }
+        }
+      }
+
+      // 3. Check existing session
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setHasValidSession(true);
       } else {
-        // Wait briefly in case the hash fragment tokens are still being processed
-        setTimeout(() => {
-          supabase.auth.getSession().then(({ data: { session: retrySession } }) => {
-            setHasValidSession(!!retrySession);
-          });
-        }, 800);
+        // Wait briefly in case background token refresh or event listener catches it
+        setTimeout(async () => {
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          setHasValidSession(!!retrySession);
+        }, 1200);
       }
-    });
+    };
+
+    initAuth();
 
     // Also listen for PASSWORD_RECOVERY auth event
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -114,9 +156,13 @@ function ResetPasswordContent() {
     setLoading(true);
 
     try {
-      const { error } = await updatePassword(password);
-      if (error) {
-        setError(error.message);
+      const supabase = createSupabaseClient();
+      let updateResult = await supabase.auth.updateUser({ password });
+      if (updateResult.error) {
+        updateResult = await updatePassword(password);
+      }
+      if (updateResult.error) {
+        setError(updateResult.error.message);
       } else {
         setSuccess(true);
       }

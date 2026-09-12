@@ -11,23 +11,35 @@ export default function AuthCallback() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleUrl = async () => {
+    const processUrl = async (urlStr: string | null) => {
       try {
-        const url = await Linking.getInitialURL();
-        if (!url) {
-          router.replace("/");
-          return;
-        }
+        if (!urlStr) return false;
 
-        // Parse hash fragment or query params
-        // e.g. recruitai://auth/callback#access_token=...&refresh_token=...&type=recovery
-        const parsedUrl = new URL(url);
+        const parsedUrl = new URL(urlStr);
         let hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ""));
         let queryParams = new URLSearchParams(parsedUrl.search);
 
         const accessToken = hashParams.get("access_token") || queryParams.get("access_token") || (params.access_token as string);
         const refreshToken = hashParams.get("refresh_token") || queryParams.get("refresh_token") || (params.refresh_token as string);
+        const code = queryParams.get("code") || hashParams.get("code") || (params.code as string);
         const type = hashParams.get("type") || queryParams.get("type") || (params.type as string);
+
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.warn("[AuthCallback] Code exchange error:", error);
+            setErrorMsg(error.message);
+            return false;
+          }
+          if (data?.session) {
+            if (type === "recovery") {
+              router.replace("/(auth)/reset-password");
+            } else {
+              router.replace("/");
+            }
+            return true;
+          }
+        }
 
         if (accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
@@ -37,7 +49,7 @@ export default function AuthCallback() {
 
           if (error) {
             setErrorMsg(error.message);
-            return;
+            return false;
           }
 
           if (type === "recovery") {
@@ -45,17 +57,33 @@ export default function AuthCallback() {
           } else {
             router.replace("/");
           }
-        } else {
-          // If no token, return to welcome
-          router.replace("/(auth)/welcome");
+          return true;
         }
+
+        return false;
       } catch (err: any) {
         console.warn("[AuthCallback] Error parsing auth redirect:", err);
         setErrorMsg(err?.message || "Failed to process authentication link.");
+        return false;
       }
     };
 
-    handleUrl();
+    // 1. Check initial URL for cold app opens
+    Linking.getInitialURL().then(async (initialUrl) => {
+      const handled = await processUrl(initialUrl);
+      if (!handled && !initialUrl) {
+        router.replace("/(auth)/welcome");
+      }
+    });
+
+    // 2. Listen for URL events while app is open in background
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      processUrl(url);
+    });
+
+    return () => {
+      sub.remove();
+    };
   }, [params]);
 
   return (

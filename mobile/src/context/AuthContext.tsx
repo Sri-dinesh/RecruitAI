@@ -128,10 +128,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const resetPasswordForEmail = async (email: string) => {
     try {
-      const redirectUrl = AuthSession.makeRedirectUri({
-        scheme: "recruitai",
-        path: "auth/callback",
-      });
+      // Always use the live production domain so email links work universally
+      // on mobile phones (via App Links / Universal Links) and web browsers.
+      const redirectUrl = "https://recruitaiofficial.vercel.app/auth/callback?type=recovery";
 
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: redirectUrl,

@@ -19,6 +19,22 @@ if (typeof window !== 'undefined') {
 export default function PremiumLanding() {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Catch password recovery redirects landing on the root site URL (e.g. Supabase default Site URL)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      const isRecovery =
+        hash.includes('type=recovery') ||
+        search.includes('type=recovery') ||
+        (hash.includes('access_token=') && hash.includes('recovery'));
+
+      if (isRecovery) {
+        window.location.replace(`/auth/reset-password${search}${hash}`);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const ctx = gsap.context(() => {
       gsap.from('.hero-word', {
