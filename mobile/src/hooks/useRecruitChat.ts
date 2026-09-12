@@ -165,36 +165,66 @@ export function useRecruitChat() {
 
       setIsUploading(true);
 
-      const uploadPromises = result.assets.map((asset) =>
-        uploadFileWithAuth<Candidate[]>("/api/ingest/upload", asset.uri, {
-          fieldName: "files",
-          fileName: asset.name,
-          mimeType: asset.mimeType || "application/pdf",
-        })
-      );
+      const uploaded: Candidate[] = [];
+      const failedNames: string[] = [];
 
-      const candidateArrays = await Promise.all(uploadPromises);
-      const uploaded = candidateArrays.flat();
+      for (const asset of result.assets) {
+        try {
+          const res = await uploadFileWithAuth<Candidate[] | Candidate>("/api/ingest/upload", asset.uri, {
+            fieldName: "files",
+            fileName: asset.name,
+            mimeType: asset.mimeType || "application/pdf",
+          });
+          if (Array.isArray(res)) {
+            uploaded.push(...res);
+          } else if (res && typeof res === "object" && "candidate_id" in res) {
+            uploaded.push(res as Candidate);
+          }
+        } catch (err: any) {
+          console.error("[useRecruitChat] Single file upload error:", asset.name, err);
+          failedNames.push(asset.name || "Resume");
+        }
+      }
 
-      // Merge into local candidates state immediately
-      setCandidates((prev) => {
-        const existingIds = new Set(prev.map((c) => c.candidate_id));
-        const added = uploaded.filter((c) => !existingIds.has(c.candidate_id));
-        return [...prev, ...added];
-      });
+      if (uploaded.length > 0) {
+        // Merge into local candidates state immediately
+        setCandidates((prev) => {
+          const existingIds = new Set(prev.map((c) => c.candidate_id));
+          const added = uploaded.filter((c) => !existingIds.has(c.candidate_id));
+          return [...prev, ...added];
+        });
 
-      await refreshActiveSession();
-      successHaptic();
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `✅ Successfully ingested **${uploaded.length}** candidate resume${
-            uploaded.length === 1 ? "" : "s"
-          }. You can now ask me to screen and rank candidates or view them in the Candidates tab.`,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+        await refreshActiveSession();
+        successHaptic();
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `✅ Successfully ingested **${uploaded.length}** candidate resume${
+              uploaded.length === 1 ? "" : "s"
+            }.${
+              failedNames.length > 0
+                ? ` (Note: ${failedNames.length} file could not be parsed: ${failedNames.join(", ")})`
+                : ""
+            } You can now ask me to screen and rank candidates or view them in the Candidates tab.`,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (failedNames.length > 0) {
+          showAppModal({
+            title: "Partial Ingestion",
+            message: `Ingested ${uploaded.length} candidate(s), but ${failedNames.length} file(s) (${failedNames.join(", ")}) failed to parse.`,
+            type: "warning",
+          });
+        }
+      } else if (failedNames.length > 0) {
+        showAppModal({
+          title: "Upload Failed",
+          message: "Unable to parse the selected resumes. Please verify they are valid PDF or Word documents and try again.",
+          type: "error",
+        });
+      }
     } catch (err: any) {
       console.error("[useRecruitChat] Upload error:", err);
       showAppModal({

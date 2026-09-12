@@ -31,33 +31,61 @@ export function useFileIngestion() {
 
       setIsUploadingResumes(true);
 
-      const uploadPromises = result.assets.map((asset) =>
-        uploadFileWithAuth<Candidate[]>("/api/ingest/upload", asset.uri, {
-          fieldName: "files",
-          fileName: asset.name,
-          mimeType: asset.mimeType || "application/pdf",
-        })
-      );
+      const uploaded: Candidate[] = [];
+      const failedNames: string[] = [];
 
-      const candidateArrays = await Promise.all(uploadPromises);
-      const newCandidates = candidateArrays.flat();
+      for (const asset of result.assets) {
+        try {
+          const res = await uploadFileWithAuth<Candidate[] | Candidate>("/api/ingest/upload", asset.uri, {
+            fieldName: "files",
+            fileName: asset.name,
+            mimeType: asset.mimeType || "application/pdf",
+          });
+          if (Array.isArray(res)) {
+            uploaded.push(...res);
+          } else if (res && typeof res === "object" && "candidate_id" in res) {
+            uploaded.push(res as Candidate);
+          }
+        } catch (err: any) {
+          console.error("[useFileIngestion] Single file upload error:", asset.name, err);
+          failedNames.push(asset.name || "Resume");
+        }
+      }
 
-      // Merge newly ingested candidates avoiding duplicate IDs
-      setCandidates((prev) => {
-        const existingIds = new Set(prev.map((c) => c.candidate_id));
-        const added = newCandidates.filter((c) => !existingIds.has(c.candidate_id));
-        return [...prev, ...added];
-      });
+      if (uploaded.length > 0) {
+        // Merge newly ingested candidates avoiding duplicate IDs
+        setCandidates((prev) => {
+          const existingIds = new Set(prev.map((c) => c.candidate_id));
+          const added = uploaded.filter((c) => !existingIds.has(c.candidate_id));
+          return [...prev, ...added];
+        });
 
-      showAppModal({
-        title: "Upload Complete",
-        message: `Successfully parsed and ingested ${newCandidates.length} candidate resume${
-          newCandidates.length === 1 ? "" : "s"
-        }.`,
-        type: "success",
-      });
-
-      return newCandidates;
+        if (failedNames.length === 0) {
+          showAppModal({
+            title: "Upload Complete",
+            message: `Successfully parsed and ingested ${uploaded.length} candidate resume${
+              uploaded.length === 1 ? "" : "s"
+            }.`,
+            type: "success",
+          });
+        } else {
+          showAppModal({
+            title: "Partial Ingestion",
+            message: `Ingested ${uploaded.length} candidate(s), but ${failedNames.length} file(s) (${failedNames.join(", ")}) failed to parse.`,
+            type: "warning",
+          });
+        }
+        return uploaded;
+      } else {
+        const errorMsg = "Unable to parse the selected resumes. Please verify they are valid PDF or Word documents.";
+        setUploadError(errorMsg);
+        showAppModal({
+          title: "Upload Failed",
+          message: errorMsg,
+          type: "error",
+        });
+        return null;
+      }
     } catch (err: any) {
       console.error("[useFileIngestion] Error uploading resumes:", err);
       const message = err.message || "An unexpected error occurred during upload.";

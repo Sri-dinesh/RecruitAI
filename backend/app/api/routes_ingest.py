@@ -19,6 +19,43 @@ router = APIRouter()
 
 MAX_UPLOAD_SIZE = 15 * 1024 * 1024  # 15 MB per file
 
+def resolve_filename_and_ext(filename: str, content_type: str, file_bytes: bytes) -> tuple[str, str]:
+    """
+    Intelligently determines file extension from filename, Content-Type, or binary magic bytes.
+    Guarantees that files uploaded from Android cache without explicit extensions are handled accurately.
+    """
+    ext = Path(filename).suffix.lower() if filename else ""
+    if ext:
+        return filename, ext
+
+    content_type_map = {
+        "application/pdf": ".pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/msword": ".docx",
+        "text/plain": ".txt",
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+    }
+    inferred_ext = content_type_map.get((content_type or "").lower(), "")
+
+    if not inferred_ext:
+        if file_bytes.startswith(b"%PDF"):
+            inferred_ext = ".pdf"
+        elif file_bytes.startswith(b"PK\x03\x04"):
+            inferred_ext = ".docx"
+        elif file_bytes.startswith(b"\x89PNG"):
+            inferred_ext = ".png"
+        elif file_bytes.startswith(b"\xff\xd8\xff"):
+            inferred_ext = ".jpg"
+        else:
+            inferred_ext = ".txt"
+
+    base_name = filename.strip() if filename else "candidate_document"
+    clean_name = f"{base_name}{inferred_ext}" if not base_name.endswith(inferred_ext) else base_name
+    return clean_name, inferred_ext
+
+
 @router.post("/ingest/upload", response_model=List[Candidate])
 async def upload_resumes_endpoint(
     files: List[UploadFile] = File(default=[]),
@@ -40,18 +77,18 @@ async def upload_resumes_endpoint(
     ingested_candidates = []
     
     for f in upload_list:
-        filename = f.filename or "unknown_candidate.txt"
-        file_path = Path(filename)
-        extension = file_path.suffix.lower()
+        raw_name = f.filename or "resume.pdf"
+        file_bytes = await f.read()
         
-        SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".text", ".png", ".jpg", ".jpeg"]
+        filename, extension = resolve_filename_and_ext(raw_name, f.content_type or "", file_bytes)
+        
+        SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".text", ".png", ".jpg", ".jpeg"]
         if extension not in SUPPORTED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
             )
             
-        file_bytes = await f.read()
         if len(file_bytes) > MAX_UPLOAD_SIZE:
             raise HTTPException(
                 status_code=413,
@@ -89,17 +126,18 @@ async def upload_jd_endpoint(
     POST endpoint to upload PDF, DOCX, or TXT Job Descriptions.
     Extracts text, parses structured JD with LLM, and persists to public.jobs.
     """
-    filename = file.filename or "jd.txt"
-    extension = Path(filename).suffix.lower()
+    raw_name = file.filename or "jd.pdf"
+    file_bytes = await file.read()
     
-    SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".txt", ".text", ".png", ".jpg", ".jpeg"]
+    filename, extension = resolve_filename_and_ext(raw_name, file.content_type or "", file_bytes)
+    
+    SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".text", ".png", ".jpg", ".jpeg"]
     if extension not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
         )
         
-    file_bytes = await file.read()
     if len(file_bytes) > MAX_UPLOAD_SIZE:
         raise HTTPException(
             status_code=413,

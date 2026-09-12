@@ -180,6 +180,7 @@ def parse_image(file_input: Union[bytes, str, Path]) -> str:
 def parse_document(file_input: Union[bytes, str, Path], filename: str = "") -> str:
     """
     Unified parser entry point for documents (.pdf, .docx, .txt, .png, .jpg, .jpeg).
+    Automatically sniffs format using file extension and binary magic bytes.
     """
     ext = ""
     if filename:
@@ -187,18 +188,43 @@ def parse_document(file_input: Union[bytes, str, Path], filename: str = "") -> s
     elif isinstance(file_input, (str, Path)):
         ext = Path(file_input).suffix.lower()
 
+    # If extension is known, dispatch directly
     if ext == ".pdf":
         return parse_pdf(file_input)
-    elif ext == ".docx":
+    elif ext in [".docx", ".doc"]:
         return parse_docx(file_input)
     elif ext in [".png", ".jpg", ".jpeg"]:
         return parse_image(file_input)
-    else:
-        if isinstance(file_input, bytes):
+
+    # Magic byte inspection for binary inputs without clear extension
+    if isinstance(file_input, bytes):
+        if file_input.startswith(b"%PDF"):
+            return parse_pdf(file_input)
+        elif file_input.startswith(b"PK\x03\x04"):
+            return parse_docx(file_input)
+        elif file_input.startswith(b"\x89PNG") or file_input.startswith(b"\xff\xd8\xff"):
+            return parse_image(file_input)
+        
+        # Fallback to UTF-8 plain text
+        try:
             text = file_input.decode("utf-8", errors="ignore").strip()
             return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-        elif isinstance(file_input, (str, Path)):
-            with open(file_input, "r", encoding="utf-8", errors="ignore") as f:
+        except Exception as e:
+            raise ValueError(f"Unable to extract text from document: {e}")
+
+    elif isinstance(file_input, (str, Path)):
+        path = Path(file_input)
+        if path.exists():
+            with open(path, "rb") as f:
+                header = f.read(8)
+                if header.startswith(b"%PDF"):
+                    return parse_pdf(file_input)
+                elif header.startswith(b"PK\x03\x04"):
+                    return parse_docx(file_input)
+                elif header.startswith(b"\x89PNG") or header.startswith(b"\xff\xd8\xff"):
+                    return parse_image(file_input)
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read().strip()
                 return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-        raise ValueError("Unsupported file source.")
+
+    raise ValueError("Unsupported file source.")
