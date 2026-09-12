@@ -15,7 +15,10 @@ import {
   Calendar,
   LogOut,
   User,
+  ShieldCheck,
+  ExternalLink,
 } from "lucide-react-native";
+import * as WebBrowser from "expo-web-browser";
 import { useRecruit } from "@/context/RecruitContext";
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
@@ -247,6 +250,56 @@ export const SessionPickerModal = forwardRef<
             })
           )}
         </BottomSheetScrollView>
+
+        {/* Legal, Privacy & Compliance Section */}
+        <View className="py-2.5 px-1 border-t border-border mt-1">
+          <View className="flex-row items-center justify-between mb-2">
+            <View className="flex-row items-center">
+              <ShieldCheck size={12} color={COLORS.brandPrimary} />
+              <Text className="font-sans-bold text-[10px] text-muted uppercase tracking-wider ml-1">
+                Legal & Compliance
+              </Text>
+            </View>
+            <Text className="font-sans text-[10px] text-muted">RecruitAI v1.0.0</Text>
+          </View>
+          <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/privacy")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans text-[11px] text-brand-primary underline">
+                Privacy Policy
+              </Text>
+            </TouchableOpacity>
+            <Text className="text-slate-300 text-[11px]">•</Text>
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/terms")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans text-[11px] text-brand-primary underline">
+                Terms
+              </Text>
+            </TouchableOpacity>
+            <Text className="text-slate-300 text-[11px]">•</Text>
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/support")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans text-[11px] text-brand-primary underline">
+                Support
+              </Text>
+            </TouchableOpacity>
+            <Text className="text-slate-300 text-[11px]">•</Text>
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/data-deletion")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans text-[11px] text-rose-600 underline">
+                Data Deletion
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* User Profile & Sign Out Footer */}
         <View className="pt-3 border-t border-border mt-auto">

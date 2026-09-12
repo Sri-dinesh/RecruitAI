@@ -1,6 +1,6 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { BACKEND_URL } from "./apiClient";
+import { getBackendUrl } from "./apiClient";
 import { supabase } from "./supabase";
 
 export interface ATSExportData {
@@ -125,7 +125,7 @@ export async function downloadAndSharePdfReport(
   const filename = `recruitment_report_${sessionId.slice(0, 8)}_${Date.now()}.pdf`;
   const targetUri = `${baseDir}${filename}`;
 
-  const downloadUrl = `${BACKEND_URL}/api/reports/session/${sessionId}`;
+  const downloadUrl = `${getBackendUrl()}/api/reports/session/${sessionId}`;
 
   const downloadResult = await FileSystem.downloadAsync(downloadUrl, targetUri, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

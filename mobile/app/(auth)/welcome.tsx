@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { Bot, TrendingUp, Users, ArrowRight, ShieldCheck } from "lucide-react-native";
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
@@ -129,11 +130,50 @@ export default function WelcomeScreen() {
         </View>
 
         {/* Security Trust Footnote */}
-        <View className="flex-row items-center justify-center mt-8 pt-4 border-t border-slate-200">
+        <View className="flex-row items-center justify-center mt-6 pt-4 border-t border-slate-200">
           <ShieldCheck size={14} color={COLORS.statusShortlist} />
           <Text className="font-sans text-xs text-muted ml-1.5">
             Protected by Supabase Auth PKCE Cryptography
           </Text>
+        </View>
+
+        {/* Legal & Compliance Footer */}
+        <View className="flex-row flex-wrap items-center justify-center mt-3 gap-x-3 gap-y-1">
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/privacy")}
+            activeOpacity={0.7}
+          >
+            <Text className="font-sans text-[11px] text-brand-primary underline">
+              Privacy Policy
+            </Text>
+          </TouchableOpacity>
+          <Text className="text-slate-300 text-[11px]">•</Text>
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/terms")}
+            activeOpacity={0.7}
+          >
+            <Text className="font-sans text-[11px] text-brand-primary underline">
+              Terms of Service
+            </Text>
+          </TouchableOpacity>
+          <Text className="text-slate-300 text-[11px]">•</Text>
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/support")}
+            activeOpacity={0.7}
+          >
+            <Text className="font-sans text-[11px] text-brand-primary underline">
+              Support
+            </Text>
+          </TouchableOpacity>
+          <Text className="text-slate-300 text-[11px]">•</Text>
+          <TouchableOpacity
+            onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/data-deletion")}
+            activeOpacity={0.7}
+          >
+            <Text className="font-sans text-[11px] text-brand-primary underline">
+              Data Deletion
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>

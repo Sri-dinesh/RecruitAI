@@ -23,10 +23,10 @@ export interface ActionChipItem {
 
 export const CO_PILOT_ACTION_CHIPS: ActionChipItem[] = [
   {
-    id: "ingest-sample",
-    label: "🚀 Ingest Sample Files",
-    prompt: "Load sample Job Description and candidate resumes into this hiring session.",
-    icon: "FileText",
+    id: "rank-candidates",
+    label: "⚡ Rank Candidates",
+    prompt: "Rank all candidates in this hiring session against the active job description with match scores and skill breakdown.",
+    icon: "Sparkles",
   },
   {
     id: "screen-candidates",
@@ -59,14 +59,14 @@ export const CO_PILOT_ACTION_CHIPS: ActionChipItem[] = [
     icon: "Mail",
   },
   {
-    id: "fetch-api",
-    label: "🌐 Fetch Job via API",
-    prompt: "Fetch and load active job requirements via recruitment API.",
+    id: "salary-benchmark",
+    label: "💰 Market Salary",
+    prompt: "Provide current market compensation benchmarks and salary range estimates for this role.",
     icon: "Globe",
   },
   {
     id: "reset-workspace",
-    label: "🧹 Reset Workspace",
+    label: "🧹 Reset Session",
     prompt: "Reset the current recruitment workspace and clear temporary state.",
     icon: "RefreshCw",
   },
