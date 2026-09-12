@@ -71,11 +71,17 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "compileSdkVersion": 35,
+            "compileSdkVersion": 36,
             "targetSdkVersion": 35
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1b4d4925-923f-4934-8d03-06d5607c17ab"
+      }
+    }
   }
 }
