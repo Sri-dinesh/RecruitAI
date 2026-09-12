@@ -157,12 +157,14 @@ function ResetPasswordContent() {
 
     try {
       const supabase = createSupabaseClient();
-      let updateResult = await supabase.auth.updateUser({ password });
-      if (updateResult.error) {
-        updateResult = await updatePassword(password);
+      const res = await supabase.auth.updateUser({ password });
+      let updateError: { message: string } | null = res.error;
+      if (updateError) {
+        const fallbackRes = await updatePassword(password);
+        updateError = fallbackRes.error;
       }
-      if (updateResult.error) {
-        setError(updateResult.error.message);
+      if (updateError) {
+        setError(updateError.message);
       } else {
         setSuccess(true);
       }
