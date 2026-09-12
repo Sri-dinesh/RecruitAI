@@ -1,0 +1,39 @@
+# RecruitAI
+
+> RecruitAI is an autonomous multi-agent recruitment platform and precision candidate intelligence system. It automates technical candidate evaluations, provides instant deep resume ingestion, enforces blind screening to eliminate bias, and coordinates human-in-the-loop hiring actions.
+
+RecruitAI is designed for modern hiring teams, technical recruiters, and talent leaders who demand high accuracy, auditability, and speed without sacrificing human judgment or candidate data privacy.
+
+## Core Capabilities
+
+- **Autonomous Multi-Agent Orchestration**: Specialized LangGraph agents handle resume parsing, JD analysis, candidate evaluation, interview question generation, and personalized outreach drafting.
+- **Objective Rubric Scoring**: Automatically translates job descriptions into multi-dimensional rubrics (technical skills, relevant experience, impact metrics) and grades candidates against uniform standards.
+- **Blind Candidate Screening**: Eliminates demographic bias by redacting names, contact information, gender markers, dates, and locations prior to evaluation.
+- **Human-in-the-Loop Safeguards**: Outreach emails, calendar scheduling, and candidate status decisions require explicit human confirmation before dispatch.
+- **ATS Export & Full Interoperability**: Seamless 1-click JSON and CSV export formats tailored for Greenhouse, Lever, Workday, and Ashby.
+- **Enterprise-Grade Data Isolation**: Multi-tenant Row-Level Security (RLS) via Supabase ensures users can only access their own jobs, resumes, and evaluation runs.
+
+## Key Links & Resources
+
+- [Home & Platform Overview](https://recruitaiofficial.vercel.app/): Product features, interactive workflow, and live recruitment demo.
+- [Recruiter Dashboard](https://recruitaiofficial.vercel.app/dashboard): Active candidate pipeline, multi-agent co-pilot, comparison matrix, and rubric scoring inspector.
+- [Hiring Analytics](https://recruitaiofficial.vercel.app/analytics): Funnel throughput, score distributions, ingestion velocity, and hiring team metrics.
+- [Privacy Policy](https://recruitaiofficial.vercel.app/privacy): Detailed disclosure of data collection, zero data resale policy, and GDPR/CCPA compliance.
+- [Terms & Conditions](https://recruitaiofficial.vercel.app/terms): Platform usage rules, customer rights, and service agreements.
+- [Data Deletion](https://recruitaiofficial.vercel.app/data-deletion): Self-service and automated data erasure procedures.
+- [Support & Contact](https://recruitaiofficial.vercel.app/support): Technical support channel and direct contact at santhisridinesh@gmail.com.
+- [Full LLM Specification](https://recruitaiofficial.vercel.app/llms-full.txt): Comprehensive architecture, schemas, API endpoints, and system prompt contexts.
+
+## Technical Architecture
+
+- **Web Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS v4, GSAP & Framer Motion animations.
+- **Mobile Client**: Expo 57 / React Native, NativeWind, SecureStore offline-first architecture.
+- **Backend API**: FastAPI (Python 3.12+), Pydantic v2 schemas, streaming server-sent events.
+- **AI & RAG Engine**: Google Gemini 2.0 / 1.5 Pro & Flash with fallback failover, Google Cloud Text Embeddings (text-embedding-004), LangGraph state graphs.
+- **Database & Auth**: PostgreSQL with pgvector, Supabase Authentication & Row-Level Security.
+
+## Contact & Ownership
+
+- **Entity**: RecruitAI
+- **Contact Email**: santhisridinesh@gmail.com
+- **Website**: https://recruitaiofficial.vercel.app

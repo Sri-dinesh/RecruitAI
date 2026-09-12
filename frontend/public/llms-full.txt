@@ -1,0 +1,78 @@
+# RecruitAI Full Specification & Knowledge Base
+
+> Comprehensive technical documentation, architecture specifications, API contracts, and security posture for RecruitAI (https://recruitaiofficial.vercel.app).
+
+## 1. Executive Summary
+
+RecruitAI is an end-to-end recruitment intelligence platform designed to replace subjective, manual candidate screening with auditable, agentic evaluation. It extracts structured skills from unstructured candidate documents (PDF, DOCX, TXT), evaluates applicants against strict, customizable multi-dimensional rubrics, enables side-by-side comparative analysis, and provides an AI co-pilot that drafts outreach and interview questions while strictly observing human-in-the-loop (HITL) checkpoints.
+
+## 2. Product Features & Modules
+
+### 2.1 Multi-Agent Recruitment Co-Pilot
+The recruitment workspace integrates a multi-agent state machine built with LangGraph:
+- **Supervisor Agent**: Understands recruiter intent, queries vector embeddings, delegates evaluation tasks, and formats structured responses.
+- **Ingestion Agent**: Validates uploaded files, extracts text, chunks semantic segments, and creates 768-dimensional embeddings using Google's text-embedding-004.
+- **Evaluation Agent**: Derives scoring criteria from job descriptions and scores each candidate across Technical Mastery, Practical Experience, and Impact.
+- **Outreach Agent**: Generates highly personalized interview invitations, technical assessment briefs, or rejection letters based on the evaluation notes.
+- **HITL Checkpoint**: Any state transitions that produce outbound side-effects (e.g. sending emails or reserving calendar slots) halt execution and await explicit user confirmation.
+
+### 2.2 Blind Screening Mode
+To combat implicit bias in the hiring pipeline:
+- Identifiers such as candidate names, contact information, photos, geographical locations, graduation years, and gender indicators are redacted before text is passed to evaluation agents.
+- Evaluators and recruiters score candidates purely on verified technical accomplishments and work experience.
+- PII is securely re-associated only when the recruiter moves the candidate to the interview stage.
+
+### 2.3 ATS Interoperability
+- Direct export of candidate evaluations to JSON and CSV formats tailored for Greenhouse, Lever, Workday, and Ashby.
+- Includes candidate match scores, identified strengths, identified gaps, rubric breakdowns, and recommended interview question sets.
+
+### 2.4 Real-time Hiring Analytics
+- Conversion funnel visualization from ingestion to interview offer.
+- Skill distribution heatmaps highlighting talent density in the applicant pool.
+- Time-to-screen metrics and recruiter velocity tracking.
+
+## 3. System Architecture & Tech Stack
+
+```
+[ Next.js 16 Web Client ] <---> [ FastAPI Backend (Python 3.12+) ] <---> [ Supabase PostgreSQL + pgvector ]
+         |                                      |                                      |
+         |                                      v                                      v
+[ Expo 57 Mobile App ]            [ LangGraph / Gemini 2.0 / Groq ]             [ Supabase Auth & RLS ]
+```
+
+### Backend Endpoints
+- `POST /api/chat`: Primary multi-agent conversational endpoint with streaming responses.
+- `GET /api/sessions`: Retrieves conversational history and active hiring campaigns.
+- `POST /api/sessions`: Creates a new recruitment campaign session.
+- `POST /api/ingest/upload-jd`: Uploads and structures a target job description.
+- `POST /api/ingest/upload`: Uploads and parses candidate resumes into vector embeddings.
+- `POST /candidates/evaluate`: Triggers multi-dimensional rubric evaluation for active candidates.
+- `GET /candidates/{id}/evaluation`: Retrieves detailed rubric score, strengths, gaps, and question suggestions.
+- `GET /export/ats`: Streams ATS-compatible CSV or JSON exports.
+- `POST /api/email/send`: Dispatches human-approved interview outreach.
+- `GET /reports/generate`: Generates downloadable audit PDF reports for compliance review.
+- `GET /api/analytics/*`: Analytics endpoints for pipeline KPIs, skill distribution, and velocity.
+
+## 4. Privacy, Security & Data Governance
+
+1. **Row-Level Security (RLS)**:
+   Every database table (`jobs`, `candidates`, `resume_chunks`, `chat_sessions`, `chat_messages`) enforces Postgres Row-Level Security policies tied to the authenticated user's UUID (`auth.uid() = user_id`). No cross-tenant data leakage is architecturally possible.
+2. **Zero Data Resale**:
+   RecruitAI never sells, rents, or licenses recruiter or candidate data.
+3. **No AI Training on Customer Resumes**:
+   Customer resumes and proprietary job descriptions are processed transiently through enterprise API endpoints and are never used to train public foundation models.
+4. **Data Deletion Compliance**:
+   RecruitAI provides self-service campaign deletion and dedicated account deletion mechanisms complying with GDPR, CCPA, and Google Play Store Developer Policies (https://recruitaiofficial.vercel.app/data-deletion).
+
+## 5. Domain Information & Official Links
+
+- Base URL: https://recruitaiofficial.vercel.app
+- Home: https://recruitaiofficial.vercel.app/
+- Dashboard: https://recruitaiofficial.vercel.app/dashboard
+- Analytics: https://recruitaiofficial.vercel.app/analytics
+- Auth: https://recruitaiofficial.vercel.app/auth
+- Privacy Policy: https://recruitaiofficial.vercel.app/privacy
+- Terms & Conditions: https://recruitaiofficial.vercel.app/terms
+- Data Deletion: https://recruitaiofficial.vercel.app/data-deletion
+- Support: https://recruitaiofficial.vercel.app/support
+- Official Contact: santhisridinesh@gmail.com
