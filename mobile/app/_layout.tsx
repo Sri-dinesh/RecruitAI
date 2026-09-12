@@ -18,8 +18,18 @@ import {
   DMSans_900Black,
 } from "@expo-google-fonts/dm-sans";
 import { AuthProvider } from "@/context/AuthContext";
+import { ModalProvider } from "@/context/ModalContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { COLORS } from "@/constants/theme";
+
+// Production logging hygiene: silence console logs and debug traces in release builds
+if (!__DEV__) {
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  console.debug = () => {};
+  console.error = () => {};
+}
 
 // Keep splash screen visible while loading custom fonts
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -60,19 +70,21 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ErrorBoundary>
           <AuthProvider>
-            <StatusBar style="dark" />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: COLORS.background },
-                animation: "slide_from_right",
-              }}
-            >
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="(app)" options={{ headerShown: false }} />
-              <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-            </Stack>
+            <ModalProvider>
+              <StatusBar style="dark" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: COLORS.background },
+                  animation: "slide_from_right",
+                }}
+              >
+                <Stack.Screen name="index" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="(app)" options={{ headerShown: false }} />
+                <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+              </Stack>
+            </ModalProvider>
           </AuthProvider>
         </ErrorBoundary>
       </SafeAreaProvider>

@@ -24,7 +24,9 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("[ErrorBoundary] Caught unhandled component error:", error, errorInfo);
+    if (__DEV__) {
+      console.error("[ErrorBoundary] Caught unhandled component error:", error, errorInfo);
+    }
   }
 
   private handleReset = () => {
@@ -49,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
             An unexpected error occurred while rendering this view. Your session and candidates data are safely preserved.
           </Text>
 
-          {this.state.error && (
+          {__DEV__ && this.state.error && (
             <View className="bg-white border border-border rounded-[6px] p-3 mb-6 w-full max-h-32">
               <ScrollView>
                 <Text className="font-mono text-[11px] text-rose-800">
