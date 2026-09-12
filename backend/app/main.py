@@ -89,11 +89,13 @@ async def check_system_health(response: Response) -> dict:
     # 2. Check LLM Configuration
     try:
         from app.core.config import GEMINI_API_KEY
+        from app.core.llm_router import ROTATING_MODELS
         if GEMINI_API_KEY and "your_gemini" not in GEMINI_API_KEY:
             services["llm"] = {
                 "status": "configured",
                 "provider": "google_gemini",
-                "models": ["gemini-2.5-flash", "gemini-3.1-flash-lite"],
+                "models": ROTATING_MODELS,
+                "strategy": "round_robin_5_models",
             }
         else:
             is_degraded = True

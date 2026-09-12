@@ -152,27 +152,33 @@ def parse_image(file_input: Union[bytes, str, Path]) -> str:
         raise ValueError("Image content is empty.")
 
     if GEMINI_API_KEY and "your_gemini" not in GEMINI_API_KEY:
-        try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            from langchain_core.messages import HumanMessage
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
-                google_api_key=GEMINI_API_KEY,
-                temperature=0.1,
-            )
-            b64_data = base64.b64encode(image_bytes).decode("utf-8")
-            msg = HumanMessage(
-                content=[
-                    {"type": "text", "text": "Extract all text, candidate qualifications, skills, contact info, and experience from this resume or job document accurately verbatim."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"}}
-                ]
-            )
-            resp = llm.invoke([msg])
-            text = str(resp.content).strip()
-            if text:
-                return text
-        except Exception as e:
-            print(f"[document_parser] Vision extraction fallback notice: {e}")
+        from app.core.llm_router import get_next_model_order, extract_text
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import HumanMessage
+
+        model_order = get_next_model_order()
+        b64_data = base64.b64encode(image_bytes).decode("utf-8")
+        msg = HumanMessage(
+            content=[
+                {"type": "text", "text": "Extract all text, candidate qualifications, skills, contact info, and experience from this resume or job document accurately verbatim."},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"}}
+            ]
+        )
+
+        for model_name in model_order:
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    google_api_key=GEMINI_API_KEY,
+                    temperature=0.1,
+                    timeout=30.0,
+                )
+                resp = llm.invoke([msg])
+                text = extract_text(resp.content).strip()
+                if text:
+                    return text
+            except Exception as e:
+                print(f"[document_parser] Vision extraction ({model_name}) error: {e}, attempting next model...")
 
     return "Candidate Resume (Extracted from Mobile Photo Image)"
 
