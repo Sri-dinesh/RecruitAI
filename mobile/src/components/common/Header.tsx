@@ -1,6 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, Image, Alert, Platform } from "react-native";
-import { getBackendUrl, setCustomBackendUrl, resetBackendUrl, CLOUD_BACKEND_URL } from "@/lib/apiClient";
+import { View, Text, TouchableOpacity, Image, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Briefcase,
@@ -30,80 +29,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
     checkApiHealth,
   } = useRecruit();
 
-  const handleOfflineBannerPress = () => {
-    const currentUrl = getBackendUrl();
-    Alert.alert(
-      "Backend Server Connection",
-      `Target URL: ${currentUrl}\n\nStatus: Offline / Unreachable\n\nEnsure your FastAPI server is running on port 8000 and reachable from this network.`,
-      [
-        {
-          text: "Retry Now",
-          onPress: async () => {
-            const ok = await checkApiHealth();
-            if (ok) {
-              Alert.alert("Connected!", "Backend API is online and healthy.");
-            } else {
-              Alert.alert(
-                "Connection Failed",
-                `Unable to reach ${currentUrl}/api/health.\n\nTip: If you are testing over Expo tunnel or cellular, ensure you are connected to the Cloud / Render backend.`
-              );
-            }
-          },
-        },
-        {
-          text: "Switch Server Target",
-          onPress: () => {
-            Alert.alert(
-              "Select Server Target",
-              `Current: ${currentUrl}`,
-              [
-                {
-                  text: "Cloud / Render (Live)",
-                  onPress: async () => {
-                    await setCustomBackendUrl(CLOUD_BACKEND_URL);
-                    await checkApiHealth();
-                  },
-                },
-                ...(process.env.EXPO_PUBLIC_DEV_LAN_URL
-                  ? [
-                      {
-                        text: `Custom LAN (${process.env.EXPO_PUBLIC_DEV_LAN_URL})`,
-                        onPress: async () => {
-                          await setCustomBackendUrl(process.env.EXPO_PUBLIC_DEV_LAN_URL!);
-                          await checkApiHealth();
-                        },
-                      },
-                    ]
-                  : []),
-                {
-                  text: "Android Emulator (10.0.2.2:8000)",
-                  onPress: async () => {
-                    await setCustomBackendUrl("http://10.0.2.2:8000");
-                    await checkApiHealth();
-                  },
-                },
-                {
-                  text: "Localhost (127.0.0.1:8000)",
-                  onPress: async () => {
-                    await setCustomBackendUrl("http://127.0.0.1:8000");
-                    await checkApiHealth();
-                  },
-                },
-                {
-                  text: "Reset to Default",
-                  onPress: async () => {
-                    await resetBackendUrl();
-                    await checkApiHealth();
-                  },
-                },
-                { text: "Cancel", style: "cancel" },
-              ]
-            );
-          },
-        },
-        { text: "Close", style: "cancel" },
-      ]
-    );
+  const [isRetryingConnection, setIsRetryingConnection] = React.useState(false);
+
+  const handleOfflineBannerPress = async () => {
+    if (isRetryingConnection) return;
+    selectionHaptic();
+    setIsRetryingConnection(true);
+    try {
+      await checkApiHealth();
+    } finally {
+      setIsRetryingConnection(false);
+    }
   };
 
   const userInitial = (
@@ -205,15 +141,20 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
         <TouchableOpacity
           onPress={handleOfflineBannerPress}
           activeOpacity={0.8}
+          disabled={isRetryingConnection}
           className="bg-amber-500/10 border-t border-amber-500/20 -mx-4 -mb-2.5 mt-2 py-1.5 px-4 flex-row items-center justify-between"
         >
           <View className="flex-row items-center flex-1 mr-2">
             <WifiOff size={11} color="#D97706" />
             <Text className="font-sans-medium text-[10px] text-amber-800 ml-1.5" numberOfLines={1}>
-              Offline Mode — Tap to test or configure server
+              {isRetryingConnection ? "Connecting to server..." : "Offline Mode — Tap to retry connection"}
             </Text>
           </View>
-          <Text className="font-sans-bold text-[10px] text-brand-primary underline">Settings</Text>
+          {isRetryingConnection ? (
+            <ActivityIndicator size="small" color="#D97706" />
+          ) : (
+            <Text className="font-sans-bold text-[10px] text-brand-primary underline">Retry</Text>
+          )}
         </TouchableOpacity>
       )}
     </View>
