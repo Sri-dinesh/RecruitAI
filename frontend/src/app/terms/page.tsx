@@ -1,9 +1,18 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 
-export const metadata = {
-  title: 'Terms & Conditions — RecruitAI',
-  description: 'Terms & Conditions for RecruitAI — hosted at https://recruitaiofficial.vercel.app/terms',
+export const metadata: Metadata = {
+  title: 'Terms & Conditions',
+  description: 'Terms and Conditions for RecruitAI — platform usage policies, intellectual property, and service agreements.',
+  alternates: {
+    canonical: 'https://recruitaiofficial.vercel.app/terms',
+  },
+  openGraph: {
+    title: 'Terms & Conditions | RecruitAI',
+    description: 'Terms and Conditions for RecruitAI — platform usage policies and service agreements.',
+    url: 'https://recruitaiofficial.vercel.app/terms',
+  },
 };
 
 const lastUpdated = 'September 11, 2026';

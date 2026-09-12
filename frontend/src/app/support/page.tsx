@@ -1,10 +1,19 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import SupportContactForm from '@/components/forms/SupportContactForm';
 
-export const metadata = {
-  title: 'Support & Contact — RecruitAI',
-  description: 'Support and contact for RecruitAI — web and Android help. Contact santhisridinesh@gmail.com',
+export const metadata: Metadata = {
+  title: 'Support & Contact',
+  description: 'Support and contact for RecruitAI — technical help, account assistance, and inquiries. Contact santhisridinesh@gmail.com',
+  alternates: {
+    canonical: 'https://recruitaiofficial.vercel.app/support',
+  },
+  openGraph: {
+    title: 'Support & Contact | RecruitAI',
+    description: 'Support and contact for RecruitAI — technical help, account assistance, and inquiries.',
+    url: 'https://recruitaiofficial.vercel.app/support',
+  },
 };
 
 const contactEmail = 'santhisridinesh@gmail.com';

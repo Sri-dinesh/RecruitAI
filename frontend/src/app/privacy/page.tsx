@@ -1,9 +1,18 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 
-export const metadata = {
-  title: 'Privacy Policy — RecruitAI',
-  description: 'Privacy Policy for RecruitAI — how we collect, use, and protect your data. Hosted at https://recruitaiofficial.vercel.app/privacy',
+export const metadata: Metadata = {
+  title: 'Privacy Policy',
+  description: 'Privacy Policy for RecruitAI — how we collect, use, and protect your data. Strict Supabase Row-Level Security, zero data resale, and Google Play compliance.',
+  alternates: {
+    canonical: 'https://recruitaiofficial.vercel.app/privacy',
+  },
+  openGraph: {
+    title: 'Privacy Policy | RecruitAI',
+    description: 'Privacy Policy for RecruitAI — how we collect, use, and protect your data.',
+    url: 'https://recruitaiofficial.vercel.app/privacy',
+  },
 };
 
 const lastUpdated = 'September 11, 2026';

@@ -1,10 +1,19 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import DeleteAccountForm from '@/components/forms/DeleteAccountForm';
 
-export const metadata = {
-  title: 'Delete Account & Data — RecruitAI',
-  description: 'How to delete your RecruitAI account and data — Play Store data deletion compliance. Contact santhisridinesh@gmail.com',
+export const metadata: Metadata = {
+  title: 'Delete Account & Data',
+  description: 'How to delete your RecruitAI account and data — self-service and verified compliance deletion. Contact santhisridinesh@gmail.com',
+  alternates: {
+    canonical: 'https://recruitaiofficial.vercel.app/data-deletion',
+  },
+  openGraph: {
+    title: 'Delete Account & Data | RecruitAI',
+    description: 'How to delete your RecruitAI account and data — self-service and verified deletion request.',
+    url: 'https://recruitaiofficial.vercel.app/data-deletion',
+  },
 };
 
 const contactEmail = 'santhisridinesh@gmail.com';
