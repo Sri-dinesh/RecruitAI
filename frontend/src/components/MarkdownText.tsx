@@ -81,13 +81,19 @@ export default function MarkdownText({ text }: { text: string }) {
     }
     processed = newLines.join('\n');
 
-    // Inline elements compiler
+    // Inline elements compiler with strict link URL scheme sanitization
     function compileInline(text: string): string {
       return text
         .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>')
         .replace(/\*(.*?)\*/g, '<em class="italic text-slate-700">$1</em>')
         .replace(/`(.*?)`/g, '<code class="bg-indigo-50 text-indigo-700 font-mono text-[11px] px-1.5 py-0.5 rounded border border-indigo-100">$1</code>')
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline font-medium">$1</a>');
+        .replace(/\[(.*?)\]\((.*?)\)/g, (_match, linkText, href) => {
+          const cleanHref = href.trim();
+          if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(cleanHref)) {
+            return `<a href="${cleanHref}" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline font-medium">${linkText}</a>`;
+          }
+          return linkText;
+        });
     }
 
     // 5. Parse Lists
