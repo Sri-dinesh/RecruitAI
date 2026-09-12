@@ -2,20 +2,21 @@ import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { supabase } from "./supabase";
 
+export const CLOUD_BACKEND_URL = "https://recruitai-vpbe.onrender.com";
+
 /**
- * Resolves the default backend URL based on execution platform
- * - Android Emulator uses 10.0.2.2 to reach host machine
- * - iOS Simulator and Web use localhost
+ * Resolves the default backend URL based on execution platform and environment.
+ * Defaults to the live cloud backend on Render so that mobile devices connecting
+ * over tunnel or cellular data connect immediately without firewall or LAN routing issues.
  */
-const getDefaultBackendUrl = () => {
-  if (Platform.OS === "android") {
-    return "http://10.0.2.2:8000";
+const getDefaultBackendUrl = (): string => {
+  if (process.env.EXPO_PUBLIC_BACKEND_URL && process.env.EXPO_PUBLIC_BACKEND_URL.trim()) {
+    return process.env.EXPO_PUBLIC_BACKEND_URL.trim().replace(/\/$/, "");
   }
-  return "http://localhost:8000";
+  return CLOUD_BACKEND_URL;
 };
 
-let activeBackendUrl: string =
-  process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
+let activeBackendUrl: string = getDefaultBackendUrl();
 
 // Hydrate saved custom backend URL from SecureStore if available
 SecureStore.getItemAsync("recruitai_backend_url")
@@ -37,7 +38,7 @@ export const setCustomBackendUrl = async (url: string): Promise<void> => {
 };
 
 export const resetBackendUrl = async (): Promise<void> => {
-  activeBackendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || getDefaultBackendUrl();
+  activeBackendUrl = getDefaultBackendUrl();
   await SecureStore.deleteItemAsync("recruitai_backend_url");
   console.log("[apiClient] Reset backend URL to default:", activeBackendUrl);
 };
@@ -114,6 +115,8 @@ export async function fetchWithAuth(
 
 /**
  * Diagnostic helper to test backend connectivity with candidate URL fallbacks.
+ * Uses a 3.5s timeout per candidate to avoid hanging indefinitely on unreachable LAN IPs.
+ * Automatically switches to the first responding healthy backend and persists the working target.
  */
 export async function testBackendConnection(): Promise<{
   ok: boolean;
@@ -123,26 +126,35 @@ export async function testBackendConnection(): Promise<{
   error?: string;
 }> {
   const currentBase = getBackendUrl();
-  const testUrls = [
-    currentBase,
-    ...(Platform.OS === "android" && !currentBase.includes("10.0.2.2")
-      ? ["http://10.0.2.2:8000"]
-      : []),
-    ...(Platform.OS === "android" && !currentBase.includes("192.168.0.6")
-      ? ["http://192.168.0.6:8000"]
-      : []),
-  ];
+  const candidateUrls = Array.from(
+    new Set([
+      currentBase,
+      CLOUD_BACKEND_URL,
+      "http://192.168.0.6:8000",
+      ...(Platform.OS === "android" ? ["http://10.0.2.2:8000"] : []),
+      "http://localhost:8000",
+      "http://127.0.0.1:8000",
+    ])
+  ).filter(Boolean);
 
   let lastErr = "";
-  for (const base of testUrls) {
+  for (const base of candidateUrls) {
     const fullUrl = `${base}/api/health`;
     try {
       console.log("[apiClient] Testing backend health at:", fullUrl);
-      const res = await fetch(fullUrl, { method: "GET" });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const res = await fetch(fullUrl, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         if (base !== currentBase) {
           await setCustomBackendUrl(base);
-          console.log("[apiClient] Switched active backend URL to:", base);
+          console.log("[apiClient] Automatically switched active backend URL to:", base);
         }
         return {
           ok: true,

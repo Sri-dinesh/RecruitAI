@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Image, Alert, Platform } from "react-native";
-import { getBackendUrl, setCustomBackendUrl, resetBackendUrl } from "@/lib/apiClient";
+import { getBackendUrl, setCustomBackendUrl, resetBackendUrl, CLOUD_BACKEND_URL } from "@/lib/apiClient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Briefcase,
@@ -57,6 +57,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
               "Select Server Target",
               `Current: ${currentUrl}`,
               [
+                {
+                  text: "Cloud / Render (Live)",
+                  onPress: async () => {
+                    await setCustomBackendUrl(CLOUD_BACKEND_URL);
+                    await checkApiHealth();
+                  },
+                },
                 {
                   text: "LAN (192.168.0.6:8000)",
                   onPress: async () => {
