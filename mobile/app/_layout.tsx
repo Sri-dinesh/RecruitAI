@@ -44,11 +44,13 @@ export default function RootLayout() {
     DMSans_900Black,
   });
 
+  // Safety fallback: ensure splash screen never hangs if an unexpected error occurs
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    const timer = setTimeout(() => {
       SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [fontsLoaded, fontError]);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return (

@@ -66,7 +66,19 @@
       "expo-web-browser",
       "expo-font",
       "expo-sharing",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8F6F2",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#F8F6F2"
+          }
+        }
+      ],
       [
         "expo-build-properties",
         {
