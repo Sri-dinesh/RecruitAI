@@ -1,15 +1,22 @@
 {
   "expo": {
-    "name": "RecruitAI",
+    "name": "RecruitAI - AI Recruiter",
     "slug": "recruitai",
     "scheme": "recruitai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "primaryColor": "#1B2A4A",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F8F6F2"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.recruitai.app",
+      "associatedDomains": ["applinks:recruitaiofficial.vercel.app"],
       "infoPlist": {
         "NSDocumentsFolderUsageDescription": "RecruitAI requires access to documents to ingest job descriptions and candidate resumes."
       }
@@ -23,10 +30,28 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.recruitai.app",
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.recruitai.app",
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "recruitaiofficial.vercel.app",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {

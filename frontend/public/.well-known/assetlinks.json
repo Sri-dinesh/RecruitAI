@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.recruitai.app",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:7F:0F:7B:64:96:4D:47:82:13:5B:C9:86:14:4E:99:93:33:48:DE:74:97:DF:A6:61:EC:A1:04:78:E8"
+      ]
+    }
+  }
+]
