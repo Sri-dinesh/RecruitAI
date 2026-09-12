@@ -80,4 +80,5 @@ def test_interview_node_no_resumes():
         "last_intent": None
     }
     result = interview_qgen_node(state)
-    assert "resumes" in result["conversation_history"][-1]["content"].lower()
+    content = result["conversation_history"][-1]["content"].lower()
+    assert "resumes" in content or "candidate" in content

@@ -4,6 +4,15 @@ from app.services.ingestion_service import ingest_resumes_pipeline
 from app.rag.vector_store import query_top_k
 from app.rag.embeddings import embed_text
 
+@pytest.fixture(autouse=True)
+def use_test_fallback_db():
+    import app.rag.vector_store as vs
+    old_flag = vs._use_local_sqlite
+    vs._use_local_sqlite = True
+    yield
+    vs._use_local_sqlite = old_flag
+
+
 def test_ingestion_pipeline():
     # Only run if Supabase keys are configured (not placeholders)
     from app.core.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY

@@ -111,16 +111,13 @@ def send_email_draft(email_draft: str, recipient_email: str = "candidate@example
                 f"Recipient: `{recipient_email}`"
             )
 
-    # SMTP fallback log stub: log to stdout
-    separator = "=" * 60
-    print(f"\n{separator}", file=sys.stdout)
-    print(f"[EMAIL STUB] Sending to: {recipient_email}", file=sys.stdout)
-    print(separator, file=sys.stdout)
-    print(email_draft, file=sys.stdout)
-    print(separator, file=sys.stdout)
+    # SMTP fallback: simulate without leaking candidate PII to container logs
+    import re
+    masked_email = re.sub(r"(?<=.{2}).(?=.*@)", "*", recipient_email)
+    print(f"[EMAIL STUB] Simulated outreach to {masked_email}", file=sys.stdout)
 
     return (
-        f"⚠️ **SMTP credentials not set in .env. Logged to console instead.**\n"
-        f"Recipient: `{recipient_email}`\n"
-        f"Status: Logged successfully (SMTP simulation mode)."
+        f"ℹ️ **Simulated outreach dispatch (SMTP simulation mode).**\n"
+        f"Recipient: `{masked_email}`\n"
+        f"Status: Recorded in hiring campaign."
     )

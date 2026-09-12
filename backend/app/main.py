@@ -7,14 +7,33 @@ from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
 
+import os
+
 app = FastAPI(title="RecruitAI API Server", version="2.0")
 
-# Enable CORS to allow connections from Next.js and Expo React Native mobile clients
+# Strict, secure CORS policy: only whitelist authorized production web clients & local dev
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://recruitaiofficial.vercel.app",
+    "https://recruitai.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:8081",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8081",
+]
+env_origins = os.getenv("ALLOWED_ORIGINS", "")
+allowed_origins = list(DEFAULT_ALLOWED_ORIGINS)
+if env_origins:
+    for o in env_origins.split(","):
+        clean_o = o.strip()
+        if clean_o and clean_o not in allowed_origins:
+            allowed_origins.append(clean_o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https:\/\/recruitai(-[a-zA-Z0-9]+)?\.vercel\.app$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

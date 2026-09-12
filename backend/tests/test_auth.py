@@ -20,6 +20,15 @@ def override_user(uid: str):
     return lambda: uid
 
 
+@pytest.fixture(autouse=True)
+def use_test_fallback_db():
+    import app.rag.vector_store as vs
+    old_flag = vs._use_local_sqlite
+    vs._use_local_sqlite = True
+    yield
+    vs._use_local_sqlite = old_flag
+
+
 # ─── Tests ─────────────────────────────────────────────────────────────────────
 
 class TestUnauthenticated:

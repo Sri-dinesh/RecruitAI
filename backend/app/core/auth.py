@@ -8,11 +8,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 import uuid
-from app.core.config import SUPABASE_JWT_SECRET, USE_LOCAL_AUTH
+from app.core import config
 
 security = HTTPBearer(auto_error=False)
-
-LOCAL_DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 def _ensure_valid_uuid(uid: str) -> str:
@@ -32,8 +30,8 @@ def get_current_user_id(
     Returns the user_id (sub claim) if valid.
     """
     if not credentials or not credentials.credentials:
-        if USE_LOCAL_AUTH:
-            return LOCAL_DEV_USER_ID
+        if config.USE_LOCAL_AUTH:
+            return config.LOCAL_DEV_USER_ID
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please log in to continue.",
@@ -41,8 +39,8 @@ def get_current_user_id(
         )
 
     token = credentials.credentials
-    if USE_LOCAL_AUTH and token in ("mock-token", "local-token", "test-token", "local_dev_user_123"):
-        return LOCAL_DEV_USER_ID
+    if config.USE_LOCAL_AUTH and token in ("mock-token", "local-token", "test-token", "local_dev_user_123"):
+        return config.LOCAL_DEV_USER_ID
 
     # 1. Primary: Verify directly with Supabase Auth API
     try:
@@ -55,7 +53,7 @@ def get_current_user_id(
         pass
 
     # 2. Secondary: Local cryptographic JWT decode with dynamic algorithm support
-    if SUPABASE_JWT_SECRET:
+    if config.SUPABASE_JWT_SECRET:
         try:
             header = jwt.get_unverified_header(token)
             token_alg = header.get("alg", "HS256")
@@ -63,7 +61,7 @@ def get_current_user_id(
 
             payload = jwt.decode(
                 token,
-                SUPABASE_JWT_SECRET,
+                config.SUPABASE_JWT_SECRET,
                 algorithms=allowed_algs,
                 options={"verify_aud": False},
             )
@@ -73,21 +71,18 @@ def get_current_user_id(
         except Exception:
             pass
 
-    # 3. Fallback: Parse unverified claims
-    try:
-        claims = jwt.get_unverified_claims(token)
-        user_id = claims.get("sub")
-        if user_id:
-            return _ensure_valid_uuid(str(user_id))
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token validation failed: {exc}",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+    # 3. Fallback: Parse unverified claims ONLY if local dev auth is explicitly enabled
+    if config.USE_LOCAL_AUTH:
+        try:
+            claims = jwt.get_unverified_claims(token)
+            user_id = claims.get("sub")
+            if user_id:
+                return _ensure_valid_uuid(str(user_id))
+        except Exception:
+            pass
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid authentication token: missing user subject (sub) claim.",
+        detail="Invalid or expired authentication token. Signature verification failed.",
         headers={"WWW-Authenticate": "Bearer"},
     )

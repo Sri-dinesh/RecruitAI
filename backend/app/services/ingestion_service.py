@@ -6,6 +6,7 @@ from app.rag.embeddings import embed_texts
 from app.rag.vector_store import get_supabase_client, upsert_chunks, clear_all_chunks
 from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
+from app.core.auth import _ensure_valid_uuid
 
 def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
     """
@@ -13,6 +14,7 @@ def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
     Returns the persistent UUID string for candidate_id.
     """
     client = get_supabase_client()
+    user_id = _ensure_valid_uuid(user_id)
     email = candidate.email
     if not email or "@" not in email:
         fallback_tag = candidate.candidate_id or uuid.uuid4().hex[:8]
@@ -67,7 +69,7 @@ def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
         return cand_id
     except Exception as e:
         print(f"[ingestion] Warning: Error upserting candidate to DB: {e}")
-        return candidate.candidate_id or str(uuid.uuid4())
+        return _ensure_valid_uuid(candidate.candidate_id) if candidate.candidate_id else str(uuid.uuid4())
 
 
 def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -> str:
@@ -76,6 +78,7 @@ def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -
     Returns the job_id UUID.
     """
     client = get_supabase_client()
+    user_id = _ensure_valid_uuid(user_id)
     job_id = str(uuid.uuid4())
     title = jd.role or "Hiring Campaign"
 
@@ -98,7 +101,7 @@ def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -
 
 def ingest_candidate_object(
     candidate: Candidate, 
-    user_id: str = "local_dev_user_123"
+    user_id: Optional[str] = None
 ) -> Candidate:
     """
     Ingests an already parsed Candidate object:
@@ -106,6 +109,10 @@ def ingest_candidate_object(
     2. Chunks resume text and embeds vectors
     3. Upserts chunks into public.resume_chunks
     """
+    from app.core import config
+    if not user_id or user_id == "local_dev_user_123":
+        user_id = config.LOCAL_DEV_USER_ID
+    user_id = _ensure_valid_uuid(user_id)
     raw_text = candidate.raw_text or ""
     cand_uuid = upsert_candidate_record(candidate, user_id)
     candidate.candidate_id = cand_uuid
@@ -178,7 +185,7 @@ def ingest_single_candidate_text(
 
 def ingest_resumes_pipeline(
     directory_path: str, 
-    user_id: str = "local_dev_user_123"
+    user_id: Optional[str] = None
 ) -> List[Candidate]:
     """
     Runs the end-to-end ingestion pipeline across a folder of resumes.

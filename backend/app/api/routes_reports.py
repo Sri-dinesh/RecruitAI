@@ -26,7 +26,10 @@ class ReportRequest(BaseModel):
 
 
 @router.post("/reports/generate")
-async def generate_report_endpoint(req: ReportRequest):
+async def generate_report_endpoint(
+    req: ReportRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Exposes a POST route to generate a styled corporate recruitment PDF report.
     Streams back binary PDF data.

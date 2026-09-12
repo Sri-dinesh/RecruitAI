@@ -17,6 +17,8 @@ from app.core.auth import get_current_user_id
 
 router = APIRouter()
 
+MAX_UPLOAD_SIZE = 15 * 1024 * 1024  # 15 MB per file
+
 @router.post("/ingest/upload", response_model=List[Candidate])
 async def upload_resumes_endpoint(
     files: List[UploadFile] = File(...),
@@ -42,6 +44,11 @@ async def upload_resumes_endpoint(
             )
             
         file_bytes = await file.read()
+        if len(file_bytes) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{filename}' exceeds maximum allowed size of 15 MB."
+            )
         
         try:
             # 1. Parse resume
@@ -85,6 +92,11 @@ async def upload_jd_endpoint(
         )
         
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File '{filename}' exceeds maximum allowed size of 15 MB."
+        )
     raw_jd_text = ""
     
     try:

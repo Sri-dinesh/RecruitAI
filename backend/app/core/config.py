@@ -16,7 +16,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-USE_LOCAL_AUTH = os.getenv("USE_LOCAL_AUTH", "true").lower() == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower()
+IS_PRODUCTION = ENVIRONMENT == "production" or bool(os.getenv("RENDER"))
+# In production, bypass is strictly disabled. Defaults to False for security.
+USE_LOCAL_AUTH = False if IS_PRODUCTION else (os.getenv("USE_LOCAL_AUTH", "false").lower() == "true")
+LOCAL_DEV_USER_ID = os.getenv("LOCAL_DEV_USER_ID", "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3")
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 APILAYER_API_KEY = os.getenv("APILAYER_API_KEY")
 INDIANAPI_JOBS_KEY = os.getenv("INDIANAPI_JOBS_KEY")

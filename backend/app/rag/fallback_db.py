@@ -133,8 +133,31 @@ class FallbackSupabaseClient:
             )
         """)
 
+        # Ensure any missing columns from previous schemas are automatically migrated
+        def _ensure_col(tbl: str, col: str, col_type: str):
+            try:
+                cursor.execute(f"PRAGMA table_info({tbl})")
+                existing_cols = [r[1] for r in cursor.fetchall()]
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
+        _ensure_col("jobs", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("candidates", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("resume_chunks", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("resume_chunks", "candidate_name", "TEXT")
+        _ensure_col("resume_chunks", "chunk_index", "INTEGER DEFAULT 0")
+        _ensure_col("applications", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("interviews", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("chat_sessions", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+        _ensure_col("chat_sessions", "job_id", "TEXT")
+        _ensure_col("chat_sessions", "updated_at", "TIMESTAMP")
+        _ensure_col("chat_messages", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
+
         conn.commit()
         conn.close()
+
 
     def table(self, name: str):
         return TableBuilder(self.db_path, name)
@@ -245,6 +268,8 @@ class TableBuilder:
         for field in json_fields.get(self.table_name, []):
             if field in d and (isinstance(d[field], (dict, list)) or d[field] is not None):
                 d[field] = json.dumps(d[field])
+        if self.table_name == 'resume_chunks' and 'candidate_name' not in d:
+            d['candidate_name'] = ""
         return d
 
     def execute(self):
@@ -457,6 +482,7 @@ class RpcBuilder:
                         matches.append({
                             "id": d['id'],
                             "candidate_id": d['candidate_id'],
+                            "candidate_name": d['full_name'] or 'Candidate',
                             "full_name": d['full_name'] or 'Candidate',
                             "chunk_text": d['chunk_text'],
                             "similarity": sim
