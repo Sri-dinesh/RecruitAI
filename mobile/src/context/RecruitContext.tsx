@@ -157,6 +157,29 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Create a new campaign session
+  const createSession = useCallback(
+    async (title?: string): Promise<ChatSession | null> => {
+      try {
+        const res = await fetchWithAuth("/api/sessions", {
+          method: "POST",
+          body: JSON.stringify({ title: title || "New Hiring Campaign" }),
+        });
+        if (res.ok) {
+          const newSession: ChatSession = await res.json();
+          setSessions((prev) => [newSession, ...prev]);
+          await selectSession(newSession.id);
+          successHaptic();
+          return newSession;
+        }
+      } catch (err) {
+        console.error("[RecruitContext] Error creating session:", err);
+      }
+      return null;
+    },
+    [selectSession]
+  );
+
   // Load all sessions for current user
   const loadSessions = useCallback(async (): Promise<ChatSession[]> => {
     try {
@@ -208,30 +231,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
     return [];
-  }, [selectSession]);
-
-  // Create a new campaign session
-  const createSession = useCallback(
-    async (title?: string): Promise<ChatSession | null> => {
-      try {
-        const res = await fetchWithAuth("/api/sessions", {
-          method: "POST",
-          body: JSON.stringify({ title: title || "New Hiring Campaign" }),
-        });
-        if (res.ok) {
-          const newSession: ChatSession = await res.json();
-          setSessions((prev) => [newSession, ...prev]);
-          await selectSession(newSession.id);
-          successHaptic();
-          return newSession;
-        }
-      } catch (err) {
-        console.error("[RecruitContext] Error creating session:", err);
-      }
-      return null;
-    },
-    [selectSession]
-  );
+  }, [selectSession, createSession]);
 
   // Delete an existing campaign session
   const deleteSession = useCallback(
