@@ -6,45 +6,39 @@ import { supabase } from "./supabase";
 export const CLOUD_BACKEND_URL = "https://recruitai-vpbe.onrender.com";
 
 /**
- * Resolves the default backend URL based on execution platform and environment.
- * Defaults to the live cloud backend on Render so that mobile devices connecting
- * over tunnel or cellular data connect immediately without firewall or LAN routing issues.
+ * Strict Environment URL Separation:
+ * 1. In Local Development (__DEV__):
+ *    Use the LOCAL backend URL only.
+ *    Priority:
+ *    - EXPO_PUBLIC_DEV_LAN_URL (e.g. http://192.168.x.x:8000 for physical phone testing on same WiFi)
+ *    - Android Emulator (http://10.0.2.2:8000)
+ *    - iOS Simulator / Web (http://localhost:8000)
+ *    Strictly prevents using or switching to production in local dev.
+ *
+ * 2. In Production (!__DEV__):
+ *    Use the PRODUCTION Cloud backend URL only (https://recruitai-vpbe.onrender.com).
+ *    Strictly prevents using or switching to localhost / LAN in production.
  */
-const getDefaultBackendUrl = (): string => {
-  if (process.env.EXPO_PUBLIC_BACKEND_URL && process.env.EXPO_PUBLIC_BACKEND_URL.trim()) {
-    return process.env.EXPO_PUBLIC_BACKEND_URL.trim().replace(/\/$/, "");
-  }
-  return CLOUD_BACKEND_URL;
-};
-
-let activeBackendUrl: string = getDefaultBackendUrl();
-
-// Hydrate saved custom backend URL from SecureStore if available
-SecureStore.getItemAsync("recruitai_backend_url")
-  .then((saved) => {
-    if (saved && saved.trim()) {
-      activeBackendUrl = saved.trim().replace(/\/$/, "");
-      console.log("[apiClient] Loaded custom backend URL from storage:", activeBackendUrl);
+export const getBackendUrl = (): string => {
+  if (!__DEV__) {
+    // Production builds strictly use the cloud backend URL
+    if (process.env.EXPO_PUBLIC_BACKEND_URL && process.env.EXPO_PUBLIC_BACKEND_URL.trim()) {
+      return process.env.EXPO_PUBLIC_BACKEND_URL.trim().replace(/\/$/, "");
     }
-  })
-  .catch(() => {});
+    return CLOUD_BACKEND_URL;
+  }
 
-export const getBackendUrl = (): string => activeBackendUrl;
-
-export const setCustomBackendUrl = async (url: string): Promise<void> => {
-  const clean = url.trim().replace(/\/$/, "");
-  activeBackendUrl = clean;
-  await SecureStore.setItemAsync("recruitai_backend_url", clean);
-  console.log("[apiClient] Set custom backend URL:", clean);
+  // Local development mode (__DEV__) strictly uses local URLs
+  if (process.env.EXPO_PUBLIC_DEV_LAN_URL && process.env.EXPO_PUBLIC_DEV_LAN_URL.trim()) {
+    return process.env.EXPO_PUBLIC_DEV_LAN_URL.trim().replace(/\/$/, "");
+  }
+  if (Platform.OS === "android") {
+    return "http://10.0.2.2:8000";
+  }
+  return "http://localhost:8000";
 };
 
-export const resetBackendUrl = async (): Promise<void> => {
-  activeBackendUrl = getDefaultBackendUrl();
-  await SecureStore.deleteItemAsync("recruitai_backend_url");
-  console.log("[apiClient] Reset backend URL to default:", activeBackendUrl);
-};
-
-export const BACKEND_URL = activeBackendUrl;
+export const BACKEND_URL = getBackendUrl();
 
 export interface FetchWithAuthOptions extends RequestInit {
   retries?: number;
@@ -148,7 +142,18 @@ export async function uploadFileWithAuth<T = any>(
     console.warn("[apiClient] Unable to retrieve auth token for upload:", err);
   }
 
-  const fileName = customFileName || fileUri.split("/").pop() || "document.pdf";
+  let fileName = customFileName || fileUri.split("/").pop() || "document.pdf";
+  if (!fileName.includes(".")) {
+    if (mimeType?.includes("pdf")) {
+      fileName = `${fileName}.pdf`;
+    } else if (mimeType?.includes("word") || mimeType?.includes("officedocument") || mimeType?.includes("docx")) {
+      fileName = `${fileName}.docx`;
+    } else if (mimeType?.includes("text") || mimeType?.includes("plain")) {
+      fileName = `${fileName}.txt`;
+    } else {
+      fileName = `${fileName}.pdf`;
+    }
+  }
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -203,9 +208,9 @@ export async function uploadFileWithAuth<T = any>(
 }
 
 /**
- * Diagnostic helper to test backend connectivity with candidate URL fallbacks.
- * Uses a 3.5s timeout per candidate to avoid hanging indefinitely on unreachable LAN IPs.
- * Automatically switches to the first responding healthy backend and persists the working target.
+ * Diagnostic helper to test backend connectivity.
+ * Tests ONLY the designated backend URL for the active environment (local or production).
+ * Strictly avoids cross-switching or mutating target URLs.
  */
 export async function testBackendConnection(): Promise<{
   ok: boolean;
@@ -214,49 +219,39 @@ export async function testBackendConnection(): Promise<{
   message?: string;
   error?: string;
 }> {
-  const currentBase = getBackendUrl();
-  const candidateUrls = Array.from(
-    new Set([
-      currentBase,
-      CLOUD_BACKEND_URL,
-      ...(__DEV__ && process.env.EXPO_PUBLIC_DEV_LAN_URL ? [process.env.EXPO_PUBLIC_DEV_LAN_URL] : []),
-      ...(__DEV__ && Platform.OS === "android" ? ["http://10.0.2.2:8000"] : []),
-      ...(__DEV__ ? ["http://localhost:8000", "http://127.0.0.1:8000"] : []),
-    ])
-  ).filter(Boolean);
+  const targetUrl = getBackendUrl();
+  const fullUrl = `${targetUrl}/api/health`;
 
-  let lastErr = "";
-  for (const base of candidateUrls) {
-    const fullUrl = `${base}/api/health`;
-    try {
-      console.log("[apiClient] Testing backend health at:", fullUrl);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-      const res = await fetch(fullUrl, {
-        method: "GET",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    const res = await fetch(fullUrl, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
 
-      if (res.ok) {
-        if (base !== currentBase) {
-          await setCustomBackendUrl(base);
-          console.log("[apiClient] Automatically switched active backend URL to:", base);
-        }
-        return {
-          ok: true,
-          url: base,
-          status: res.status,
-          message: "Connected successfully",
-        };
-      } else {
-        lastErr = `HTTP ${res.status}`;
-      }
-    } catch (e: any) {
-      lastErr = e?.message || "Network request failed";
+    if (res.ok) {
+      return {
+        ok: true,
+        url: targetUrl,
+        status: res.status,
+        message: "Connected successfully",
+      };
+    } else {
+      return {
+        ok: false,
+        url: targetUrl,
+        status: res.status,
+        error: `HTTP ${res.status}`,
+      };
     }
+  } catch (e: any) {
+    return {
+      ok: false,
+      url: targetUrl,
+      error: e?.message || "Network request failed",
+    };
   }
-
-  return { ok: false, url: currentBase, error: lastErr };
 }
