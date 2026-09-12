@@ -242,21 +242,23 @@ export const SessionPickerModal = forwardRef<
                   </View>
 
                   {/* Actions */}
-                  <View className="flex-row items-center space-x-1">
-                    {isActive ? (
-                      <CheckCircle2 size={18} color={COLORS.brandPrimary} />
-                    ) : (
-                      <TouchableOpacity
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleDeleteSession(s.id, s.title);
-                        }}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        className="p-1.5 rounded-full"
-                      >
-                        <Trash2 size={15} color={COLORS.muted} />
-                      </TouchableOpacity>
+                  <View className="flex-row items-center space-x-2">
+                    {isActive && (
+                      <View className="mr-1">
+                        <CheckCircle2 size={17} color={COLORS.brandPrimary} />
+                      </View>
                     )}
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(s.id, s.title);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      className="p-1.5 rounded-full active:bg-rose-50"
+                      accessibilityLabel={`Delete campaign ${s.title}`}
+                    >
+                      <Trash2 size={16} color="#E11D48" />
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               );

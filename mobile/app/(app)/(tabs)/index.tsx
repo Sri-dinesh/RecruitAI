@@ -6,21 +6,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
-import { Briefcase, EyeOff, FileUp, Sparkles } from "lucide-react-native";
+import { Briefcase, EyeOff, FileUp, Sparkles, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRecruit } from "@/context/RecruitContext";
+import { useAppModal } from "@/context/ModalContext";
 import { useRecruitChat } from "@/hooks/useRecruitChat";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ActionChips } from "@/components/chat/ActionChips";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { TypingDots } from "@/components/chat/TypingDots";
 import { COLORS } from "@/constants/theme";
+import { impactHaptic } from "@/lib/haptics";
 
 export default function CopilotTab() {
   const insets = useSafeAreaInsets();
+  const { showModal } = useAppModal();
   const scrollViewRef = useRef<ScrollView>(null);
   const {
+    activeSessionId,
     activeSession,
     jd,
     candidates,
@@ -28,6 +33,7 @@ export default function CopilotTab() {
     isBlindHiring,
     apiConnected,
     loadingSession,
+    deleteSession,
   } = useRecruit();
 
   const {
@@ -41,12 +47,32 @@ export default function CopilotTab() {
     uploadJd,
   } = useRecruitChat();
 
+  const handleDeleteActiveCampaign = () => {
+    if (!activeSessionId) return;
+    impactHaptic();
+    showModal({
+      title: "Delete Campaign",
+      message: `Are you sure you want to permanently delete "${activeSession?.title || "this campaign"}" and all its candidates? This cannot be undone.`,
+      type: "confirm",
+      actions: [
+        {
+          label: "Delete Campaign",
+          variant: "destructive",
+          onPress: async () => {
+            await deleteSession(activeSessionId);
+          },
+        },
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
+  };
+
   // Auto-scroll to bottom when new messages arrive or when typing
   useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-    return () => clearTimeout(timer);
+    scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages, isLoading]);
 
   return (
@@ -91,9 +117,21 @@ export default function CopilotTab() {
           </View>
         </View>
 
-        {loadingSession && (
-          <ActivityIndicator size="small" color={COLORS.brandPrimary} />
-        )}
+        <View className="flex-row items-center">
+          {loadingSession && (
+            <ActivityIndicator size="small" color={COLORS.brandPrimary} className="mr-2" />
+          )}
+          {activeSessionId && (
+            <TouchableOpacity
+              onPress={handleDeleteActiveCampaign}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              className="p-1.5 rounded-full active:bg-rose-50"
+              accessibilityLabel="Delete Campaign"
+            >
+              <Trash2 size={15} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Uploading In-Progress Notification Banner */}
