@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback } from "react";
-import { Alert } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useRecruit } from "@/context/RecruitContext";
-import { fetchWithAuth } from "@/lib/apiClient";
+import { fetchWithAuth, uploadFileWithAuth } from "@/lib/apiClient";
+import { showAppModal } from "@/context/ModalContext";
 import { successHaptic, warningHaptic, impactHaptic } from "@/lib/haptics";
-import type { ChatMessage, ChatApiResponse } from "@/types/schema";
+import type { ChatMessage, ChatApiResponse, Candidate, JobDescription } from "@/types/schema";
 
 export function useRecruitChat() {
   const {
@@ -164,47 +164,48 @@ export function useRecruitChat() {
       }
 
       setIsUploading(true);
-      const formData = new FormData();
 
-      for (const asset of result.assets) {
-        formData.append("files", {
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType || "application/pdf",
-        } as any);
-      }
+      const uploadPromises = result.assets.map((asset) =>
+        uploadFileWithAuth<Candidate[]>("/api/ingest/upload", asset.uri, {
+          fieldName: "files",
+          fileName: asset.name,
+          mimeType: asset.mimeType || "application/pdf",
+        })
+      );
 
-      const res = await fetchWithAuth("/api/ingest/upload", {
-        method: "POST",
-        body: formData,
+      const candidateArrays = await Promise.all(uploadPromises);
+      const uploaded = candidateArrays.flat();
+
+      // Merge into local candidates state immediately
+      setCandidates((prev) => {
+        const existingIds = new Set(prev.map((c) => c.candidate_id));
+        const added = uploaded.filter((c) => !existingIds.has(c.candidate_id));
+        return [...prev, ...added];
       });
 
-      if (res.ok) {
-        const uploaded = await res.json();
-        await refreshActiveSession();
-        successHaptic();
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `✅ Successfully ingested **${uploaded.length}** candidate resume${
-              uploaded.length === 1 ? "" : "s"
-            }. You can now ask me to screen and rank candidates or view them in the Candidates tab.`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Failed to parse resumes");
-      }
+      await refreshActiveSession();
+      successHaptic();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `✅ Successfully ingested **${uploaded.length}** candidate resume${
+            uploaded.length === 1 ? "" : "s"
+          }. You can now ask me to screen and rank candidates or view them in the Candidates tab.`,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     } catch (err: any) {
       console.error("[useRecruitChat] Upload error:", err);
-      warningHaptic();
-      Alert.alert("Upload Error", err.message || "Failed to upload candidate resumes.");
+      showAppModal({
+        title: "Upload Error",
+        message: err.message || "Failed to upload candidate resumes.",
+        type: "error",
+      });
     } finally {
       setIsUploading(false);
     }
-  }, [refreshActiveSession, setMessages]);
+  }, [refreshActiveSession, setMessages, setCandidates]);
 
   // Upload Job Description via DocumentPicker
   const uploadJd = useCallback(async () => {
@@ -225,44 +226,39 @@ export function useRecruitChat() {
 
       setIsUploading(true);
       const asset = result.assets[0];
-      const formData = new FormData();
 
-      formData.append("file", {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType || "application/pdf",
-      } as any);
+      const jdData = await uploadFileWithAuth<JobDescription>(
+        "/api/ingest/upload-jd",
+        asset.uri,
+        {
+          fieldName: "file",
+          fileName: asset.name,
+          mimeType: asset.mimeType || "application/pdf",
+        }
+      );
 
-      const res = await fetchWithAuth("/api/ingest/upload-jd", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        const jdData = await res.json();
-        setJd(jdData);
-        await refreshActiveSession();
-        successHaptic();
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `📄 Loaded Job Description for **${jdData.role || "Target Role"}** (${
-              jdData.experience_years || 0
-            }+ years experience). Required skills: ${
-              jdData.required_skills?.slice(0, 6).join(", ") || "extracted"
-            }.`,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Failed to parse Job Description");
-      }
+      setJd(jdData);
+      await refreshActiveSession();
+      successHaptic();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `📄 Loaded Job Description for **${jdData.role || "Target Role"}** (${
+            jdData.experience_years || 0
+          }+ years experience). Required skills: ${
+            jdData.required_skills?.slice(0, 6).join(", ") || "extracted"
+          }.`,
+          created_at: new Date().toISOString(),
+        },
+      ]);
     } catch (err: any) {
       console.error("[useRecruitChat] JD Upload error:", err);
-      warningHaptic();
-      Alert.alert("JD Upload Error", err.message || "Failed to upload Job Description.");
+      showAppModal({
+        title: "JD Upload Error",
+        message: err.message || "Failed to upload Job Description.",
+        type: "error",
+      });
     } finally {
       setIsUploading(false);
     }

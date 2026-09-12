@@ -21,18 +21,26 @@ MAX_UPLOAD_SIZE = 15 * 1024 * 1024  # 15 MB per file
 
 @router.post("/ingest/upload", response_model=List[Candidate])
 async def upload_resumes_endpoint(
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File(default=[]),
+    file: UploadFile = File(default=None),
     user_id: str = Depends(get_current_user_id)
 ):
     """
     POST endpoint to upload PDF, DOCX, or TXT candidate resumes.
     Extracts text, parses structured candidate fields with LLM,
     persists candidate entity to public.candidates, embeds chunks to public.resume_chunks.
+    Accepts multiple files via 'files' or a single file via 'file' or 'files'.
     """
+    upload_list = list(files)
+    if file:
+        upload_list.append(file)
+    if not upload_list:
+        raise HTTPException(status_code=400, detail="No resume files were provided.")
+        
     ingested_candidates = []
     
-    for file in files:
-        filename = file.filename or "unknown_candidate.txt"
+    for f in upload_list:
+        filename = f.filename or "unknown_candidate.txt"
         file_path = Path(filename)
         extension = file_path.suffix.lower()
         
@@ -43,7 +51,7 @@ async def upload_resumes_endpoint(
                 detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
             )
             
-        file_bytes = await file.read()
+        file_bytes = await f.read()
         if len(file_bytes) > MAX_UPLOAD_SIZE:
             raise HTTPException(
                 status_code=413,

@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "./supabase";
 
 export const CLOUD_BACKEND_URL = "https://recruitai-vpbe.onrender.com";
@@ -113,6 +114,94 @@ export async function fetchWithAuth(
   throw lastError || new Error(`Network request failed for ${path} at ${baseUrl}`);
 }
 
+export interface UploadFileOptions {
+  fieldName?: string;
+  fileName?: string;
+  mimeType?: string;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Native multipart file upload with auth session token.
+ * Uses native XMLHttpRequest with React Native FormData.
+ * This directly invokes React Native's native RCTNetworking layer (OkHttp on Android, NSURLSession on iOS).
+ * It completely avoids:
+ * 1. Expo WinterCG fetch polyfill ("Unsupported FormDataPart implementation")
+ * 2. ExponentFileSystem scoped storage permission blocks ("Location '...' isn't readable")
+ */
+export async function uploadFileWithAuth<T = any>(
+  path: string,
+  fileUri: string,
+  options: UploadFileOptions = {}
+): Promise<T> {
+  const { fieldName = "file", fileName: customFileName, mimeType, headers = {} } = options;
+  const baseUrl = getBackendUrl();
+  const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
+
+  const authHeaders: Record<string, string> = { ...headers };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+    }
+  } catch (err) {
+    console.warn("[apiClient] Unable to retrieve auth token for upload:", err);
+  }
+
+  const fileName = customFileName || fileUri.split("/").pop() || "document.pdf";
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.timeout = 60000; // 60s timeout for document ingestion
+
+    // Apply headers - NEVER set Content-Type so native RCTNetworking adds the multipart boundary
+    for (const [key, value] of Object.entries(authHeaders)) {
+      if (key.toLowerCase() !== "content-type") {
+        xhr.setRequestHeader(key, value);
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T);
+        } catch {
+          resolve(xhr.responseText as unknown as T);
+        }
+      } else {
+        let msg = `Upload failed with HTTP status ${xhr.status}`;
+        try {
+          const parsed = JSON.parse(xhr.responseText);
+          if (parsed.detail) {
+            msg = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+          }
+        } catch {
+          if (xhr.responseText) msg = xhr.responseText;
+        }
+        reject(new Error(msg));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error(`Network error occurred while uploading "${fileName}" to server.`));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error(`Upload timed out for "${fileName}". The server took longer than 60s to process.`));
+    };
+
+    const formData = new FormData();
+    formData.append(fieldName, {
+      uri: fileUri,
+      name: fileName,
+      type: mimeType || "application/octet-stream",
+    } as any);
+
+    xhr.send(formData);
+  });
+}
+
 /**
  * Diagnostic helper to test backend connectivity with candidate URL fallbacks.
  * Uses a 3.5s timeout per candidate to avoid hanging indefinitely on unreachable LAN IPs.
@@ -130,10 +219,9 @@ export async function testBackendConnection(): Promise<{
     new Set([
       currentBase,
       CLOUD_BACKEND_URL,
-      ...(process.env.EXPO_PUBLIC_DEV_LAN_URL ? [process.env.EXPO_PUBLIC_DEV_LAN_URL] : []),
-      ...(Platform.OS === "android" ? ["http://10.0.2.2:8000"] : []),
-      "http://localhost:8000",
-      "http://127.0.0.1:8000",
+      ...(__DEV__ && process.env.EXPO_PUBLIC_DEV_LAN_URL ? [process.env.EXPO_PUBLIC_DEV_LAN_URL] : []),
+      ...(__DEV__ && Platform.OS === "android" ? ["http://10.0.2.2:8000"] : []),
+      ...(__DEV__ ? ["http://localhost:8000", "http://127.0.0.1:8000"] : []),
     ])
   ).filter(Boolean);
 

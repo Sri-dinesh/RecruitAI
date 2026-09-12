@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
-import { Alert } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { fetchWithAuth } from "@/lib/apiClient";
+import { fetchWithAuth, uploadFileWithAuth } from "@/lib/apiClient";
 import { useRecruit } from "@/context/RecruitContext";
+import { showAppModal } from "@/context/ModalContext";
 import { successHaptic, warningHaptic } from "@/lib/haptics";
 import type { Candidate, JobDescription } from "@/types/schema";
 
@@ -31,27 +31,16 @@ export function useFileIngestion() {
 
       setIsUploadingResumes(true);
 
-      const formData = new FormData();
-      result.assets.forEach((asset) => {
-        formData.append("files", {
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType || "application/pdf",
-        } as any);
-      });
+      const uploadPromises = result.assets.map((asset) =>
+        uploadFileWithAuth<Candidate[]>("/api/ingest/upload", asset.uri, {
+          fieldName: "files",
+          fileName: asset.name,
+          mimeType: asset.mimeType || "application/pdf",
+        })
+      );
 
-      const res = await fetchWithAuth("/api/ingest/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        const msg = errorData.detail || "Failed to parse and upload resumes.";
-        throw new Error(msg);
-      }
-
-      const newCandidates: Candidate[] = await res.json();
+      const candidateArrays = await Promise.all(uploadPromises);
+      const newCandidates = candidateArrays.flat();
 
       // Merge newly ingested candidates avoiding duplicate IDs
       setCandidates((prev) => {
@@ -60,21 +49,24 @@ export function useFileIngestion() {
         return [...prev, ...added];
       });
 
-      successHaptic();
-      Alert.alert(
-        "Upload Complete",
-        `Successfully parsed and ingested ${newCandidates.length} candidate resume${
+      showAppModal({
+        title: "Upload Complete",
+        message: `Successfully parsed and ingested ${newCandidates.length} candidate resume${
           newCandidates.length === 1 ? "" : "s"
-        }.`
-      );
+        }.`,
+        type: "success",
+      });
 
       return newCandidates;
     } catch (err: any) {
       console.error("[useFileIngestion] Error uploading resumes:", err);
       const message = err.message || "An unexpected error occurred during upload.";
       setUploadError(message);
-      warningHaptic();
-      Alert.alert("Upload Failed", message);
+      showAppModal({
+        title: "Upload Failed",
+        message,
+        type: "error",
+      });
       return null;
     } finally {
       setIsUploadingResumes(false);
@@ -101,36 +93,33 @@ export function useFileIngestion() {
       setIsUploadingJd(true);
       const asset = result.assets[0];
 
-      const formData = new FormData();
-      formData.append("file", {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType || "application/pdf",
-      } as any);
+      const parsedJd = await uploadFileWithAuth<JobDescription>(
+        "/api/ingest/upload-jd",
+        asset.uri,
+        {
+          fieldName: "file",
+          fileName: asset.name,
+          mimeType: asset.mimeType || "application/pdf",
+        }
+      );
 
-      const res = await fetchWithAuth("/api/ingest/upload-jd", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        const msg = errorData.detail || "Failed to parse and upload Job Description.";
-        throw new Error(msg);
-      }
-
-      const parsedJd: JobDescription = await res.json();
       setJd(parsedJd);
-      successHaptic();
-      Alert.alert("JD Loaded", `Loaded Job Description for "${parsedJd.role || "Role"}".`);
+      showAppModal({
+        title: "JD Loaded",
+        message: `Loaded Job Description for "${parsedJd.role || "Role"}".`,
+        type: "success",
+      });
 
       return parsedJd;
     } catch (err: any) {
       console.error("[useFileIngestion] Error uploading JD:", err);
       const message = err.message || "An unexpected error occurred during JD upload.";
       setUploadError(message);
-      warningHaptic();
-      Alert.alert("JD Upload Failed", message);
+      showAppModal({
+        title: "JD Upload Failed",
+        message,
+        type: "error",
+      });
       return null;
     } finally {
       setIsUploadingJd(false);

@@ -25,6 +25,18 @@ jest.mock('expo-file-system/legacy', () => ({
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   getInfoAsync: jest.fn().mockResolvedValue({ exists: true, size: 1024 }),
   EncodingType: { UTF8: 'utf8' },
+  uploadAsync: jest.fn().mockResolvedValue({
+    status: 200,
+    body: JSON.stringify([{ candidate_id: 'test-1', name: 'Test User' }]),
+  }),
+  downloadAsync: jest.fn().mockResolvedValue({
+    status: 200,
+    uri: 'file:///mock-cache/report.pdf',
+  }),
+  FileSystemUploadType: {
+    BINARY_CONTENT: 0,
+    MULTIPART: 1,
+  },
 }));
 
 jest.mock('expo-sharing', () => ({
