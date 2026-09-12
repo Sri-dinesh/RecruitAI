@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -36,7 +37,7 @@ import PasswordMeter, { getPasswordStrength } from "@/components/common/Password
 
 export default function SignupScreen() {
   const router = useRouter();
-  const { signupWithEmail, loginWithGoogle } = useAuth();
+  const { signupWithEmail } = useAuth();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,7 +45,6 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -110,25 +110,6 @@ export default function SignupScreen() {
       triggerShake();
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleSignup = async () => {
-    setError("");
-    setGoogleLoading(true);
-    try {
-      const { error: gErr } = await loginWithGoogle();
-      if (gErr) {
-        setError(gErr.message || "Google registration failed.");
-        triggerShake();
-      } else {
-        successHaptic();
-        router.replace("/(app)/(tabs)");
-      }
-    } catch (err: any) {
-      setError(err?.message || "Google signup error.");
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -199,36 +180,6 @@ export default function SignupScreen() {
             <Text className="font-sans text-xs text-muted mt-1 leading-relaxed">
               Start screening candidates, generating rubrics, and booking interviews.
             </Text>
-          </View>
-
-          {/* Google OAuth Button */}
-          <TouchableOpacity
-            onPress={handleGoogleSignup}
-            disabled={googleLoading}
-            activeOpacity={0.8}
-            className="w-full bg-white border border-border rounded-[6px] py-3 px-4 flex-row items-center justify-center my-3"
-          >
-            {googleLoading ? (
-              <ActivityIndicator size="small" color={COLORS.brandPrimary} />
-            ) : (
-              <>
-                <View className="w-4 h-4 rounded-full bg-red-500 items-center justify-center mr-2">
-                  <Text className="text-[10px] font-bold text-white">G</Text>
-                </View>
-                <Text className="font-sans-bold text-xs text-foreground">
-                  Sign up with Google
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Or Divider */}
-          <View className="flex-row items-center my-3">
-            <View className="flex-1 h-[1px] bg-slate-200" />
-            <Text className="font-sans text-[11px] text-muted px-3 uppercase tracking-wider">
-              or register with work email
-            </Text>
-            <View className="flex-1 h-[1px] bg-slate-200" />
           </View>
 
           {/* Error / Success Notifications */}
@@ -389,10 +340,34 @@ export default function SignupScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Terms footnote */}
-          <Text className="font-sans text-[11px] text-muted text-center mt-4 leading-relaxed">
-            By creating an account, you agree to RecruitAI's recruitment terms and privacy policies.
-          </Text>
+          {/* Terms & Privacy footnote */}
+          <View className="flex-row flex-wrap items-center justify-center mt-5 px-2">
+            <Text className="font-sans text-[11px] text-muted text-center leading-relaxed">
+              By creating an account, you agree to RecruitAI's{" "}
+            </Text>
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/terms")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans-bold text-[11px] text-brand-primary underline">
+                Terms of Service
+              </Text>
+            </TouchableOpacity>
+            <Text className="font-sans text-[11px] text-muted text-center leading-relaxed">
+              {" "}and{" "}
+            </Text>
+            <TouchableOpacity
+              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/privacy")}
+              activeOpacity={0.7}
+            >
+              <Text className="font-sans-bold text-[11px] text-brand-primary underline">
+                Privacy Policy
+              </Text>
+            </TouchableOpacity>
+            <Text className="font-sans text-[11px] text-muted text-center leading-relaxed">
+              .
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
