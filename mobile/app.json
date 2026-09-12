@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "RecruitAI - AI Recruiter",
+    "name": "RecruitAI",
     "slug": "recruitai",
     "scheme": "recruitai",
     "version": "1.0.0",
@@ -16,13 +16,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.recruitai.app",
-      "associatedDomains": ["applinks:recruitaiofficial.vercel.app"],
+      "associatedDomains": [
+        "applinks:recruitaiofficial.vercel.app"
+      ],
       "infoPlist": {
         "NSDocumentsFolderUsageDescription": "RecruitAI requires access to documents to ingest job descriptions and candidate resumes."
       }
     },
     "android": {
-      "usesCleartextTraffic": true,
+      "versionCode": 1,
+      "usesCleartextTraffic": false,
       "adaptiveIcon": {
         "backgroundColor": "#F8F6F2",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,10 +35,7 @@
       "package": "com.recruitai.app",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.recruitai.app",
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ],
+      "permissions": [],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -65,7 +65,17 @@
       "expo-web-browser",
       "expo-font",
       "expo-sharing",
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
+          }
+        }
+      ]
     ]
   }
 }
