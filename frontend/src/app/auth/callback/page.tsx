@@ -6,9 +6,9 @@ import { createSupabaseClient } from '@/lib/supabaseClient';
 
 /**
  * /auth/callback
- * Supabase redirects here after Google OAuth or Password Recovery links.
+ * Supabase redirects here after Google OAuth or email verification links.
  * Exchanges URL code/tokens for a session, then routes to appropriate destination:
- * - type=recovery -> /auth/reset-password
+ * - type=recovery -> /auth/reset-password (clean route without re-submitting single-use code)
  * - OAuth signin -> /dashboard
  */
 function CallbackContent() {
@@ -26,15 +26,15 @@ function CallbackContent() {
       hash.includes('type=recovery') ||
       search.includes('type=recovery');
 
-    // Set up auth state listener for PASSWORD_RECOVERY event
+    // Listen for PASSWORD_RECOVERY event
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        router.replace(`/auth/reset-password${search}${hash}`);
+        router.replace('/auth/reset-password');
       }
     });
 
     const processAuth = async () => {
-      // 1. If PKCE authorization code is present in query parameters, exchange it
+      // 1. If PKCE authorization code is present in query parameters, exchange it ONCE
       if (code) {
         try {
           await supabase.auth.exchangeCodeForSession(code);
@@ -60,25 +60,26 @@ function CallbackContent() {
         }
       }
 
-      // 3. Verify session state
+      // 3. Verify session state and route cleanly
       const { data: { session } } = await supabase.auth.getSession();
 
       if (isRecovery) {
-        router.replace(`/auth/reset-password${search}${hash}`);
+        // Route to reset-password with clean URL so it doesn't re-exchange code
+        router.replace('/auth/reset-password');
       } else if (session) {
         router.replace('/dashboard');
       } else {
-        // Fallback retry after 500ms
+        // Fallback retry after 400ms
         setTimeout(async () => {
           const { data: { session: retrySession } } = await supabase.auth.getSession();
           if (isRecovery) {
-            router.replace(`/auth/reset-password${search}${hash}`);
+            router.replace('/auth/reset-password');
           } else if (retrySession) {
             router.replace('/dashboard');
           } else {
             router.replace('/auth?tab=login');
           }
-        }, 500);
+        }, 400);
       }
     };
 

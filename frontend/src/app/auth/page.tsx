@@ -206,8 +206,8 @@ function AuthContent() {
       <footer className="px-6 md:px-12 py-5 max-w-7xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-muted border-t border-border/60 z-10">
         <div>© {new Date().getFullYear()} RecruitAI Platform. All rights reserved.</div>
         <div className="flex items-center gap-6 mt-2 sm:mt-0">
-          <Link href="/" className="hover:text-foreground transition-colors">Privacy Policy</Link>
-          <Link href="/" className="hover:text-foreground transition-colors">Terms of Service</Link>
+          <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+          <Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link>
           <Link href="/" className="hover:text-foreground transition-colors">Documentation</Link>
         </div>
       </footer>

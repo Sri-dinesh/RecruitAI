@@ -4,7 +4,6 @@ import { useState, useEffect, useId, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/context/AuthContext';
 import { createSupabaseClient } from '@/lib/supabaseClient';
 import Logo from '@/components/brand/Logo';
 import { 
@@ -16,13 +15,11 @@ import {
   AlertCircle, 
   ArrowRight, 
   ShieldCheck, 
-  ArrowLeft,
-  Sparkles
+  ArrowLeft
 } from 'lucide-react';
 
 function ResetPasswordContent() {
   const router = useRouter();
-  const { updatePassword, user, loading: authLoading } = useAuth();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,73 +35,99 @@ function ResetPasswordContent() {
   const passwordId = useId();
   const confirmPasswordId = useId();
 
-  // Check if recovery session or user session is active
+  // Bulletproof session verification and single-use PKCE code exchange
   useEffect(() => {
     const supabase = createSupabaseClient();
+    let isMounted = true;
+
+    const sanitizeUrl = () => {
+      if (typeof window !== 'undefined') {
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    };
 
     const initAuth = async () => {
+      if (typeof window === 'undefined') return;
+
       // 1. Check for PKCE authorization code in query parameters
-      if (typeof window !== 'undefined') {
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        if (code) {
-          try {
-            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-            if (!error && data.session) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+
+      if (code) {
+        try {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          // Immediately sanitize URL to prevent re-exchanging burned single-use code
+          sanitizeUrl();
+
+          if (!error && data.session && isMounted) {
+            setHasValidSession(true);
+            return;
+          }
+        } catch (e) {
+          console.warn('[ResetPassword] Code exchange warning:', e);
+          sanitizeUrl();
+        }
+      }
+
+      // 2. Check for access_token in hash fragment
+      const hash = window.location.hash || '';
+      if (hash.includes('access_token=')) {
+        try {
+          const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          sanitizeUrl();
+
+          if (accessToken && refreshToken) {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (!error && data.session && isMounted) {
               setHasValidSession(true);
               return;
             }
-          } catch (e) {
-            console.warn('[ResetPassword] Code exchange error:', e);
           }
-        }
-
-        // 2. Check for access_token in hash fragment
-        const hash = window.location.hash || '';
-        if (hash.includes('access_token=')) {
-          try {
-            const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
-            if (accessToken && refreshToken) {
-              const { data, error } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-              if (!error && data.session) {
-                setHasValidSession(true);
-                return;
-              }
-            }
-          } catch (e) {
-            console.warn('[ResetPassword] Hash token session error:', e);
-          }
+        } catch (e) {
+          console.warn('[ResetPassword] Hash token error:', e);
+          sanitizeUrl();
         }
       }
 
-      // 3. Check existing session
+      // 3. Check for existing active session in cookies/storage
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session && isMounted) {
         setHasValidSession(true);
-      } else {
-        // Wait briefly in case background token refresh or event listener catches it
-        setTimeout(async () => {
-          const { data: { session: retrySession } } = await supabase.auth.getSession();
-          setHasValidSession(!!retrySession);
-        }, 1200);
+        return;
       }
+
+      // 4. Grace period for background auth state change or storage hydration
+      const timeoutId = setTimeout(async () => {
+        if (!isMounted) return;
+        const { data: { session: retrySession } } = await supabase.auth.getSession();
+        if (retrySession) {
+          setHasValidSession(true);
+        } else {
+          setHasValidSession(false);
+        }
+      }, 2000);
+
+      return () => clearTimeout(timeoutId);
     };
 
     initAuth();
 
-    // Also listen for PASSWORD_RECOVERY auth event
+    // Listen for auth events (PASSWORD_RECOVERY, SIGNED_IN)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+      if (!isMounted) return;
+      if (event === 'PASSWORD_RECOVERY' || (session && (event === 'SIGNED_IN' || event === 'USER_UPDATED'))) {
         setHasValidSession(true);
       }
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -157,14 +180,10 @@ function ResetPasswordContent() {
 
     try {
       const supabase = createSupabaseClient();
-      const res = await supabase.auth.updateUser({ password });
-      let updateError: { message: string } | null = res.error;
-      if (updateError) {
-        const fallbackRes = await updatePassword(password);
-        updateError = fallbackRes.error;
-      }
-      if (updateError) {
-        setError(updateError.message);
+      const { error: updateErr } = await supabase.auth.updateUser({ password });
+
+      if (updateErr) {
+        setError(updateErr.message);
       } else {
         setSuccess(true);
       }
@@ -220,10 +239,9 @@ function ResetPasswordContent() {
           transition={{ type: 'spring', damping: 28, stiffness: 350 }}
           className="w-full bg-white/95 backdrop-blur-xl border border-border/80 rounded-2xl shadow-2xl p-8 relative overflow-hidden"
         >
-          {/* Ambient inner glow */}
           <div className="absolute -top-24 -right-24 w-56 h-56 bg-accent/5 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Success Screen */}
+          {/* 1. Success Screen */}
           {success ? (
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
@@ -236,7 +254,7 @@ function ResetPasswordContent() {
               </div>
               <h2 className="font-serif text-2xl md:text-3xl text-foreground">Password Reset Complete</h2>
               <p className="text-muted text-xs md:text-sm leading-relaxed">
-                Your password has been successfully updated with 256-bit encryption. Redirecting you to your dashboard in <strong className="text-foreground">{countdown}s</strong>…
+                Your password has been successfully updated. Redirecting you to your dashboard in <strong className="text-foreground">{countdown}s</strong>…
               </p>
               <div className="pt-4">
                 <Link
@@ -248,8 +266,17 @@ function ResetPasswordContent() {
                 </Link>
               </div>
             </motion.div>
+          ) : hasValidSession === null ? (
+            /* 2. Verifying Session Loading Screen */
+            <div className="text-center py-10 space-y-4">
+              <div className="w-10 h-10 border-3 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+              <h3 className="font-serif text-xl text-foreground">Verifying Secure Recovery Link</h3>
+              <p className="text-muted text-xs leading-relaxed max-w-xs mx-auto">
+                Validating your cryptographic session token with Supabase Auth…
+              </p>
+            </div>
           ) : hasValidSession === false ? (
-            /* Expired / Invalid Token Screen */
+            /* 3. Expired / Invalid Token Screen */
             <div className="text-center py-4 space-y-4">
               <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto border border-rose-200/80">
                 <AlertCircle className="w-6 h-6" />
@@ -269,7 +296,7 @@ function ResetPasswordContent() {
               </div>
             </div>
           ) : (
-            /* Standard Password Reset Form */
+            /* 4. Active Session: Standard Password Reset Form */
             <>
               <div className="mb-6 text-center">
                 <motion.div 
@@ -412,7 +439,7 @@ function ResetPasswordContent() {
                   )}
                 </div>
 
-                {/* Error Alert with Spring Shake Physics */}
+                {/* Error Alert */}
                 <AnimatePresence>
                   {error && (
                     <motion.div
@@ -434,7 +461,7 @@ function ResetPasswordContent() {
                   )}
                 </AnimatePresence>
 
-                {/* Submit Action Button with Shimmer */}
+                {/* Submit Action Button */}
                 <motion.button
                   type="submit"
                   disabled={loading || password.length < 8 || passwordsMismatch}
@@ -471,7 +498,7 @@ function ResetPasswordContent() {
               {/* Security Badge */}
               <div className="mt-6 pt-5 border-t border-border/80 flex items-center justify-center gap-2 text-[11px] text-muted">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Protected by Supabase Auth PKCE Cryptography</span>
+                <span>Protected by Supabase Auth Cryptography</span>
               </div>
             </>
           )}
