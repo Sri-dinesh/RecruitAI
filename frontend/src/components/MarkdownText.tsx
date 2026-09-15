@@ -1,7 +1,8 @@
 import React from 'react';
 
-export default function MarkdownText({ text }: { text: string }) {
-  if (!text) return null;
+export default function MarkdownText({ text, content }: { text?: string; content?: string }) {
+  const markdownSource = text ?? content ?? '';
+  if (!markdownSource) return null;
 
   const compileMarkdownToHtml = (markdown: string): string => {
     if (!markdown) return '';
@@ -167,7 +168,7 @@ export default function MarkdownText({ text }: { text: string }) {
   return (
     <div 
       className="space-y-1.5 text-sm leading-relaxed select-text"
-      dangerouslySetInnerHTML={{ __html: compileMarkdownToHtml(text) }}
+      dangerouslySetInnerHTML={{ __html: compileMarkdownToHtml(markdownSource) }}
     />
   );
 }
