@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import SupportContactForm from '@/components/forms/SupportContactForm';
+import PlayStoreBadge from '@/components/brand/PlayStoreBadge';
+import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
   title: 'Support & Contact',
@@ -31,7 +33,10 @@ export default function SupportPage() {
             <Link href="/terms" className="text-muted hover:text-foreground transition-colors">Terms</Link>
             <Link href="/support" className="text-foreground">Support</Link>
           </nav>
-          <a href={`mailto:${contactEmail}`} className="hidden md:inline-flex text-sm font-semibold bg-accent text-white px-4 py-2 rounded-md hover:bg-[#263a66] transition-colors">Email Support</a>
+          <div className="flex items-center gap-3">
+            <PlayStoreBadge variant="pill" theme="light" className="hidden sm:inline-flex" />
+            <a href={`mailto:${contactEmail}`} className="hidden md:inline-flex text-sm font-semibold bg-accent text-white px-4 py-2 rounded-md hover:bg-[#263a66] transition-colors">Email Support</a>
+          </div>
         </div>
       </header>
 
@@ -146,6 +151,14 @@ export default function SupportPage() {
               </div>
             </div>
 
+            <div className="bg-white border border-border rounded-2xl shadow-sm p-6">
+              <h3 className="font-semibold text-foreground">Play Store App</h3>
+              <p className="text-sm text-muted mt-1 leading-relaxed">Download and test the latest Android build directly from Google Play.</p>
+              <div className="mt-4">
+                <PlayStoreBadge variant="button" theme="light" className="w-full justify-center" />
+              </div>
+            </div>
+
             <div className="bg-[#faf9f7] border border-border rounded-2xl p-6">
               <div className="text-sm font-semibold text-foreground">Tip for Play reviewers</div>
               <p className="text-sm text-muted leading-relaxed mt-2">Ensure all four URLs above are publicly accessible and return 200. Link them from your app’s store listing “Privacy Policy” field and Data Safety declarations.</p>
@@ -154,18 +167,8 @@ export default function SupportPage() {
         </div>
       </main>
 
-      <footer className="border-t border-border bg-white mt-6">
-        <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex flex-wrap gap-6 text-sm font-medium">
-            <Link href="/privacy" className="text-muted hover:text-foreground">Privacy</Link>
-            <Link href="/terms" className="text-muted hover:text-foreground">Terms</Link>
-            <Link href="/data-deletion" className="text-muted hover:text-foreground">Data Deletion</Link>
-            <Link href="/support" className="text-foreground font-semibold">Support</Link>
-            <Link href="/" className="text-muted hover:text-foreground">Home</Link>
-          </div>
-        </div>
-      </footer>
+      {/* Reusable Footer Component */}
+      <Footer className="mt-12" />
     </div>
   );
 }

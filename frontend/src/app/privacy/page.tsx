@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
+import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -379,18 +380,8 @@ export default function PrivacyPage() {
         </div>
       </main>
 
-      <footer className="border-t border-border bg-white mt-10">
-        <div className="max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-muted">© {new Date().getFullYear()} RecruitAI • <a href={siteUrl} target="_blank" rel="noopener" className="underline">{siteUrl.replace('https://','')}</a> • <a href={`mailto:${contactEmail}`} className="underline">{contactEmail}</a></div>
-          <div className="flex flex-wrap gap-6 text-sm font-medium">
-            <Link href="/privacy" className="text-foreground font-semibold">Privacy</Link>
-            <Link href="/terms" className="text-muted hover:text-foreground">Terms</Link>
-            <Link href="/data-deletion" className="text-muted hover:text-foreground">Data Deletion</Link>
-            <Link href="/support" className="text-muted hover:text-foreground">Support</Link>
-            <Link href="/" className="text-muted hover:text-foreground">Home</Link>
-          </div>
-        </div>
-      </footer>
+      {/* Reusable Footer Component */}
+      <Footer className="mt-12" />
     </div>
   );
 }
