@@ -30,6 +30,29 @@ class FallbackSupabaseClient:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # ── 0. users table ──────────────────────────────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                full_name TEXT,
+                avatar_url TEXT,
+                phone TEXT,
+                company_name TEXT,
+                company_website TEXT,
+                role TEXT NOT NULL DEFAULT 'recruiter',
+                preferences TEXT DEFAULT '{"email_alerts":true,"theme":"system","blind_mode_default":true,"auto_rubric":true}',
+                last_sign_in_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Insert default local recruiter user if missing
+        cursor.execute("""
+            INSERT OR IGNORE INTO users (id, email, full_name, role)
+            VALUES ('local_dev_user_123', 'recruiter@recruitai.local', 'Lead Recruiter', 'recruiter')
+        """)
+
         # ── 1. jobs table ───────────────────────────────────────────────────
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS jobs (

@@ -15,6 +15,7 @@ drop table if exists public.resume_chunks cascade;
 drop table if exists public.candidates cascade;
 drop table if exists public.chat_sessions cascade;
 drop table if exists public.jobs cascade;
+drop table if exists public.users cascade;
 
 -- Drop all overloaded versions of match_resume_chunks cleanly
 drop function if exists public.match_resume_chunks(vector, double precision, integer, text, uuid) cascade;
@@ -26,13 +27,43 @@ drop function if exists public.match_resume_chunks(vector, float, int, text) cas
 drop function if exists public.match_resume_chunks(vector, float, int, uuid, uuid) cascade;
 drop function if exists public.match_resume_chunks(vector, float, int) cascade;
 drop function if exists public.set_updated_at() cascade;
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.handle_user_updated() cascade;
 
 -- ============================================================
--- 3. JOBS — normalized job postings
+-- 3. USERS — synchronized recruiter profiles
+-- ============================================================
+create table public.users (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  full_name text,
+  avatar_url text,
+  phone text,
+  company_name text,
+  company_website text,
+  role text not null default 'recruiter'
+    check (role in ('recruiter', 'employer')),
+  preferences jsonb not null default '{
+    "email_alerts": true,
+    "theme": "system",
+    "blind_mode_default": true,
+    "auto_rubric": true
+  }'::jsonb,
+  last_sign_in_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index idx_users_email on public.users(email);
+create index idx_users_role on public.users(role);
+create index idx_users_created_at on public.users(created_at);
+
+-- ============================================================
+-- 4. JOBS — normalized job postings
 -- ============================================================
 create table public.jobs (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
   title text not null,
   raw_jd text,                     -- original raw/pasted job description text
   jd_structured jsonb,             -- parsed skills, requirements, experience, tone
@@ -209,6 +240,9 @@ begin
 end;
 $$ language plpgsql;
 
+create trigger trg_users_updated_at before update on public.users
+  for each row execute function public.set_updated_at();
+
 create trigger trg_jobs_updated_at before update on public.jobs
   for each row execute function public.set_updated_at();
 
@@ -224,9 +258,111 @@ create trigger trg_interviews_updated_at before update on public.interviews
 create trigger trg_chat_sessions_updated_at before update on public.chat_sessions
   for each row execute function public.set_updated_at();
 
+-- User auto-creation trigger on auth.users
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.users (
+    id,
+    email,
+    full_name,
+    avatar_url,
+    phone,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  ) values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      split_part(new.email, '@', 1)
+    ),
+    new.raw_user_meta_data->>'avatar_url',
+    new.phone,
+    new.last_sign_in_at,
+    coalesce(new.created_at, now()),
+    now()
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = coalesce(public.users.full_name, excluded.full_name),
+    avatar_url = coalesce(public.users.avatar_url, excluded.avatar_url),
+    last_sign_in_at = excluded.last_sign_in_at,
+    updated_at = now();
+
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- User auto-update trigger on auth.users
+create or replace function public.handle_user_updated()
+returns trigger as $$
+begin
+  update public.users set
+    email = coalesce(new.email, public.users.email),
+    full_name = coalesce(
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      public.users.full_name
+    ),
+    avatar_url = coalesce(new.raw_user_meta_data->>'avatar_url', public.users.avatar_url),
+    phone = coalesce(new.phone, public.users.phone),
+    last_sign_in_at = new.last_sign_in_at,
+    updated_at = now()
+  where id = new.id;
+
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists on_auth_user_updated on auth.users;
+create trigger on_auth_user_updated
+  after update on auth.users
+  for each row execute function public.handle_user_updated();
+
+-- Backfill existing auth.users into public.users
+insert into public.users (
+  id,
+  email,
+  full_name,
+  avatar_url,
+  phone,
+  last_sign_in_at,
+  created_at,
+  updated_at
+)
+select
+  id,
+  coalesce(email, ''),
+  coalesce(
+    raw_user_meta_data->>'full_name',
+    raw_user_meta_data->>'name',
+    split_part(email, '@', 1)
+  ),
+  raw_user_meta_data->>'avatar_url',
+  phone,
+  last_sign_in_at,
+  coalesce(created_at, now()),
+  now()
+from auth.users
+on conflict (id) do update set
+  email = excluded.email,
+  full_name = coalesce(public.users.full_name, excluded.full_name),
+  avatar_url = coalesce(public.users.avatar_url, excluded.avatar_url),
+  last_sign_in_at = excluded.last_sign_in_at,
+  updated_at = now();
+
 -- ============================================================
 -- 12. Row Level Security (RLS) — strict user isolation
 -- ============================================================
+alter table public.users enable row level security;
 alter table public.jobs enable row level security;
 alter table public.candidates enable row level security;
 alter table public.resume_chunks enable row level security;
@@ -234,6 +370,9 @@ alter table public.applications enable row level security;
 alter table public.interviews enable row level security;
 alter table public.chat_sessions enable row level security;
 alter table public.chat_messages enable row level security;
+
+create policy "Users manage their own profile" on public.users
+  for all using (auth.uid() = id) with check (auth.uid() = id);
 
 create policy "Users manage their own jobs" on public.jobs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

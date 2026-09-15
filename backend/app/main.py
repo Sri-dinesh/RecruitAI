@@ -7,6 +7,7 @@ from app.api.routes_reports import router as reports_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
+from app.api.routes_users import router as users_router
 
 import os
 
@@ -46,6 +47,7 @@ app.include_router(reports_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
+app.include_router(users_router)
 
 @app.get("/")
 def read_root():
