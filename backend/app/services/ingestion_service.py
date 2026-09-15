@@ -8,9 +8,10 @@ from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
 from app.core.auth import _ensure_valid_uuid
 
-def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
+def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Optional[str] = None) -> str:
     """
     Persists or updates a single candidate record in public.candidates table.
+    Associates the candidate with a specific campaign session for complete isolation.
     Returns the persistent UUID string for candidate_id.
     """
     client = get_supabase_client()
@@ -35,18 +36,34 @@ def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
         "certifications": candidate.certifications or [],
         "languages": candidate.languages or [],
     }
+    if session_id:
+        meta["session_id"] = session_id
+        meta["session_ids"] = [session_id]
 
     try:
         # Check if candidate exists for this recruiter by (user_id, email)
         existing = (
             client.table("candidates")
-            .select("id")
+            .select("id, metadata")
             .eq("user_id", user_id)
             .eq("email", email)
             .execute()
         )
         if existing.data and len(existing.data) > 0:
             cand_id = existing.data[0]["id"]
+            existing_meta = existing.data[0].get("metadata") or {}
+            if isinstance(existing_meta, str):
+                try:
+                    existing_meta = json.loads(existing_meta)
+                except Exception:
+                    existing_meta = {}
+            # Merge session_ids
+            merged_session_ids = set(existing_meta.get("session_ids", []))
+            if session_id:
+                merged_session_ids.add(session_id)
+                meta["session_id"] = session_id
+            meta["session_ids"] = list(merged_session_ids)
+
             client.table("candidates").update({
                 "full_name": candidate.name,
                 "phone": candidate.phone,
@@ -72,9 +89,11 @@ def upsert_candidate_record(candidate: Candidate, user_id: str) -> str:
         return _ensure_valid_uuid(candidate.candidate_id) if candidate.candidate_id else str(uuid.uuid4())
 
 
-def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -> str:
+def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "", session_id: Optional[str] = None) -> str:
     """
     Persists or updates a job description record in public.jobs table.
+    If session_id is provided, automatically binds job to chat_sessions.job_id,
+    updates campaign title, and scores any existing candidates in this session.
     Returns the job_id UUID.
     """
     client = get_supabase_client()
@@ -93,7 +112,57 @@ def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -
         }
         res = client.table("jobs").insert(payload).execute()
         if res.data and len(res.data) > 0:
-            return str(res.data[0]["id"])
+            job_id = str(res.data[0]["id"])
+
+        if session_id:
+            # Bind job to campaign session
+            client.table("chat_sessions").update({
+                "job_id": job_id,
+                "title": f"Hiring: {title}"
+            }).eq("id", session_id).eq("user_id", user_id).execute()
+
+            # Score any existing candidates belonging to this session
+            cand_res = client.table("candidates").select("id, full_name, raw_resume_text, metadata").eq("user_id", user_id).execute()
+            for c in (cand_res.data or []):
+                c_meta = c.get("metadata") or {}
+                if isinstance(c_meta, str):
+                    try:
+                        c_meta = json.loads(c_meta)
+                    except Exception:
+                        c_meta = {}
+                if c_meta.get("session_id") == session_id or session_id in c_meta.get("session_ids", []):
+                    from app.services.matching_service import evaluate_candidate_against_jd
+                    c_obj = Candidate(
+                        candidate_id=c["id"],
+                        name=c["full_name"],
+                        skills=c_meta.get("skills", []),
+                        work_experience=c_meta.get("work_experience", []),
+                        education=c_meta.get("education", []),
+                        certifications=c_meta.get("certifications", []),
+                        experience_years=c_meta.get("experience_years", 0),
+                        raw_text=c.get("raw_resume_text") or ""
+                    )
+                    scored = evaluate_candidate_against_jd(c_obj, jd)
+                    client.table("applications").upsert({
+                        "job_id": job_id,
+                        "candidate_id": c["id"],
+                        "user_id": user_id,
+                        "match_score": scored.match_score,
+                        "match_reasoning": {
+                            "matched_skills": scored.matched_skills,
+                            "gaps": scored.gaps,
+                            "red_flags": scored.red_flags,
+                            "summary": scored.summary,
+                        },
+                        "status": "new"
+                    }).execute()
+                    
+                    c_meta["match_score"] = scored.match_score
+                    c_meta["matched_skills"] = scored.matched_skills
+                    c_meta["gaps"] = scored.gaps
+                    c_meta["red_flags"] = scored.red_flags
+                    c_meta["summary"] = scored.summary
+                    client.table("candidates").update({"metadata": c_meta}).eq("id", c["id"]).execute()
     except Exception as e:
         print(f"[ingestion] Warning: Error saving job to DB: {e}")
     return job_id
@@ -101,21 +170,76 @@ def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "") -
 
 def ingest_candidate_object(
     candidate: Candidate, 
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None
 ) -> Candidate:
     """
     Ingests an already parsed Candidate object:
-    1. Upserts candidate record into public.candidates (obtains UUID)
-    2. Chunks resume text and embeds vectors
-    3. Upserts chunks into public.resume_chunks
+    1. Upserts candidate record into public.candidates (obtains UUID and scopes to session)
+    2. If campaign session already has an active JD, scores candidate and saves application
+    3. Chunks resume text and embeds vectors
+    4. Upserts chunks into public.resume_chunks
     """
     from app.core import config
     if not user_id or user_id == "local_dev_user_123":
         user_id = config.LOCAL_DEV_USER_ID
     user_id = _ensure_valid_uuid(user_id)
     raw_text = candidate.raw_text or ""
-    cand_uuid = upsert_candidate_record(candidate, user_id)
+    cand_uuid = upsert_candidate_record(candidate, user_id, session_id=session_id)
     candidate.candidate_id = cand_uuid
+
+    # If session has an active JD, score immediately
+    if session_id:
+        try:
+            client = get_supabase_client()
+            sess_res = client.table("chat_sessions").select("job_id").eq("id", session_id).eq("user_id", user_id).execute()
+            if sess_res.data and sess_res.data[0].get("job_id"):
+                job_id = sess_res.data[0]["job_id"]
+                job_res = client.table("jobs").select("jd_structured").eq("id", job_id).execute()
+                if job_res.data and job_res.data[0].get("jd_structured"):
+                    from app.services.matching_service import evaluate_candidate_against_jd
+                    from app.schemas.jd_schema import JobDescription
+                    jd_data = job_res.data[0]["jd_structured"]
+                    if isinstance(jd_data, str):
+                        jd_data = json.loads(jd_data)
+                    jd_obj = JobDescription(**jd_data)
+                    scored = evaluate_candidate_against_jd(candidate, jd_obj)
+                    candidate.match_score = scored.match_score
+                    candidate.matched_skills = scored.matched_skills
+                    candidate.gaps = scored.gaps
+                    candidate.red_flags = scored.red_flags
+                    candidate.summary = scored.summary
+                    client.table("applications").upsert({
+                        "job_id": job_id,
+                        "candidate_id": cand_uuid,
+                        "user_id": user_id,
+                        "match_score": scored.match_score,
+                        "match_reasoning": {
+                            "matched_skills": scored.matched_skills,
+                            "gaps": scored.gaps,
+                            "red_flags": scored.red_flags,
+                            "summary": scored.summary,
+                        },
+                        "status": "new"
+                    }).execute()
+
+                    # Update candidates table metadata
+                    cand_rec = client.table("candidates").select("metadata").eq("id", cand_uuid).execute()
+                    if cand_rec.data:
+                        curr_meta = cand_rec.data[0].get("metadata") or {}
+                        if isinstance(curr_meta, str):
+                            try:
+                                curr_meta = json.loads(curr_meta)
+                            except Exception:
+                                curr_meta = {}
+                        curr_meta["match_score"] = scored.match_score
+                        curr_meta["matched_skills"] = scored.matched_skills
+                        curr_meta["gaps"] = scored.gaps
+                        curr_meta["red_flags"] = scored.red_flags
+                        curr_meta["summary"] = scored.summary
+                        client.table("candidates").update({"metadata": curr_meta}).eq("id", cand_uuid).execute()
+        except Exception as eval_err:
+            print(f"[ingestion] Non-fatal error auto-scoring candidate against session JD: {eval_err}")
 
     if not raw_text:
         return candidate
@@ -144,23 +268,7 @@ def ingest_candidate_object(
         pass
 
     upsert_chunks(formatted_chunks)
-
-    # 4. Auto-link candidate to active job in public.applications
-    try:
-        active_job = client.table("jobs").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if active_job.data:
-            job_id = active_job.data[0]["id"]
-            existing_app = client.table("applications").select("id").eq("job_id", job_id).eq("candidate_id", cand_uuid).eq("user_id", user_id).execute()
-            if not existing_app.data:
-                client.table("applications").insert({
-                    "job_id": job_id,
-                    "candidate_id": cand_uuid,
-                    "user_id": user_id,
-                    "match_score": candidate.match_score,
-                    "status": "new"
-                }).execute()
-    except Exception as exc:
-        print(f"[ingestion] Notice: Auto-link application skipped: {exc}")
+    return candidate
 
     return candidate
 

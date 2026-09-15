@@ -217,6 +217,12 @@ class TableBuilder:
         self.update_data = data
         return self
 
+    def upsert(self, data: Any, on_conflict: Optional[str] = None):
+        self.query_type = 'upsert'
+        self.upsert_data = data
+        self.on_conflict = on_conflict
+        return self
+
     def delete(self):
         self.query_type = 'delete'
         return self
@@ -435,6 +441,51 @@ class TableBuilder:
                 
                 cursor.execute(sql, params)
                 result_data = []
+
+            elif self.query_type == 'upsert':
+                rows_to_upsert = self.upsert_data if isinstance(self.upsert_data, list) else [self.upsert_data]
+                upserted_rows = []
+                for row_data in rows_to_upsert:
+                    d = self._serialize_row(row_data)
+                    existing_id = None
+                    if self.table_name == 'applications' and 'job_id' in d and 'candidate_id' in d:
+                        cursor.execute("SELECT id FROM applications WHERE job_id = ? AND candidate_id = ?", (d['job_id'], d['candidate_id']))
+                        found = cursor.fetchone()
+                        if found:
+                            existing_id = found['id']
+                    elif self.table_name == 'users' and 'email' in d:
+                        cursor.execute("SELECT id FROM users WHERE email = ?", (d['email'],))
+                        found = cursor.fetchone()
+                        if found:
+                            existing_id = found['id']
+                    elif 'id' in d and d['id']:
+                        cursor.execute(f"SELECT id FROM {self.table_name} WHERE id = ?", (d['id'],))
+                        found = cursor.fetchone()
+                        if found:
+                            existing_id = found['id']
+
+                    if existing_id:
+                        d['id'] = existing_id
+                        set_clauses = [f"{k} = ?" for k in d.keys() if k != 'id']
+                        params = [d[k] for k in d.keys() if k != 'id'] + [existing_id]
+                        if set_clauses:
+                            cursor.execute(f"UPDATE {self.table_name} SET {', '.join(set_clauses)} WHERE id = ?", params)
+                        cursor.execute(f"SELECT * FROM {self.table_name} WHERE id = ?", (existing_id,))
+                        res_row = cursor.fetchone()
+                        if res_row:
+                            upserted_rows.append(self._deserialize_row(res_row))
+                    else:
+                        if 'id' not in d or not d['id']:
+                            d['id'] = str(uuid.uuid4())
+                        cols_list = list(d.keys())
+                        placeholders = ", ".join(["?"] * len(cols_list))
+                        cursor.execute(f"INSERT INTO {self.table_name} ({', '.join(cols_list)}) VALUES ({placeholders})", list(d.values()))
+                        cursor.execute(f"SELECT * FROM {self.table_name} WHERE id = ?", (d['id'],))
+                        res_row = cursor.fetchone()
+                        if res_row:
+                            upserted_rows.append(self._deserialize_row(res_row))
+
+                result_data = upserted_rows
 
             conn.commit()
         finally:

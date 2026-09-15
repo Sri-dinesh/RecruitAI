@@ -8,6 +8,8 @@ chat_sessions, chat_messages).
 
 import uuid
 import logging
+import json
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -369,7 +371,7 @@ async def send_email_endpoint(
 @router.get("/sessions")
 async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
     """
-    Returns all campaign sessions belonging to the authenticated user with candidate counts.
+    Returns all campaign sessions belonging to the authenticated user with strictly isolated candidate counts.
     """
     client = get_supabase_client()
     try:
@@ -382,8 +384,9 @@ async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
         )
         sessions_list = res.data or []
 
-        # Calculate live candidate counts
-        cands_cnt = len(client.table("candidates").select("id").eq("user_id", user_id).execute().data or [])
+        cand_res = client.table("candidates").select("id, metadata").eq("user_id", user_id).execute()
+        all_cands = cand_res.data or []
+
         apps_res = client.table("applications").select("job_id, candidate_id").eq("user_id", user_id).execute()
         apps_by_job: Dict[str, set] = {}
         for app in (apps_res.data or []):
@@ -392,11 +395,22 @@ async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
                 apps_by_job.setdefault(jid, set()).add(app["candidate_id"])
 
         for s in sessions_list:
+            sid = s["id"]
             jid = s.get("job_id")
+            s_cand_ids = set()
+            for c in all_cands:
+                meta = c.get("metadata") or {}
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                if meta.get("session_id") == sid or sid in meta.get("session_ids", []):
+                    s_cand_ids.add(c["id"])
             if jid and jid in apps_by_job:
-                s["candidate_count"] = len(apps_by_job[jid])
-            else:
-                s["candidate_count"] = cands_cnt
+                s_cand_ids.update(apps_by_job[jid])
+
+            s["candidate_count"] = len(s_cand_ids)
 
         return sessions_list
     except Exception as exc:
@@ -430,13 +444,38 @@ async def create_session_endpoint(user_id: str = Depends(get_current_user_id)):
             "content": greeting_text
         }).execute()
 
-        if not session_res.data:
-            raise HTTPException(status_code=500, detail="Failed to create session")
-        return session_res.data[0]
-    except HTTPException:
-        raise
+        return {
+            "id": session_id,
+            "user_id": user_id,
+            "title": "New Hiring Campaign",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "candidate_count": 0,
+            "conversation_history": [{"role": "assistant", "content": greeting_text}],
+            "resumes": [],
+            "scheduled_interviews": []
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
+
+
+@router.post("/sessions/reset-all")
+async def reset_all_data_endpoint(user_id: str = Depends(get_current_user_id)):
+    """
+    Completely wipes all campaign sessions, jobs, candidates, applications, and interviews
+    belonging to the current authenticated user for a 100% fresh start.
+    """
+    client = get_supabase_client()
+    try:
+        client.table("chat_messages").delete().eq("user_id", user_id).execute()
+        client.table("interviews").delete().eq("user_id", user_id).execute()
+        client.table("applications").delete().eq("user_id", user_id).execute()
+        client.table("resume_chunks").delete().eq("user_id", user_id).execute()
+        client.table("candidates").delete().eq("user_id", user_id).execute()
+        client.table("chat_sessions").delete().eq("user_id", user_id).execute()
+        client.table("jobs").delete().eq("user_id", user_id).execute()
+        return {"success": True, "message": "All recruitment workspace data successfully reset for fresh start."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error during reset: {e}")
 
 
 @router.get("/sessions/{session_id}")
@@ -445,13 +484,13 @@ async def get_session_details_endpoint(
     user_id: str = Depends(get_current_user_id),
 ):
     """
-    Returns the aggregated view of a campaign session for the frontend:
+    Returns the aggregated view of a campaign session with STRICT data isolation:
     - Session metadata from `chat_sessions`
     - Conversation messages from `chat_messages`
     - Structured JD from `jobs` (via `job_id`)
-    - Candidates from `candidates`
-    - Shortlist/evaluations from `applications`
-    - Scheduled interviews from `interviews`
+    - Candidates strictly belonging to this session
+    - Shortlist/evaluations from `applications` for this session's job
+    - Scheduled interviews for candidates in this session
     """
     client = get_supabase_client()
     try:
@@ -495,7 +534,7 @@ async def get_session_details_endpoint(
             if job_res.data and job_res.data[0].get("jd_structured"):
                 jd_structured = job_res.data[0]["jd_structured"]
 
-        # 4. Fetch candidate records from `candidates` and application statuses
+        # 4. Fetch candidate records from `candidates` and application statuses strictly for this session
         cand_res = (
             client.table("candidates")
             .select("id, full_name, email, phone, raw_resume_text, metadata")
@@ -510,18 +549,107 @@ async def get_session_details_endpoint(
             .eq("user_id", user_id)
             .execute()
         )
-        apps_by_cand = {}
+        apps_for_this_job = {}
+        candidate_ids_in_job_apps = set()
         for a in (apps_res.data or []):
-            cid = a["candidate_id"]
-            if cid not in apps_by_cand or (job_id and a.get("job_id") == job_id):
-                apps_by_cand[cid] = a
+            if job_id and a.get("job_id") == job_id:
+                apps_for_this_job[a["candidate_id"]] = a
+                candidate_ids_in_job_apps.add(a["candidate_id"])
 
         candidates_list = []
+        session_candidate_ids = set()
         for c in (cand_res.data or []):
             meta = c.get("metadata") or {}
-            app_data = apps_by_cand.get(c["id"]) or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+
+            # Strict campaign isolation:
+            belongs_to_this_session = (
+                meta.get("session_id") == session_id
+                or session_id in meta.get("session_ids", [])
+                or c["id"] in candidate_ids_in_job_apps
+            )
+            if not belongs_to_this_session:
+                continue
+
+            session_candidate_ids.add(c["id"])
+            app_data = apps_for_this_job.get(c["id"]) or {}
+            reasoning = app_data.get("match_reasoning") or {}
+            if isinstance(reasoning, str):
+                try:
+                    reasoning = json.loads(reasoning)
+                except Exception:
+                    reasoning = {}
+
             cand_status = app_data.get("status") or meta.get("status") or "new"
             cand_score = app_data.get("match_score") if app_data.get("match_score") is not None else meta.get("match_score")
+            matched = reasoning.get("matched_skills") or meta.get("matched_skills") or []
+            gaps = reasoning.get("gaps") or meta.get("gaps") or []
+            red_flags = reasoning.get("red_flags") or meta.get("red_flags") or []
+            summary = reasoning.get("summary") or meta.get("summary") or ""
+
+            # Dynamic on-the-fly score calculation if JD is attached to session and candidate lacks score/matched_skills
+            if jd_structured and (cand_score is None or (not matched and not gaps)):
+                try:
+                    from app.services.matching_service import evaluate_candidate_against_jd
+                    from app.schemas.jd_schema import JobDescription
+                    from app.schemas.candidate_schema import Candidate
+                    
+                    jd_dict = jd_structured
+                    if isinstance(jd_dict, str):
+                        jd_dict = json.loads(jd_dict)
+                    jd_model = JobDescription(**jd_dict)
+
+                    c_model = Candidate(
+                        candidate_id=c["id"],
+                        name=c["full_name"],
+                        skills=meta.get("skills", []),
+                        work_experience=meta.get("work_experience", []),
+                        education=meta.get("education", []),
+                        certifications=meta.get("certifications", []),
+                        experience_years=meta.get("experience_years", 0),
+                        raw_text=c.get("raw_resume_text") or "",
+                        email=c.get("email"),
+                        phone=c.get("phone"),
+                        location=meta.get("location"),
+                        headline=meta.get("headline")
+                    )
+                    scored = evaluate_candidate_against_jd(c_model, jd_model)
+                    cand_score = scored.match_score
+                    matched = scored.matched_skills
+                    gaps = scored.gaps
+                    red_flags = scored.red_flags
+                    summary = scored.summary
+
+                    # Persist dynamically to applications table
+                    if job_id:
+                        client.table("applications").upsert({
+                            "job_id": job_id,
+                            "candidate_id": c["id"],
+                            "user_id": user_id,
+                            "match_score": cand_score,
+                            "match_reasoning": {
+                                "matched_skills": matched,
+                                "gaps": gaps,
+                                "red_flags": red_flags,
+                                "summary": summary
+                            },
+                            "status": cand_status
+                        }).execute()
+
+                    # Update candidates table metadata
+                    meta["match_score"] = cand_score
+                    meta["matched_skills"] = matched
+                    meta["gaps"] = gaps
+                    meta["red_flags"] = red_flags
+                    meta["summary"] = summary
+                    client.table("candidates").update({"metadata": meta}).eq("id", c["id"]).execute()
+                except Exception as eval_err:
+                    print(f"[routes_chat] Notice: on-the-fly candidate scoring skipped: {eval_err}")
+
             candidates_list.append({
                 "candidate_id": c["id"],
                 "name": c["full_name"],
@@ -535,9 +663,14 @@ async def get_session_details_endpoint(
                 "education": meta.get("education", []),
                 "experience_years": meta.get("experience_years", 0),
                 "location": meta.get("location"),
-                "matched_skills": meta.get("matched_skills", []),
-                "gaps": meta.get("gaps", []),
-                "red_flags": meta.get("red_flags", []),
+                "matched_skills": matched,
+                "gaps": gaps,
+                "red_flags": red_flags,
+                "summary": summary,
+                "headline": meta.get("headline"),
+                "certifications": meta.get("certifications", []),
+                "languages": meta.get("languages", []),
+                "links": meta.get("links", []),
             })
 
         # 5. Fetch shortlisted candidates from `applications`
@@ -551,11 +684,39 @@ async def get_session_details_endpoint(
                 .execute()
             )
             for a in (app_res.data or []):
-                cand_meta = a.get("candidates", {}).get("metadata") or {}
-                reasoning = a.get("match_reasoning") or {}
+                c_rel = a.get("candidates")
+                if not isinstance(c_rel, dict):
+                    if isinstance(c_rel, str):
+                        try:
+                            c_rel = json.loads(c_rel)
+                        except Exception:
+                            c_rel = {}
+                    else:
+                        c_rel = {}
+
+                cand_meta = c_rel.get("metadata")
+                if not isinstance(cand_meta, dict):
+                    if isinstance(cand_meta, str):
+                        try:
+                            cand_meta = json.loads(cand_meta)
+                        except Exception:
+                            cand_meta = {}
+                    else:
+                        cand_meta = {}
+
+                reasoning = a.get("match_reasoning")
+                if not isinstance(reasoning, dict):
+                    if isinstance(reasoning, str):
+                        try:
+                            reasoning = json.loads(reasoning)
+                        except Exception:
+                            reasoning = {}
+                    else:
+                        reasoning = {}
+
                 shortlist_list.append({
                     "candidate_id": a["candidate_id"],
-                    "name": a.get("candidates", {}).get("full_name") or "Candidate",
+                    "name": c_rel.get("full_name") or "Candidate",
                     "match_score": a.get("match_score"),
                     "matched_skills": reasoning.get("matched_skills", []),
                     "gaps": reasoning.get("gaps", []),
@@ -563,25 +724,42 @@ async def get_session_details_endpoint(
                     "experience_years": cand_meta.get("experience_years", 0),
                 })
 
-        # 6. Fetch scheduled interviews from `interviews`
+        # 6. Fetch scheduled interviews strictly for candidates in this session
         interviews_res = (
             client.table("interviews")
-            .select("scheduled_at, feedback, candidates(full_name)")
+            .select("candidate_id, scheduled_at, feedback, mode, meeting_link, candidates(full_name)")
             .eq("user_id", user_id)
             .order("scheduled_at", desc=False)
             .execute()
         )
         scheduled_interviews = []
         for iv in (interviews_res.data or []):
-            cand_name = (
-                iv.get("candidates", {}).get("full_name")
-                or (iv.get("feedback") or {}).get("candidate_name")
-                or "Candidate"
-            )
+            cid = iv.get("candidate_id")
+            if cid and cid not in session_candidate_ids:
+                continue
+
+            fb = iv.get("feedback")
+            if not isinstance(fb, dict):
+                if isinstance(fb, str):
+                    try:
+                        fb = json.loads(fb)
+                    except Exception:
+                        fb = {"notes": fb}
+                else:
+                    fb = {}
+
+            c_rel = iv.get("candidates")
+            if not isinstance(c_rel, dict):
+                c_rel = {}
+
+            cand_name = c_rel.get("full_name") or fb.get("candidate_name") or "Candidate"
             scheduled_interviews.append({
                 "candidate_name": cand_name,
-                "slot": iv.get("scheduled_at"),
-                "booked_at": (iv.get("feedback") or {}).get("booked_at") or iv.get("scheduled_at")
+                "slot": str(iv.get("scheduled_at")),
+                "feedback": json.dumps(fb) if isinstance(fb, dict) else str(fb),
+                "mode": iv.get("mode", "video"),
+                "meeting_link": iv.get("meeting_link"),
+                "booked_at": fb.get("booked_at") or str(iv.get("scheduled_at"))
             })
 
         return {

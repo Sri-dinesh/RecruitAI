@@ -1,7 +1,19 @@
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.auth import get_current_user_id
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    import app.rag.vector_store as vs
+    old_flag = vs._use_local_sqlite
+    vs._use_local_sqlite = True
+    app.dependency_overrides[get_current_user_id] = lambda: "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3"
+    yield
+    vs._use_local_sqlite = old_flag
+    app.dependency_overrides = {}
 
 def test_root_endpoint():
     response = client.get("/")

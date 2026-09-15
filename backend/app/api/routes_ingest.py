@@ -1,5 +1,5 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException, Depends
-from typing import List
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
+from typing import List, Optional
 from pathlib import Path
 import json
 
@@ -60,12 +60,13 @@ def resolve_filename_and_ext(filename: str, content_type: str, file_bytes: bytes
 async def upload_resumes_endpoint(
     files: List[UploadFile] = File(default=[]),
     file: UploadFile = File(default=None),
+    session_id: Optional[str] = Form(default=None),
     user_id: str = Depends(get_current_user_id)
 ):
     """
     POST endpoint to upload PDF, DOCX, or TXT candidate resumes.
     Extracts text, parses structured candidate fields with LLM,
-    persists candidate entity to public.candidates, embeds chunks to public.resume_chunks.
+    persists candidate entity scoped to campaign session, embeds chunks to public.resume_chunks.
     Accepts multiple files via 'files' or a single file via 'file' or 'files'.
     """
     upload_list = list(files)
@@ -102,8 +103,8 @@ async def upload_resumes_endpoint(
             if not candidate_parsed.raw_text or candidate_parsed.raw_text == "Empty Resume":
                 raise ValueError("No readable text could be extracted from the file.")
                 
-            # 2. Chunk, embed, and upload
-            candidate = ingest_candidate_object(candidate_parsed, user_id)
+            # 2. Chunk, embed, and upload (scoped to campaign session)
+            candidate = ingest_candidate_object(candidate_parsed, user_id, session_id=session_id)
             ingested_candidates.append(candidate)
             
         except HTTPException as http_err:
@@ -120,11 +121,13 @@ async def upload_resumes_endpoint(
 @router.post("/ingest/upload-jd", response_model=JobDescription)
 async def upload_jd_endpoint(
     file: UploadFile = File(...),
+    session_id: Optional[str] = Form(default=None),
     user_id: str = Depends(get_current_user_id)
 ):
     """
     POST endpoint to upload PDF, DOCX, or TXT Job Descriptions.
-    Extracts text, parses structured JD with LLM, and persists to public.jobs.
+    Extracts text, parses structured JD with LLM, persists to public.jobs,
+    and binds to the specified campaign session.
     """
     raw_name = file.filename or "jd.pdf"
     file_bytes = await file.read()
@@ -156,7 +159,7 @@ async def upload_jd_endpoint(
     try:
         from app.services.jd_parser import parse_structured_jd
         parsed_jd = parse_structured_jd(raw_jd_text, filename, llm_func=call_llm)
-        save_job_description(parsed_jd, user_id=user_id, raw_text=raw_jd_text)
+        save_job_description(parsed_jd, user_id=user_id, raw_text=raw_jd_text, session_id=session_id)
         return parsed_jd
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse JD: {str(e)}")
