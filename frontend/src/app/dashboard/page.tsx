@@ -6,11 +6,12 @@ import {
   Cpu, Activity, Clock, Terminal, FileText, Paperclip,
   Calendar, Mail, AlertTriangle, CheckCircle,
   Trash2, ArrowRight, Check, X,
-  Sliders, Search, Sparkles, LogOut, BarChart3
+  Sliders, Search, Sparkles, LogOut, BarChart3, Settings
 } from 'lucide-react';
 import MarkdownText from '@/components/MarkdownText';
 import { useAuth } from '@/context/AuthContext';
 import AuthModal from '@/components/AuthModal';
+import ProfileModal from '@/components/ProfileModal';
 import { fetchWithAuth } from '@/lib/apiClient';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
@@ -99,7 +100,8 @@ interface Session {
 }
 
 export default function Home() {
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, profile, loading: authLoading, logout } = useAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // ── All hooks declared unconditionally (React rule) ───────────────────────────────
   const [messages, setMessages] = useState<Message[]>([
@@ -236,6 +238,13 @@ export default function Home() {
   const [isBlindHiring, setIsBlindHiring] = useState(false);
   const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
   const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
+
+  // Synchronize initial blind hiring mode from user profile preferences
+  useEffect(() => {
+    if (profile?.preferences?.blind_mode_default !== undefined) {
+      setIsBlindHiring(profile.preferences.blind_mode_default);
+    }
+  }, [profile?.preferences?.blind_mode_default]);
 
   // Set / toggle candidate status and persist to localStorage + backend
   const handleSetStatus = async (candidateId: string, candidateName: string, status: CandidateStatus) => {
@@ -1085,26 +1094,52 @@ export default function Home() {
             {/* User Profile Footer */}
             <div className="p-3 border-t border-slate-200 mt-auto bg-slate-50">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-brand-primary font-bold text-xs shrink-0">
-                    {user?.user_metadata?.full_name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="flex items-center gap-2 overflow-hidden text-left flex-1 hover:bg-slate-200/60 p-1.5 -ml-1 rounded-xl transition-all cursor-pointer group"
+                  title="Click to edit profile & settings"
+                >
+                  <div className="w-7 h-7 rounded-full overflow-hidden bg-indigo-100 flex items-center justify-center text-brand-primary font-bold text-xs shrink-0 border border-indigo-200/60">
+                    {profile?.avatar_url || user?.user_metadata?.avatar_url ? (
+                      <img 
+                        src={profile?.avatar_url || user?.user_metadata?.avatar_url} 
+                        alt="" 
+                        className="w-full h-full object-cover" 
+                      />
+                    ) : (
+                      <span>
+                        {(profile?.full_name || user?.user_metadata?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-col truncate">
-                    <span className="text-xs font-semibold text-slate-800 truncate">
-                      {user?.user_metadata?.full_name || 'Recruiter'}
+                    <span className="text-xs font-semibold text-slate-800 truncate group-hover:text-brand-primary transition-colors">
+                      {profile?.full_name || user?.user_metadata?.full_name || 'Recruiter'}
                     </span>
                     <span className="text-[10px] text-slate-500 truncate">
                       {user?.email}
                     </span>
                   </div>
-                </div>
-                <button
-                  onClick={logout}
-                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
-                  title="Sign out"
-                >
-                  <LogOut className="w-4 h-4" />
                 </button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(true)}
+                    className="p-1.5 text-slate-400 hover:text-brand-primary hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                    title="Profile & Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0 cursor-pointer"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </aside>
@@ -1630,6 +1665,14 @@ export default function Home() {
               className="text-[10px] bg-slate-50 border border-indigo-200 hover:border-indigo-300 text-slate-800 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-sm hover:shadow-sm"
             >
               📄 <span className="hidden sm:inline">Report Preview</span><span className="sm:hidden">Report</span>
+            </button>
+            <button 
+              onClick={() => setIsProfileModalOpen(true)}
+              className="text-[10px] bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-700 px-2.5 py-1.5 rounded-xl transition-all font-bold shadow-xs hover:shadow-sm flex items-center gap-1 cursor-pointer"
+              title="Profile & Settings"
+            >
+              <Settings className="w-3.5 h-3.5 text-brand-primary" />
+              <span className="hidden sm:inline">Settings</span>
             </button>
             <button 
               onClick={clearChat}
@@ -2394,6 +2437,12 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Profile & Account Settings Modal */}
+      <ProfileModal 
+        isOpen={isProfileModalOpen} 
+        onClose={() => setIsProfileModalOpen(false)} 
+      />
 
     </main>
   );
