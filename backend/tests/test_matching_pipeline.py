@@ -136,3 +136,34 @@ def test_candidate_upload_auto_scores_against_existing_jd():
     assert cand_data["match_score"] == ingested.match_score
     assert len(cand_data["matched_skills"]) >= 2
     assert "Terraform" in cand_data["gaps"] or "Ci/Cd" in cand_data["gaps"]
+
+
+def test_zero_skill_match_does_not_inject_candidate_skills():
+    jd = JobDescription(
+        role="Distributed Systems Rust Engineer",
+        required_skills=["Rust", "Raft Consensus", "Tokio", "eBPF"],
+        experience_years=5,
+        raw_text="Hiring Rust Engineer for distributed storage engine using Raft consensus and Tokio."
+    )
+
+    candidate = Candidate(
+        candidate_id="cand-nonmatching",
+        name="Graphic Designer",
+        email="designer@studio.com",
+        experience_years=1.0,
+        skills=["Figma", "Photoshop", "Adobe Illustrator", "Sketch"],
+        raw_text="Visual designer with 1 year creating mockups, UI layouts, and brand vectors using Figma and Adobe Illustrator.",
+        education=["B.A. Graphic Design"]
+    )
+
+    scored = evaluate_candidate_against_jd(candidate, jd)
+
+    # Deceptive fallback injection must be eliminated (BUG-8)
+    assert len(scored.matched_skills) == 0, f"Expected 0 matched skills, got: {scored.matched_skills}"
+    assert "Figma" not in scored.matched_skills
+    assert "Photoshop" not in scored.matched_skills
+    # All JD required skills must be identified as gaps
+    assert "Rust" in scored.gaps
+    # Score should be low/zero
+    assert scored.match_score < 30.0
+

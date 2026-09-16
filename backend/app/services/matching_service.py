@@ -182,13 +182,6 @@ def match_skills_against_text(
                     if label not in gaps and label not in matched:
                         gaps.append(label)
 
-    # Ensure candidate's existing verified skills are also available as competencies if no direct JD matches
-    if not matched and candidate_skills:
-        for s in candidate_skills[:4]:
-            lbl = s.strip().title()
-            if lbl not in matched:
-                matched.append(lbl)
-
     return matched, gaps
 
 def calculate_5pillar_score(
@@ -226,7 +219,8 @@ def calculate_5pillar_score(
     if cand_exp >= target_exp:
         exp_score = 25.0
     else:
-        exp_score = max((cand_exp / target_exp) * 25.0, 7.0)
+        exp_floor = 7.0 if matched_skills else 0.0
+        exp_score = max((cand_exp / target_exp) * 25.0, exp_floor)
 
     # 3. System Architecture & Problem Solving (15 max)
     arch_keywords = [
@@ -237,7 +231,8 @@ def calculate_5pillar_score(
     ]
     text_lower = (candidate.raw_text or "").lower()
     arch_count = sum(1 for kw in arch_keywords if kw in text_lower)
-    arch_score = min(8.0 + (arch_count * 1.5), 15.0)
+    arch_base = 8.0 if matched_skills else 0.0
+    arch_score = min(arch_base + (arch_count * 1.5), 15.0)
 
     # 4. Leadership & Communication Signals (15 max)
     lead_keywords = [
@@ -246,21 +241,23 @@ def calculate_5pillar_score(
         "initiative", "ownership", "guided"
     ]
     lead_count = sum(1 for kw in lead_keywords if kw in text_lower)
-    lead_score = min(8.0 + (lead_count * 1.5), 15.0)
+    lead_base = 8.0 if matched_skills else 0.0
+    lead_score = min(lead_base + (lead_count * 1.5), 15.0)
 
     # 5. Education & Credentials (10 max)
     has_degree = bool(candidate.education and len(candidate.education) > 0)
     has_certs = bool(candidate.certifications and len(candidate.certifications) > 0)
-    edu_score = 5.0
+    edu_score = 5.0 if matched_skills else 0.0
     if has_degree:
         edu_score += 3.0
     if has_certs:
         edu_score += 2.0
     edu_score = min(edu_score, 10.0)
 
-    # Total Score
+    # Total Score - accurate zero/low score on non-matching candidates (BUG-8)
     raw_total = tech_score + exp_score + arch_score + lead_score + edu_score
-    total_score = round(max(min(raw_total, 97.0), 30.0), 1)
+    min_floor = 30.0 if matched_skills else 0.0
+    total_score = round(max(min(raw_total, 97.0), min_floor), 1)
 
     breakdown = {
         "technical_score": round(tech_score, 1),
