@@ -1,3 +1,5 @@
+import json
+import logging
 import uuid
 from typing import List, Optional, Dict, Any
 from app.services.resume_loader import load_resumes
@@ -7,6 +9,7 @@ from app.rag.vector_store import get_supabase_client, upsert_chunks, clear_all_c
 from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
 from app.core.auth import _ensure_valid_uuid
+
 
 def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Optional[str] = None) -> str:
     """
@@ -55,7 +58,8 @@ def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Opti
             if isinstance(existing_meta, str):
                 try:
                     existing_meta = json.loads(existing_meta)
-                except Exception:
+                except (json.JSONDecodeError, TypeError) as parse_err:
+                    logging.warning(f"[ingestion] Failed to parse existing candidate metadata JSON: {parse_err}")
                     existing_meta = {}
             # Merge session_ids
             merged_session_ids = set(existing_meta.get("session_ids", []))
@@ -128,7 +132,8 @@ def save_job_description(jd: JobDescription, user_id: str, raw_text: str = "", s
                 if isinstance(c_meta, str):
                     try:
                         c_meta = json.loads(c_meta)
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError) as parse_err:
+                        logging.warning(f"[ingestion] Failed to parse candidate metadata JSON during JD scoring: {parse_err}")
                         c_meta = {}
                 if c_meta.get("session_id") == session_id or session_id in c_meta.get("session_ids", []):
                     from app.services.matching_service import evaluate_candidate_against_jd
@@ -201,7 +206,11 @@ def ingest_candidate_object(
                     from app.schemas.jd_schema import JobDescription
                     jd_data = job_res.data[0]["jd_structured"]
                     if isinstance(jd_data, str):
-                        jd_data = json.loads(jd_data)
+                        try:
+                            jd_data = json.loads(jd_data)
+                        except (json.JSONDecodeError, TypeError) as parse_err:
+                            logging.warning(f"[ingestion] Failed to parse jd_structured JSON: {parse_err}")
+                            jd_data = {}
                     jd_obj = JobDescription(**jd_data)
                     scored = evaluate_candidate_against_jd(candidate, jd_obj)
                     candidate.match_score = scored.match_score
@@ -230,7 +239,8 @@ def ingest_candidate_object(
                         if isinstance(curr_meta, str):
                             try:
                                 curr_meta = json.loads(curr_meta)
-                            except Exception:
+                            except (json.JSONDecodeError, TypeError) as parse_err:
+                                logging.warning(f"[ingestion] Failed to parse candidate metadata JSON during score update: {parse_err}")
                                 curr_meta = {}
                         curr_meta["match_score"] = scored.match_score
                         curr_meta["matched_skills"] = scored.matched_skills
