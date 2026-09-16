@@ -173,3 +173,36 @@ def test_email_dispatch_endpoint():
         assert res.status_code == 200
         assert res.json()["status"] == "Email sent successfully"
 
+
+def test_ai_sec_1_production_gate():
+    import app.core.config as cfg
+    old_is_prod = cfg.IS_PRODUCTION
+    old_mode = cfg.LLM_DATA_USE_MODE
+    try:
+        cfg.IS_PRODUCTION = True
+        cfg.LLM_DATA_USE_MODE = "unverified"
+        with pytest.raises(RuntimeError) as exc_info:
+            cfg.verify_provider_compliance()
+        assert "FATAL SECURITY VIOLATION" in str(exc_info.value)
+
+        # Passes when verified
+        cfg.LLM_DATA_USE_MODE = "zero_retention_verified"
+        cfg.verify_provider_compliance()
+    finally:
+        cfg.IS_PRODUCTION = old_is_prod
+        cfg.LLM_DATA_USE_MODE = old_mode
+
+
+def test_llm_kill_switch():
+    import app.core.config as cfg
+    from app.core.llm_router import call_llm, AllProvidersFailedError
+    old_switch = cfg.LLM_KILL_SWITCH
+    try:
+        cfg.LLM_KILL_SWITCH = True
+        with pytest.raises(AllProvidersFailedError) as exc_info:
+            call_llm("test prompt")
+        assert "kill-switch is active" in str(exc_info.value)
+    finally:
+        cfg.LLM_KILL_SWITCH = old_switch
+
+

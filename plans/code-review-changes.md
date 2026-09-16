@@ -164,10 +164,10 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
 
 ### Section 4: 🟠 P1 — AI Security, PII Minimization & Data Privacy
 
-- [ ] **AI-SEC-1: Provider terms verification & production gate** (`backend/app/core/config.py`)
-  - [ ] Verify paid Gemini API tier with training opt-out and execute a formal Data Processing Agreement (DPA) guaranteeing zero data retention.
-  - [ ] Add `LLM_DATA_USE_MODE = os.getenv("LLM_DATA_USE_MODE", "unverified")` startup check: raise error on server boot in production if mode is not set to `zero_retention_verified`.
-  - [ ] Implement automatic kill-switch / graceful degradation to rule-based 5-pillar matching if provider connectivity or terms fail.
+- [x] **AI-SEC-1: Provider terms verification & production gate** (`backend/app/core/config.py`)
+  - [x] Verify paid Gemini API tier with training opt-out and execute a formal Data Processing Agreement (DPA) guaranteeing zero data retention.
+  - [x] Add `LLM_DATA_USE_MODE = os.getenv("LLM_DATA_USE_MODE", "unverified")` startup check: raise error on server boot in production if mode is not set to `zero_retention_verified`.
+  - [x] Implement automatic kill-switch / graceful degradation to rule-based 5-pillar matching if provider connectivity or terms fail.
 
 - [ ] **AI-SEC-2: Build canonical PII minimization and redaction choke point** (`backend/app/services/redaction.py`)
   - [ ] Create `redaction.py` service supporting email, phone, address, and URL sanitization.

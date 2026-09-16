@@ -10,8 +10,12 @@ from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_users import router as users_router
+from app.core.config import verify_provider_compliance
 
 import os
+
+# AI-SEC-1 Production gate verification on server import
+verify_provider_compliance()
 
 app = FastAPI(title="RecruitAI API Server", version="2.0")
 

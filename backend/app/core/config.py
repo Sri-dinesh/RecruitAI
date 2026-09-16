@@ -32,6 +32,25 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_SENDER = os.getenv("SMTP_SENDER", SMTP_USERNAME)
 
+# AI Security & Privacy Compliance (AI-SEC-1)
+# Production Gate: Requires formal DPA / zero data retention verification
+LLM_DATA_USE_MODE = os.getenv("LLM_DATA_USE_MODE", "unverified")
+LLM_KILL_SWITCH = os.getenv("LLM_KILL_SWITCH", "false").lower() == "true"
+
+def verify_provider_compliance():
+    """
+    AI-SEC-1: Production Gate & Provider Terms Verification.
+    Verifies that in production, LLM_DATA_USE_MODE is explicitly set to 'zero_retention_verified',
+    guaranteeing zero foundational model retention, training opt-out, and active DPA compliance.
+    Refuses to start the server in production if unverified.
+    """
+    if IS_PRODUCTION and LLM_DATA_USE_MODE != "zero_retention_verified":
+        raise RuntimeError(
+            "FATAL SECURITY VIOLATION (AI-SEC-1): LLM_DATA_USE_MODE is not 'zero_retention_verified'. "
+            "Enterprise production requires 'zero_retention_verified' with active provider DPA "
+            "and training opt-out to prevent candidate data ingestion by foundational models."
+        )
+
 def get_missing_keys():
     missing = []
     if not GEMINI_API_KEY:

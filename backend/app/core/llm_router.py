@@ -5,7 +5,7 @@ import logging
 from typing import Optional, Tuple, Any, List
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from app.core.config import GEMINI_API_KEY
+import app.core.config as config
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,10 @@ def call_llm(
     Returns (response_text, provider_used, latency_ms).
     Raises AllProvidersFailedError if all 5 Gemini models fail.
     """
-    if not GEMINI_API_KEY or "your_gemini" in GEMINI_API_KEY:
+    if config.LLM_KILL_SWITCH:
+        raise AllProvidersFailedError("LLM kill-switch is active: AI model calls disabled. Gracefully degrading to rule-based evaluation.")
+
+    if not config.GEMINI_API_KEY or "your_gemini" in config.GEMINI_API_KEY:
         raise ValueError("No valid GEMINI_API_KEY is configured in backend/.env.")
 
     order = get_next_model_order(provider_override)
@@ -118,7 +121,7 @@ def call_llm(
 
             model = ChatGoogleGenerativeAI(
                 model=model_name,
-                google_api_key=GEMINI_API_KEY,
+                google_api_key=config.GEMINI_API_KEY,
                 temperature=0.0,
                 response_mime_type="application/json" if json_mode else None,
                 timeout=30.0
