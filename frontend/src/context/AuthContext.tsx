@@ -176,6 +176,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .update(updates)
         .eq('id', user.id);
 
+      if (dbError) {
+        console.error('[AuthContext] Database error updating profile:', dbError);
+        return { error: dbError };
+      }
+
       // 2. Synchronize Supabase Auth user_metadata if full_name or avatar_url changed
       if (updates.full_name !== undefined || updates.avatar_url !== undefined) {
         const metaUpdates: Record<string, any> = {};
@@ -196,17 +201,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // 3. Keep backend local fallback / API cache in sync
       try {
         const { fetchWithAuth } = await import('@/lib/apiClient');
-        await fetchWithAuth('/api/users/me', {
+        const apiRes = await fetchWithAuth('/api/users/me', {
           method: 'PATCH',
           body: JSON.stringify(updates),
         });
+        if (!apiRes.ok && apiRes.status !== 404) {
+          console.warn(`[AuthContext] Backend sync returned HTTP ${apiRes.status}`);
+        }
       } catch (apiErr) {
-        // Backend sync is optional / best effort
+        console.warn('[AuthContext] Backend sync error:', apiErr);
       }
 
       setProfile((prev) => (prev ? { ...prev, ...updates } : (updates as UserProfile)));
-      return { error: dbError };
+      return { error: null };
     } catch (err: any) {
+      console.error('[AuthContext] Unexpected error updating profile:', err);
       return { error: err };
     }
   };
