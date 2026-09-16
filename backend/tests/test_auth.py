@@ -123,3 +123,126 @@ class TestLocalDevMode:
         res = client.get("/api/sessions")
         assert res.status_code == 200
         assert isinstance(res.json(), list)
+
+
+class TestHardenedJWTVerification:
+    """
+    SEC-1: Verifies pinned HS256 algorithm, mandatory aud/exp claims,
+    and non-UUID subject rejection with HTTP 401.
+    """
+
+    def test_valid_hs256_token_succeeds(self, monkeypatch):
+        import time
+        from jose import jwt
+        import app.core.config as cfg
+        from app.core.auth import get_current_user_id, HTTPAuthorizationCredentials
+
+        test_secret = "test-secret-key-that-is-at-least-32-bytes-long"
+        test_uuid = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+        monkeypatch.setattr(cfg, "SUPABASE_JWT_SECRET", test_secret)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
+
+        token = jwt.encode(
+            {"sub": test_uuid, "aud": "authenticated", "exp": int(time.time()) + 3600},
+            test_secret,
+            algorithm="HS256",
+        )
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        uid = get_current_user_id(credentials=creds)
+        assert uid == test_uuid
+
+    def test_reject_non_hs256_algorithm(self, monkeypatch):
+        import time
+        from jose import jwt
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        from app.core.auth import get_current_user_id, HTTPAuthorizationCredentials
+
+        test_secret = "test-secret-key-that-is-at-least-32-bytes-long"
+        test_uuid = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+        monkeypatch.setattr(cfg, "SUPABASE_JWT_SECRET", test_secret)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
+
+        # Token encoded with HS384 instead of pinned HS256
+        token = jwt.encode(
+            {"sub": test_uuid, "aud": "authenticated", "exp": int(time.time()) + 3600},
+            test_secret,
+            algorithm="HS384",
+        )
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user_id(credentials=creds)
+        assert exc_info.value.status_code == 401
+
+    def test_reject_expired_token(self, monkeypatch):
+        import time
+        from jose import jwt
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        from app.core.auth import get_current_user_id, HTTPAuthorizationCredentials
+
+        test_secret = "test-secret-key-that-is-at-least-32-bytes-long"
+        test_uuid = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+        monkeypatch.setattr(cfg, "SUPABASE_JWT_SECRET", test_secret)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
+
+        token = jwt.encode(
+            {"sub": test_uuid, "aud": "authenticated", "exp": int(time.time()) - 3600},
+            test_secret,
+            algorithm="HS256",
+        )
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user_id(credentials=creds)
+        assert exc_info.value.status_code == 401
+        assert "expired" in str(exc_info.value.detail).lower()
+
+    def test_reject_wrong_audience(self, monkeypatch):
+        import time
+        from jose import jwt
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        from app.core.auth import get_current_user_id, HTTPAuthorizationCredentials
+
+        test_secret = "test-secret-key-that-is-at-least-32-bytes-long"
+        test_uuid = "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d"
+        monkeypatch.setattr(cfg, "SUPABASE_JWT_SECRET", test_secret)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
+
+        token = jwt.encode(
+            {"sub": test_uuid, "aud": "untrusted-audience", "exp": int(time.time()) + 3600},
+            test_secret,
+            algorithm="HS256",
+        )
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user_id(credentials=creds)
+        assert exc_info.value.status_code == 401
+
+    def test_reject_non_uuid_subject(self, monkeypatch):
+        import time
+        from jose import jwt
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        from app.core.auth import get_current_user_id, HTTPAuthorizationCredentials, _ensure_valid_uuid
+
+        test_secret = "test-secret-key-that-is-at-least-32-bytes-long"
+        monkeypatch.setattr(cfg, "SUPABASE_JWT_SECRET", test_secret)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
+
+        token = jwt.encode(
+            {"sub": "not-a-valid-uuid-string", "aud": "authenticated", "exp": int(time.time()) + 3600},
+            test_secret,
+            algorithm="HS256",
+        )
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user_id(credentials=creds)
+        assert exc_info.value.status_code == 401
+        assert "UUID" in exc_info.value.detail
+
+        # Direct verification of _ensure_valid_uuid
+        with pytest.raises(HTTPException) as exc_info2:
+            _ensure_valid_uuid("arbitrary-login-name")
+        assert exc_info2.value.status_code == 401
+
