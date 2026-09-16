@@ -144,10 +144,20 @@ def test_campaign_isolation_and_reset():
     assert s_b["candidate_count"] == 1
 
     # 7. Test reset-all data
+    from app.api.routes_chat import _LAST_RESET_REQUESTS
+    _LAST_RESET_REQUESTS.clear()
+
     reset_res = client.post("/api/sessions/reset-all")
     assert reset_res.status_code == 200
     assert reset_res.json()["success"] is True
 
-    # 8. Verify all campaigns are cleared
+    # 8. Verify rate limit blocks immediate consecutive reset (SEC-3)
+    rate_limited_res = client.post("/api/sessions/reset-all")
+    assert rate_limited_res.status_code == 429
+    assert "Reset rate limit exceeded" in rate_limited_res.json()["detail"]
+    assert "Retry-After" in rate_limited_res.headers
+
+    # 9. Verify all campaigns are cleared
     remaining_sessions = client.get("/api/sessions").json()
     assert len(remaining_sessions) == 0
+

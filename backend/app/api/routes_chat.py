@@ -458,14 +458,45 @@ async def create_session_endpoint(user_id: str = Depends(get_current_user_id)):
         raise HTTPException(status_code=500, detail=f"Database error: {exc}")
 
 
+_LAST_RESET_REQUESTS: Dict[str, float] = {}
+RESET_RATE_LIMIT_SECONDS = 30.0
+
+
 @router.post("/sessions/reset-all")
 async def reset_all_data_endpoint(user_id: str = Depends(get_current_user_id)):
     """
-    Completely wipes all campaign sessions, jobs, candidates, applications, and interviews
-    belonging to the current authenticated user for a 100% fresh start.
+    Safely and transactionally wipes or resets all recruitment workspace data
+    belonging exclusively to the authenticated user.
+    Enforces per-user rate limiting, audit logging, and transactional cascade order.
     """
+    import time
+    from fastapi import status
+
+    now = time.time()
+    last_reset = _LAST_RESET_REQUESTS.get(user_id, 0.0)
+    if now - last_reset < RESET_RATE_LIMIT_SECONDS:
+        retry_after = int(RESET_RATE_LIMIT_SECONDS - (now - last_reset))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Reset rate limit exceeded. You may only reset your workspace once every {int(RESET_RATE_LIMIT_SECONDS)} seconds. Retry in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    _LAST_RESET_REQUESTS[user_id] = now
+    logging.info(f"[AUDIT] [WORKSPACE_RESET] user_id={user_id} timestamp={now} action=reset_all_data")
+
     client = get_supabase_client()
     try:
+        # 1. Primary: execute atomic transactional Postgres/SQLite RPC if available
+        try:
+            rpc_res = client.rpc("reset_user_workspace", {"target_user_id": user_id}).execute()
+            if rpc_res and getattr(rpc_res, "data", None) is not None:
+                return {"success": True, "message": "All recruitment workspace data successfully reset via atomic transaction."}
+        except Exception as rpc_err:
+            logging.warning(f"[reset-all] RPC reset_user_workspace unavailable: {rpc_err}. Falling back to cascade delete order.")
+
+        # 2. Fallback: Strict topological foreign-key cascade order deletion
+        # (leaf tables first to prevent foreign key constraint violations)
         client.table("chat_messages").delete().eq("user_id", user_id).execute()
         client.table("interviews").delete().eq("user_id", user_id).execute()
         client.table("applications").delete().eq("user_id", user_id).execute()

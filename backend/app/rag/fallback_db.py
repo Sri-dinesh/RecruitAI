@@ -558,6 +558,31 @@ class RpcBuilder:
         self.params = params
 
     def execute(self):
+        class SupabaseResponse:
+            def __init__(self, data):
+                self.data = data
+
+        if self.function_name == 'reset_user_workspace':
+            target_uid = self.params.get('target_user_id')
+            conn = get_sqlite_connection(self.db_path)
+            cursor = conn.cursor()
+            try:
+                conn.execute("BEGIN IMMEDIATE;")
+                cursor.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM interviews WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM applications WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM resume_chunks WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM candidates WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM chat_sessions WHERE user_id = ?", (target_uid,))
+                cursor.execute("DELETE FROM jobs WHERE user_id = ?", (target_uid,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+            return SupabaseResponse({"success": True})
+
         if self.function_name == 'match_resume_chunks':
             query_emb = self.params.get('query_embedding')
             match_threshold = self.params.get('match_threshold', 0.0)
