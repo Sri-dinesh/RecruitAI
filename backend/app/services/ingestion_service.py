@@ -1,6 +1,8 @@
 import json
 import logging
 import uuid
+import hashlib
+import re
 from typing import List, Optional, Dict, Any
 from app.services.resume_loader import load_resumes
 from app.rag.chunking import chunk_resume
@@ -11,9 +13,25 @@ from app.schemas.jd_schema import JobDescription
 from app.core.auth import _ensure_valid_uuid
 
 
+def compute_resume_hash(raw_text: str) -> Optional[str]:
+    """
+    Computes a deterministic SHA-256 hash from normalized resume text (BUG-5).
+    Strips irregular whitespace and lowercases to deduplicate identical resumes.
+    """
+    if not raw_text:
+        return None
+    normalized = re.sub(r"\s+", " ", raw_text.strip().lower())
+    if len(normalized) < 20:
+        return None
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Optional[str] = None) -> str:
     """
     Persists or updates a single candidate record in public.candidates table.
+    Performs deterministic candidate deduplication:
+    1. Primary: SHA-256 hash of normalized resume text
+    2. Secondary: Verified real email address
     Associates the candidate with a specific campaign session for complete isolation.
     Returns the persistent UUID string for candidate_id.
     """
@@ -24,7 +42,11 @@ def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Opti
         fallback_tag = candidate.candidate_id or uuid.uuid4().hex[:8]
         email = f"{fallback_tag}@recruitai.local"
 
+    raw_text = candidate.raw_text or ""
+    resume_hash = compute_resume_hash(raw_text)
+
     meta: Dict[str, Any] = {
+        "resume_hash": resume_hash,
         "skills": candidate.skills or [],
         "work_experience": candidate.work_experience or [],
         "education": candidate.education or [],
@@ -44,17 +66,31 @@ def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Opti
         meta["session_ids"] = [session_id]
 
     try:
-        # Check if candidate exists for this recruiter by (user_id, email)
-        existing = (
-            client.table("candidates")
-            .select("id, metadata")
-            .eq("user_id", user_id)
-            .eq("email", email)
-            .execute()
-        )
-        if existing.data and len(existing.data) > 0:
-            cand_id = existing.data[0]["id"]
-            existing_meta = existing.data[0].get("metadata") or {}
+        existing_cand = None
+
+        # 1. Primary Deduplication: Match by SHA-256 hash of normalized resume text (BUG-5)
+        if resume_hash:
+            cands_check = client.table("candidates").select("id, metadata, email").eq("user_id", user_id).execute()
+            for cand_row in (cands_check.data or []):
+                c_meta = cand_row.get("metadata") or {}
+                if isinstance(c_meta, str):
+                    try:
+                        c_meta = json.loads(c_meta)
+                    except (json.JSONDecodeError, TypeError):
+                        c_meta = {}
+                if c_meta.get("resume_hash") == resume_hash:
+                    existing_cand = cand_row
+                    break
+
+        # 2. Secondary Deduplication: Verified real email address
+        if not existing_cand and email and not email.endswith("@recruitai.local") and "@" in email:
+            email_check = client.table("candidates").select("id, metadata").eq("user_id", user_id).eq("email", email).limit(1).execute()
+            if email_check.data and len(email_check.data) > 0:
+                existing_cand = email_check.data[0]
+
+        if existing_cand:
+            cand_id = existing_cand["id"]
+            existing_meta = existing_cand.get("metadata") or {}
             if isinstance(existing_meta, str):
                 try:
                     existing_meta = json.loads(existing_meta)

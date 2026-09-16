@@ -1,5 +1,5 @@
-from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
-from typing import List, Optional
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends, Response, status
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 import json
 
@@ -56,8 +56,9 @@ def resolve_filename_and_ext(filename: str, content_type: str, file_bytes: bytes
     return clean_name, inferred_ext
 
 
-@router.post("/ingest/upload", response_model=List[Candidate])
+@router.post("/ingest/upload")
 async def upload_resumes_endpoint(
+    response: Response,
     files: List[UploadFile] = File(default=[]),
     file: UploadFile = File(default=None),
     session_id: Optional[str] = Form(default=None),
@@ -65,6 +66,7 @@ async def upload_resumes_endpoint(
 ):
     """
     POST endpoint to upload PDF, DOCX, or TXT candidate resumes.
+    Implements partial-failure semantics with HTTP 207 Multi-Status (BUG-5).
     Extracts text, parses structured candidate fields with LLM,
     persists candidate entity scoped to campaign session, embeds chunks to public.resume_chunks.
     Accepts multiple files via 'files' or a single file via 'file' or 'files'.
@@ -74,48 +76,78 @@ async def upload_resumes_endpoint(
         upload_list.append(file)
     if not upload_list:
         raise HTTPException(status_code=400, detail="No resume files were provided.")
-        
-    ingested_candidates = []
-    
+
+    results: List[Dict[str, Any]] = []
+    has_success = False
+    has_failure = False
+
     for f in upload_list:
         raw_name = f.filename or "resume.pdf"
-        file_bytes = await f.read()
-        
-        filename, extension = resolve_filename_and_ext(raw_name, f.content_type or "", file_bytes)
-        
-        SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".text", ".png", ".jpg", ".jpeg"]
-        if extension not in SUPPORTED_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
-            )
-            
-        if len(file_bytes) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{filename}' exceeds maximum allowed size of 15 MB."
-            )
-        
         try:
+            file_bytes = await f.read()
+            filename, extension = resolve_filename_and_ext(raw_name, f.content_type or "", file_bytes)
+
+            SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".text", ".png", ".jpg", ".jpeg"]
+            if extension not in SUPPORTED_EXTENSIONS:
+                has_failure = True
+                results.append({
+                    "filename": raw_name,
+                    "status": "failed",
+                    "error": f"Unsupported file format '{extension}'. Supported formats: PDF, DOCX, TXT, PNG, JPG."
+                })
+                continue
+
+            if len(file_bytes) > MAX_UPLOAD_SIZE:
+                has_failure = True
+                results.append({
+                    "filename": raw_name,
+                    "status": "failed",
+                    "error": f"File '{filename}' exceeds maximum allowed size of 15 MB."
+                })
+                continue
+
             # 1. Parse resume
             candidate_parsed = parse_resume_via_api(file_bytes, filename)
-            
             if not candidate_parsed.raw_text or candidate_parsed.raw_text == "Empty Resume":
-                raise ValueError("No readable text could be extracted from the file.")
-                
-            # 2. Chunk, embed, and upload (scoped to campaign session)
+                has_failure = True
+                results.append({
+                    "filename": raw_name,
+                    "status": "failed",
+                    "error": "No readable text could be extracted from the file."
+                })
+                continue
+
+            # 2. Chunk, embed, and upload (scoped to campaign session with deterministic dedup)
             candidate = ingest_candidate_object(candidate_parsed, user_id, session_id=session_id)
-            ingested_candidates.append(candidate)
-            
-        except HTTPException as http_err:
-            raise http_err
-        except ValueError as val_err:
-            raise HTTPException(status_code=400, detail=f"Parsing error in '{filename}': {str(val_err)}")
+            has_success = True
+            item = candidate.model_dump()
+            item.update({
+                "filename": filename,
+                "status": "success",
+                "candidate_id": candidate.candidate_id,
+                "name": candidate.name
+            })
+            results.append(item)
+
         except Exception as e:
-            print(f"Error ingesting uploaded resume '{filename}': {e}")
-            raise HTTPException(status_code=500, detail=f"Internal error ingesting '{filename}': {str(e)}")
-            
-    return ingested_candidates
+            has_failure = True
+            results.append({
+                "filename": raw_name,
+                "status": "failed",
+                "error": f"Error ingesting '{raw_name}': {str(e)}"
+            })
+
+    # If single file and it failed, raise 400 for standard validation errors
+    if len(upload_list) == 1 and has_failure and not has_success:
+        raise HTTPException(status_code=400, detail=results[0].get("error", "Upload failed"))
+
+    # If partial failure (or batch with failures), return RFC 4918 HTTP 207 Multi-Status
+    if has_failure:
+        response.status_code = status.HTTP_207_MULTI_STATUS
+    else:
+        response.status_code = status.HTTP_200_OK
+
+    return results
 
 
 @router.post("/ingest/upload-jd", response_model=JobDescription)

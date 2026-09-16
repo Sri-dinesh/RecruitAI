@@ -144,3 +144,78 @@ def test_upload_jd_pdf(mock_call_llm):
     assert "DevOps" in data["raw_text"]
 
 
+@patch("app.api.routes_ingest.ingest_candidate_object", return_value=mock_candidate)
+@patch("app.services.resume_api.call_llm")
+def test_upload_partial_failure_207_multi_status(mock_llm, mock_ingest):
+    mock_llm.return_value = ('{"name": "John Doe"}', "mock_provider", 10)
+    # Upload 2 files: one valid text file, one invalid executable
+    valid_file = ("valid_resume.txt", b"Valid resume text content for candidate.", "text/plain")
+    invalid_file = ("malicious.exe", b"binary-exe-content", "application/octet-stream")
+
+    response = client.post("/api/ingest/upload", files=[
+        ("files", valid_file),
+        ("files", invalid_file)
+    ])
+
+    # Must return 207 Multi-Status when there is a partial failure in batch upload (BUG-5)
+    assert response.status_code == 207
+    results = response.json()
+    assert len(results) == 2
+
+    success_item = next(r for r in results if r["filename"] == "valid_resume.txt")
+    assert success_item["status"] == "success"
+    assert success_item["candidate_id"] == "john_doe"
+
+    failed_item = next(r for r in results if r["filename"] == "malicious.exe")
+    assert failed_item["status"] == "failed"
+    assert "Unsupported file format" in failed_item["error"]
+
+
+def test_deterministic_resume_deduplication():
+    from app.services.ingestion_service import upsert_candidate_record
+    from app.schemas.candidate_schema import Candidate
+    from app.rag.vector_store import get_supabase_client
+
+    user_id = "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3"
+    client_db = get_supabase_client()
+
+    identical_resume_text = """
+    Jane Developer
+    Experienced Senior Cloud Engineer with 8 years building AWS microservices and Kubernetes pipelines.
+    Skills: Python, Go, Docker, AWS, Terraform, CI/CD.
+    """
+
+    cand_1 = Candidate(
+        name="Jane Developer",
+        email="jane1@unverified-temp-mail.com",
+        skills=["Python", "AWS"],
+        raw_text=identical_resume_text
+    )
+
+    # First ingestion creates candidate
+    cand_id_1 = upsert_candidate_record(cand_1, user_id=user_id, session_id="session-a")
+
+    # Second ingestion of the exact same resume text, even with different email
+    cand_2 = Candidate(
+        name="Jane Developer Updated",
+        email="jane2@another-domain.com",
+        skills=["Python", "AWS", "Terraform"],
+        raw_text=identical_resume_text
+    )
+    cand_id_2 = upsert_candidate_record(cand_2, user_id=user_id, session_id="session-b")
+
+    # BUG-5 Assertion: Deduplication by SHA-256 hash must return the same candidate ID
+    assert cand_id_1 == cand_id_2, "Identical resume text must deterministically deduplicate to the same candidate UUID"
+
+    # Verify candidate has both session associations
+    c_res = client_db.table("candidates").select("metadata").eq("id", cand_id_1).execute()
+    assert c_res.data
+    meta = c_res.data[0]["metadata"]
+    if isinstance(meta, str):
+        import json
+        meta = json.loads(meta)
+    assert "session-a" in meta["session_ids"]
+    assert "session-b" in meta["session_ids"]
+
+
+
