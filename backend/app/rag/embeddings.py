@@ -14,6 +14,7 @@ from google import genai
 from google.genai import types
 
 from app.core.config import GEMINI_API_KEY
+from app.services.redaction import redact_pii_for_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +37,19 @@ def get_genai_client() -> genai.Client:
 def embed_text(text: str) -> List[float]:
     """
     Embeds a single string into a 384-dimensional vector using Google Gemini Embedding 2 Cloud.
+    Applies PII minimization (AI-SEC-2) before embedding to prevent vector inversion attacks.
     """
     if not text or not text.strip():
         return [0.0] * EMBEDDING_DIM
+
+    # AI-SEC-2: Redact emails, phone numbers, and URLs from embedding text
+    sanitized_text = redact_pii_for_embedding(text)
 
     try:
         client = get_genai_client()
         resp = client.models.embed_content(
             model=EMBEDDING_MODEL,
-            contents=text.strip(),
+            contents=sanitized_text.strip(),
             config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM)
         )
         if resp.embeddings and len(resp.embeddings) > 0:

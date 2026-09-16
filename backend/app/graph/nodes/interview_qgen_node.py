@@ -107,8 +107,10 @@ def interview_qgen_node(state: RecruitState) -> dict:
     }
 
 
+from app.services.redaction import PiiSanitizer
+
 def _generate_candidate_questions(candidate: Any, jd: Any, state: RecruitState) -> str:
-    """Retrieves chunks from pgvector and calls LLM for grounded candidate questions."""
+    """Retrieves chunks from pgvector and calls LLM for grounded candidate questions with PII minimization."""
     candidate_text = ""
     try:
         query_text = f"Candidate skills and experience for role: {jd.role}"
@@ -122,6 +124,14 @@ def _generate_candidate_questions(candidate: Any, jd: Any, state: RecruitState) 
     if not candidate_text:
         candidate_text = candidate.raw_text or f"Skills: {', '.join(candidate.skills or [])}"
 
+    # AI-SEC-2: Sanitize candidate context before LLM exposure
+    sanitizer = PiiSanitizer()
+    sanitized_text = sanitizer.sanitize_text(
+        candidate_text[:3000],
+        candidate_name=candidate.name,
+        candidate_id=candidate.candidate_id
+    )
+
     system_instruction = (
         "You are an expert technical recruiter and interviewer. Generate 4-6 grounded interview questions for a candidate "
         "based on their resume details and the target job description. "
@@ -131,12 +141,12 @@ def _generate_candidate_questions(candidate: Any, jd: Any, state: RecruitState) 
     
     gaps_list = candidate.gaps or []
     prompt = (
-        f"Generate interview prep questions for {candidate.name} applying for the role of '{jd.role}'.\n\n"
+        f"Generate interview prep questions for candidate [CANDIDATE_{candidate.candidate_id}] applying for the role of '{jd.role}'.\n\n"
         f"Required Skills for Job: {', '.join(jd.required_skills)}\n"
         f"Candidate's Identified Skill Gaps: {', '.join(gaps_list) if gaps_list else 'None identified'}\n\n"
         "Candidate Resume Context:\n"
         "<candidate_resume>\n"
-        f"{candidate_text[:3000]}\n"
+        f"{sanitized_text}\n"
         "</candidate_resume>\n\n"
         "Interview Questions (Markdown):"
     )
@@ -146,7 +156,7 @@ def _generate_candidate_questions(candidate: Any, jd: Any, state: RecruitState) 
             prompt=prompt,
             system_instruction=system_instruction
         )
-        return response_text.strip()
+        return sanitizer.restore_text(response_text.strip())
     except Exception as e:
         print(f"LLM call failed in interview_qgen_node: {e}. Utilizing Local Autonomous RAG Synthesizer.")
         return _generate_local_questions(candidate, jd)

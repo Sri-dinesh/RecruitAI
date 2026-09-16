@@ -5,10 +5,11 @@ from app.core.llm_router import call_llm
 from app.schemas.candidate_schema import Candidate
 from app.rag.embeddings import embed_texts
 from app.rag.vector_store import query_top_k
+from app.services.redaction import PiiSanitizer
 
 def candidate_qa_node(state: RecruitState) -> dict:
     """
-    Candidate Question Answering Node.
+    Candidate Question Answering Node with PII Minimization (AI-SEC-2).
     Answers candidate-specific questions regarding skills, projects, work experience,
     education, background, and candidate details using RAG retrieval & candidate metadata.
     """
@@ -17,11 +18,12 @@ def candidate_qa_node(state: RecruitState) -> dict:
     resumes = state.get("resumes", [])
     jd = state.get("jd_structured")
     
+    sanitizer = PiiSanitizer()
+
     # 1. Identify target candidate
     target_candidate: Optional[Candidate] = None
     query_lower = user_query.lower()
     
-    # Search by name or candidate_id in state
     for candidate in resumes:
         name_parts = [p.lower() for p in candidate.name.split()]
         if any(part in query_lower for part in name_parts if len(part) > 2) or candidate.candidate_id in query_lower:
@@ -51,7 +53,6 @@ def candidate_qa_node(state: RecruitState) -> dict:
             
         context_text += f"\nFull Resume Text:\n{target_candidate.raw_text[:3000]}\n"
     else:
-        # If no specific candidate matched directly, compile text from all loaded resumes
         if resumes:
             context_text = "Available Loaded Candidates:\n\n"
             for c in resumes[:5]:
@@ -72,6 +73,12 @@ def candidate_qa_node(state: RecruitState) -> dict:
     except Exception as e:
         print(f"RAG query error in candidate_qa_node: {e}")
 
+    # AI-SEC-2: Sanitize candidate context and question before LLM exposure
+    c_target_name = target_candidate.name if target_candidate else None
+    c_target_id = target_candidate.candidate_id if target_candidate else None
+    sanitized_context = sanitizer.sanitize_text(context_text, candidate_name=c_target_name, candidate_id=c_target_id)
+    sanitized_query = sanitizer.sanitize_text(user_query, candidate_name=c_target_name, candidate_id=c_target_id)
+
     # 4. Synthesize direct, helpful answer using LLM
     system_instruction = (
         "You are an expert AI recruitment assistant answering a specific question about candidate(s). "
@@ -80,8 +87,8 @@ def candidate_qa_node(state: RecruitState) -> dict:
     )
     
     prompt = (
-        f"User Question: \"{user_query}\"\n\n"
-        f"Candidate Resume Context:\n{context_text}\n\n"
+        f"User Question: \"{sanitized_query}\"\n\n"
+        f"Candidate Resume Context:\n{sanitized_context}\n\n"
         "Answer:"
     )
     
@@ -90,7 +97,8 @@ def candidate_qa_node(state: RecruitState) -> dict:
             prompt=prompt,
             system_instruction=system_instruction
         )
-        answer = response_text.strip()
+        # Restore any opaque tokens in response for human recruiter UI
+        answer = sanitizer.restore_text(response_text.strip())
     except Exception as e:
         answer = f"Failed to retrieve details for {candidate_name}: {str(e)}"
         

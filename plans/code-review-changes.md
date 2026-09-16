@@ -169,12 +169,12 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Add `LLM_DATA_USE_MODE = os.getenv("LLM_DATA_USE_MODE", "unverified")` startup check: raise error on server boot in production if mode is not set to `zero_retention_verified`.
   - [x] Implement automatic kill-switch / graceful degradation to rule-based 5-pillar matching if provider connectivity or terms fail.
 
-- [ ] **AI-SEC-2: Build canonical PII minimization and redaction choke point** (`backend/app/services/redaction.py`)
-  - [ ] Create `redaction.py` service supporting email, phone, address, and URL sanitization.
-  - [ ] Apply redaction before LLM exposure in `screen_node`, `candidate_qa_node`, comparison node, and interview generator: replace candidate names in prompt tags with opaque `candidate_id` tokens.
-  - [ ] Redact chunk text before generating embeddings in `embeddings.py` to prevent vector inversion attacks.
-  - [ ] Redact chat conversation history sent to the model while maintaining an in-memory reversible mapping server-side for recruiter UI rendering.
-  - [ ] Resolve inverted privacy flaw where blind-hiring mode masked names in the browser while sending unredacted PII to external LLMs.
+- [x] **AI-SEC-2: Build canonical PII minimization and redaction choke point** (`backend/app/services/redaction.py`)
+  - [x] Create `redaction.py` service supporting email, phone, address, and URL sanitization.
+  - [x] Apply redaction before LLM exposure in `screen_node`, `candidate_qa_node`, comparison node, and interview generator: replace candidate names in prompt tags with opaque `candidate_id` tokens.
+  - [x] Redact chunk text before generating embeddings in `embeddings.py` to prevent vector inversion attacks.
+  - [x] Redact chat conversation history sent to the model while maintaining an in-memory reversible mapping server-side for recruiter UI rendering.
+  - [x] Resolve inverted privacy flaw where blind-hiring mode masked names in the browser while sending unredacted PII to external LLMs.
 
 - [ ] **AI-SEC-3: Implement tiered data retention & cascade erasure** (`backend/app/services/retention.py`, `backend/app/api/routes_privacy.py`)
   - [ ] Enforce automated retention schedules:
@@ -187,11 +187,11 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
     - `GET /api/privacy/export/{candidate_id}` (GDPR Art. 15/20 data subject export).
     - `DELETE /api/privacy/candidates/{candidate_id}` (GDPR Art. 17 right-to-erasure).
 
-- [ ] **AI-SEC-4: Defend against indirect prompt injection in resume files** (`backend/app/graph/screen_node.py`)
-  - [ ] Maintain XML `<candidate_resume>` tag isolation with explicit delimiter instructions.
-  - [ ] Implement semantic output validation: reject evaluations with `match_score > 100`, unmapped candidate IDs, or instruction-following text artifacts.
-  - [ ] Add anomaly detection: flag score swings > 40 points or evaluations quoting prompt-injection keywords ("ignore previous instructions").
-  - [ ] Maintain strict human-in-the-loop requirement (`pending_confirmation`) before allowing the agent to dispatch emails or modify candidate statuses.
+- [x] **AI-SEC-4: Defend against indirect prompt injection in resume files** (`backend/app/graph/screen_node.py`)
+  - [x] Maintain XML `<candidate_resume>` tag isolation with explicit delimiter instructions.
+  - [x] Implement semantic output validation: reject evaluations with `match_score > 100`, unmapped candidate IDs, or instruction-following text artifacts.
+  - [x] Add anomaly detection: flag score swings > 40 points or evaluations quoting prompt-injection keywords ("ignore previous instructions").
+  - [x] Maintain strict human-in-the-loop requirement (`pending_confirmation`) before allowing the agent to dispatch emails or modify candidate statuses.
 
 - [ ] **AI-SEC-5: Redesign logging to prevent cross-tenant telemetry leaks** (`backend/app/core/logging.py`)
   - [ ] Eliminate module-global `_current_turn` and shared `logs/trace.jsonl` file.
