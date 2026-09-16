@@ -3,6 +3,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { fetchWithAuth } from '@/lib/apiClient';
+import {
+  getActiveSessionId,
+  setActiveSessionId,
+  getStoredCandidateStatuses,
+  setStoredCandidateStatuses,
+  getStoredEvalNotes,
+  setStoredEvalNotes,
+  clearAllRecruitAIStorage
+} from '@/lib/sessionStorage';
 
 export type CandidateStatus = 'shortlisted' | 'rejected' | 'offered';
 
@@ -126,22 +135,18 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     }
   }, [profile?.preferences?.blind_mode_default]);
 
-  // Load eval notes from localStorage
+  // Load eval notes from typed sessionStorage (ARCH-7)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('recruitai_eval_notes');
-      if (saved) setEvalNotes(JSON.parse(saved));
-    } catch {
-      // Ignore storage errors
+    const saved = getStoredEvalNotes();
+    if (Object.keys(saved).length > 0) {
+      setEvalNotes(saved);
     }
   }, []);
 
   const saveEvalNotes = useCallback((candidateId: string, notes: { tech: number; comm: number; notes: string }) => {
     setEvalNotes((prev) => {
       const updated = { ...prev, [candidateId]: notes };
-      try {
-        localStorage.setItem('recruitai_eval_notes', JSON.stringify(updated));
-      } catch {}
+      setStoredEvalNotes(updated);
       return updated;
     });
   }, []);
@@ -172,41 +177,16 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     return [];
   }, []);
 
-  // Load specific session with strict data isolation
+  // Load specific session with atomic state batching and zero premature state wiping (ARCH-7)
   const loadSession = useCallback(async (sessionId: string) => {
     setLoading(true);
-    // Clear state immediately so previous campaign data does not bleed
-    setCandidates([]);
-    setJd(null);
-    setScheduledInterviews([]);
-    setCandidateStatuses({});
 
     try {
       const res = await fetchWithAuth(`/api/sessions/${sessionId}`);
       if (res.ok) {
         const data: Session = await res.json();
-        setActiveSessionIdState(sessionId);
-        localStorage.setItem('recruitai_active_session', sessionId);
 
-        if (data.jd_structured) {
-          setJd(data.jd_structured);
-        } else {
-          setJd(null);
-        }
-
-        if (data.resumes && Array.isArray(data.resumes)) {
-          setCandidates(data.resumes);
-        } else {
-          setCandidates([]);
-        }
-
-        if (data.scheduled_interviews && Array.isArray(data.scheduled_interviews)) {
-          setScheduledInterviews(data.scheduled_interviews);
-        } else {
-          setScheduledInterviews([]);
-        }
-
-        // Restore candidate statuses from backend candidate objects first
+        // Extract backend statuses
         const backendStatuses: Record<string, CandidateStatus> = {};
         if (data.resumes && Array.isArray(data.resumes)) {
           data.resumes.forEach((c: any) => {
@@ -216,26 +196,19 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
           });
         }
 
-        // Merge with non-stale localStorage cache (24h TTL)
-        try {
-          const saved = localStorage.getItem(`recruitai_cand_statuses_${sessionId}`);
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            const cachedStatuses = parsed.statuses || parsed;
-            const cachedAt = parsed.cachedAt || 0;
-            const isStale = cachedAt > 0 && Date.now() - cachedAt > 24 * 60 * 60 * 1000;
-            if (!isStale) {
-              setCandidateStatuses({ ...cachedStatuses, ...backendStatuses });
-            } else {
-              localStorage.removeItem(`recruitai_cand_statuses_${sessionId}`);
-              setCandidateStatuses(backendStatuses);
-            }
-          } else {
-            setCandidateStatuses(backendStatuses);
-          }
-        } catch {
-          setCandidateStatuses(backendStatuses);
-        }
+        // Merge with non-stale cached statuses (via typed sessionStorage with 24h TTL)
+        const cachedStatuses = getStoredCandidateStatuses(sessionId);
+        const resolvedStatuses = { ...cachedStatuses, ...backendStatuses };
+
+        // Atomic update of state: batch in a single render pass after network response validation
+        setActiveSessionId(sessionId);
+        setActiveSessionIdState(sessionId);
+        setJd(data.jd_structured || null);
+        setCandidates(data.resumes && Array.isArray(data.resumes) ? data.resumes : []);
+        setScheduledInterviews(data.scheduled_interviews && Array.isArray(data.scheduled_interviews) ? data.scheduled_interviews : []);
+        setCandidateStatuses(resolvedStatuses);
+      } else {
+        console.warn(`[RecruitmentContext] Session fetch returned HTTP ${res.status}`);
       }
     } catch (err) {
       console.warn('[RecruitmentContext] Error loading session:', err);
@@ -269,13 +242,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     try {
       const res = await fetchWithAuth('/api/sessions/reset-all', { method: 'POST' });
       if (res.ok) {
-        try {
-          Object.keys(localStorage).forEach((key) => {
-            if (key.startsWith('recruitai_')) {
-              localStorage.removeItem(key);
-            }
-          });
-        } catch {}
+        clearAllRecruitAIStorage();
         setCandidates([]);
         setJd(null);
         setScheduledInterviews([]);
@@ -322,7 +289,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       const sessList = await fetchSessions();
       if (!isMounted) return;
 
-      const storedId = localStorage.getItem('recruitai_active_session');
+      const storedId = getActiveSessionId();
       if (storedId && sessList.some((s: Session) => s.id === storedId)) {
         await loadSession(storedId);
       } else if (sessList.length > 0) {
@@ -432,14 +399,9 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     }
     setCandidateStatuses(updated);
 
-    // 2. Cache in localStorage with timestamp for TTL expiration
+    // 2. Cache in typed sessionStorage with timestamp for TTL expiration (ARCH-7)
     if (activeSessionId) {
-      try {
-        localStorage.setItem(
-          `recruitai_cand_statuses_${activeSessionId}`,
-          JSON.stringify({ statuses: updated, cachedAt: Date.now() })
-        );
-      } catch {}
+      setStoredCandidateStatuses(activeSessionId, updated);
     }
 
     // 3. Persist to backend PostgreSQL API with rollback on failure

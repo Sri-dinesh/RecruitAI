@@ -1,0 +1,129 @@
+/**
+ * Typed Local & Session Storage Utility for RecruitAI (ARCH-7).
+ * Consolidates scattered storage keys, enforces 24h TTL expiration,
+ * and handles private browsing / SSR storage errors gracefully.
+ */
+
+import { CandidateStatus } from '@/context/RecruitmentContext';
+
+const ACTIVE_SESSION_KEY = 'recruitai_active_session';
+const EVAL_NOTES_KEY = 'recruitai_eval_notes';
+const CAND_STATUSES_PREFIX = 'recruitai_cand_statuses_';
+const INTERVIEWS_PREFIX = 'recruitai_interviews_';
+
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface TTLWrapper<T> {
+  data: T;
+  cachedAt: number;
+}
+
+function safeGetItem(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+function safeRemoveItem(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+/**
+ * Active Session Management
+ */
+export function getActiveSessionId(): string | null {
+  return safeGetItem(ACTIVE_SESSION_KEY);
+}
+
+export function setActiveSessionId(sessionId: string): void {
+  safeSetItem(ACTIVE_SESSION_KEY, sessionId);
+}
+
+export function clearActiveSessionId(): void {
+  safeRemoveItem(ACTIVE_SESSION_KEY);
+}
+
+/**
+ * Candidate Statuses with 24-Hour TTL Expiration
+ */
+export function getStoredCandidateStatuses(sessionId: string): Record<string, CandidateStatus> {
+  const raw = safeGetItem(`${CAND_STATUSES_PREFIX}${sessionId}`);
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    // Support both wrapped TTL format and raw record
+    if (parsed && typeof parsed === 'object' && 'cachedAt' in parsed && 'statuses' in parsed) {
+      const isStale = Date.now() - parsed.cachedAt > DEFAULT_TTL_MS;
+      if (isStale) {
+        clearStoredCandidateStatuses(sessionId);
+        return {};
+      }
+      return parsed.statuses || {};
+    }
+    return parsed || {};
+  } catch {
+    return {};
+  }
+}
+
+export function setStoredCandidateStatuses(
+  sessionId: string, 
+  statuses: Record<string, CandidateStatus>
+): void {
+  const payload = {
+    statuses,
+    cachedAt: Date.now()
+  };
+  safeSetItem(`${CAND_STATUSES_PREFIX}${sessionId}`, JSON.stringify(payload));
+}
+
+export function clearStoredCandidateStatuses(sessionId: string): void {
+  safeRemoveItem(`${CAND_STATUSES_PREFIX}${sessionId}`);
+}
+
+/**
+ * Recruiter Evaluation Notes
+ */
+export function getStoredEvalNotes(): Record<string, { tech: number; comm: number; notes: string }> {
+  const raw = safeGetItem(EVAL_NOTES_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function setStoredEvalNotes(
+  notes: Record<string, { tech: number; comm: number; notes: string }>
+): void {
+  safeSetItem(EVAL_NOTES_KEY, JSON.stringify(notes));
+}
+
+/**
+ * Clear all RecruitAI related storage keys
+ */
+export function clearAllRecruitAIStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('recruitai_')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch {}
+}
