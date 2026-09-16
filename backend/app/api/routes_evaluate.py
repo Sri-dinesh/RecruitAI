@@ -362,6 +362,7 @@ def export_ats_data(
 class CandidateStatusRequest(BaseModel):
     status: str = Field(..., description="Candidate status: shortlisted, offered, rejected, new")
     session_id: Optional[str] = Field(default=None, description="Optional campaign session UUID")
+    actor: Optional[str] = Field(default="human_recruiter", description="Action initiator: human_recruiter or automated_agent")
 
 
 @router.post("/candidates/{candidate_id}/status")
@@ -373,8 +374,17 @@ def update_candidate_status_endpoint(
 ):
     """
     Persists candidate recruitment status directly to PostgreSQL (BUG-6).
+    Enforces GDPR Art. 22 human-in-the-loop guard against automated adverse decisions (AI-SEC-6).
     Updates candidates metadata and applications status for tenant isolation.
     """
+    # AI-SEC-6: GDPR Art. 22 Human-in-the-Loop Guard
+    if req.actor == "automated_agent" and req.status.lower() in ("rejected", "disqualified"):
+        raise HTTPException(
+            status_code=403,
+            detail="GDPR Art. 22 Violation: Adverse automated hiring decisions prohibited. "
+                   "Candidate rejection requires explicit authenticated human recruiter action."
+        )
+
     now_iso = datetime.now(timezone.utc).isoformat()
     client = get_supabase_client()
     norm_cand_id = _to_uuid_str(candidate_id)

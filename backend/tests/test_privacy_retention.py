@@ -114,3 +114,39 @@ def test_retention_policy_endpoint():
     assert res_json["success"] is True
     assert "raw_resumes_cleared" in res_json["summary"]
     assert "chat_messages_purged" in res_json["summary"]
+
+
+def test_gdpr_art_22_human_in_the_loop_guard():
+    """
+    AI-SEC-6: Verifies that automated agents are blocked from rejecting candidates (Art. 22),
+    while authenticated human recruiters can legitimately reject candidates.
+    """
+    cand_id = str(uuid.uuid4())
+
+    # 1. Automated agent attempt to set status='rejected' -> HTTP 403 Forbidden
+    agent_res = client.post(f"/api/candidates/{cand_id}/status", json={
+        "status": "rejected",
+        "actor": "automated_agent"
+    })
+    assert agent_res.status_code == 403
+    assert "GDPR Art. 22 Violation" in agent_res.json()["detail"]
+
+    # 2. Human recruiter setting status='rejected' -> HTTP 200 OK
+    human_res = client.post(f"/api/candidates/{cand_id}/status", json={
+        "status": "rejected",
+        "actor": "human_recruiter"
+    })
+    assert human_res.status_code == 200
+    assert human_res.json()["candidate_status"] == "rejected"
+
+
+def test_bias_audit_nyc_law_144():
+    """
+    AI-SEC-6: Verifies NYC Local Law 144 bias audit endpoint returns distribution and impact ratios.
+    """
+    audit_res = client.get("/api/privacy/bias-audit")
+    assert audit_res.status_code == 200
+    data = audit_res.json()
+    assert "law_compliance" in data
+    assert "NYC Local Law 144" in data["law_compliance"]
+

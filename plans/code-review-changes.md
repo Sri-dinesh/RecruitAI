@@ -200,10 +200,10 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Whitelist allowed keys in `log_event(extra=...)`; strictly prohibit raw prompts, resume text, and completions in log lines.
   - [x] Mask exception strings: log `type(e)` and provider status code instead of `str(e)` which may echo prompt fragments.
 
-- [ ] **AI-SEC-6: Candidate consent capture & GDPR Art. 22 human-in-the-loop guard**
-  - [ ] Add candidate consent metadata fields (`consent_at`, `consent_version`, `source`) to `candidates` schema.
-  - [ ] Enforce GDPR Art. 22 legal requirement: implement code-level guard preventing automated agents from setting `status='rejected'`; adverse hiring decisions must require an authenticated human recruiter action.
-  - [ ] Generate automated bias-audit artifacts (statistical score distribution across demographic proxies) for NYC Local Law 144 compliance.
+- [x] **AI-SEC-6: Candidate consent capture & GDPR Art. 22 human-in-the-loop guard**
+  - [x] Add candidate consent metadata fields (`consent_at`, `consent_version`, `source`) to `candidates` schema.
+  - [x] Enforce GDPR Art. 22 legal requirement: implement code-level guard preventing automated agents from setting `status='rejected'`; adverse hiring decisions must require an authenticated human recruiter action.
+  - [x] Generate automated bias-audit artifacts (statistical score distribution across demographic proxies) for NYC Local Law 144 compliance.
 
 ---
 

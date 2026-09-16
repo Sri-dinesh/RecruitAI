@@ -180,108 +180,108 @@ def execute_agent_turn(
             user_id=user_id,
             session_id=session_id,
             role="user",
-        content=message,
-    )
-
-    # 2. Reconstruct Pydantic models
-    jd_obj = JobDescription(**jd_dict) if jd_dict else None
-    resumes_objs = [Candidate(**r) for r in resumes_data]
-    shortlist_objs = (
-        [Candidate(**s) for s in shortlist_data]
-        if shortlist_data
-        else None
-    )
-
-    conversation_with_user = list(history_dicts)
-    conversation_with_user.append({"role": "user", "content": message})
-
-    initial_state = RecruitState(
-        jd_structured=jd_obj,
-        resumes=resumes_objs,
-        conversation_history=conversation_with_user,
-        last_shortlist=shortlist_objs,
-        pending_confirmation=pending_confirmation,
-        last_intent=last_intent,
-        scheduled_interviews=scheduled_interviews,
-        user_id=user_id,
-    )
-
-    # 3. Execute LangGraph agent
-    result = graph.invoke(initial_state)
-
-    # 4. Serialize outputs
-    res_jd = result["jd_structured"].model_dump() if result.get("jd_structured") else None
-    res_resumes = [c.model_dump() for c in result.get("resumes", [])]
-    res_shortlist = (
-        [c.model_dump() for c in result["last_shortlist"]]
-        if result.get("last_shortlist")
-        else None
-    )
-
-    assistant_content = ""
-    if result.get("conversation_history"):
-        assistant_content = result["conversation_history"][-1]["content"]
-
-    res_history = [
-        {"role": m["role"], "content": m["content"]}
-        for m in result.get("conversation_history", [])
-    ]
-
-    logs = get_all_logs()
-
-    # 5. Atomic persistence:
-    # (a) Job
-    job_id = None
-    if result.get("jd_structured") and result["jd_structured"].role:
-        job_id = persist_job(
-            client=client,
-            user_id=user_id,
-            jd_structured=result["jd_structured"],
-            raw_text=getattr(result["jd_structured"], "raw_text", "") or "",
+            content=message,
         )
 
-    # (b) Shortlist / Applications
-    if job_id and result.get("last_shortlist"):
-        persist_applications(
+        # 2. Reconstruct Pydantic models
+        jd_obj = JobDescription(**jd_dict) if jd_dict else None
+        resumes_objs = [Candidate(**r) for r in resumes_data]
+        shortlist_objs = (
+            [Candidate(**s) for s in shortlist_data]
+            if shortlist_data
+            else None
+        )
+
+        conversation_with_user = list(history_dicts)
+        conversation_with_user.append({"role": "user", "content": message})
+
+        initial_state = RecruitState(
+            jd_structured=jd_obj,
+            resumes=resumes_objs,
+            conversation_history=conversation_with_user,
+            last_shortlist=shortlist_objs,
+            pending_confirmation=pending_confirmation,
+            last_intent=last_intent,
+            scheduled_interviews=scheduled_interviews,
+            user_id=user_id,
+        )
+
+        # 3. Execute LangGraph agent
+        result = graph.invoke(initial_state)
+
+        # 4. Serialize outputs
+        res_jd = result["jd_structured"].model_dump() if result.get("jd_structured") else None
+        res_resumes = [c.model_dump() for c in result.get("resumes", [])]
+        res_shortlist = (
+            [c.model_dump() for c in result["last_shortlist"]]
+            if result.get("last_shortlist")
+            else None
+        )
+
+        assistant_content = ""
+        if result.get("conversation_history"):
+            assistant_content = result["conversation_history"][-1]["content"]
+
+        res_history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in result.get("conversation_history", [])
+        ]
+
+        logs = get_all_logs()
+
+        # 5. Atomic persistence:
+        # (a) Job
+        job_id = None
+        if result.get("jd_structured") and result["jd_structured"].role:
+            job_id = persist_job(
+                client=client,
+                user_id=user_id,
+                jd_structured=result["jd_structured"],
+                raw_text=getattr(result["jd_structured"], "raw_text", "") or "",
+            )
+
+        # (b) Shortlist / Applications
+        if job_id and result.get("last_shortlist"):
+            persist_applications(
+                client=client,
+                user_id=user_id,
+                job_id=job_id,
+                shortlist=result["last_shortlist"],
+            )
+
+        # (c) Scheduled Interviews
+        if result.get("scheduled_interviews"):
+            persist_interviews(
+                client=client,
+                user_id=user_id,
+                scheduled_interviews=result["scheduled_interviews"],
+                job_id=job_id,
+            )
+
+        # (d) Assistant message
+        persist_chat_message(
             client=client,
             user_id=user_id,
+            session_id=session_id,
+            role="assistant",
+            content=assistant_content,
+            metadata={"router_logs": logs},
+        )
+
+        # (e) Session metadata
+        title = None
+        if result.get("jd_structured") and result["jd_structured"].role:
+            title = f"Hiring: {result['jd_structured'].role}"
+
+        update_session_metadata(
+            client=client,
+            user_id=user_id,
+            session_id=session_id,
+            title=title,
             job_id=job_id,
-            shortlist=result["last_shortlist"],
+            last_intent=result.get("last_intent"),
+            pending_confirmation=result.get("pending_confirmation"),
         )
-
-    # (c) Scheduled Interviews
-    if result.get("scheduled_interviews"):
-        persist_interviews(
-            client=client,
-            user_id=user_id,
-            scheduled_interviews=result["scheduled_interviews"],
-            job_id=job_id,
-        )
-
-    # (d) Assistant message
-    persist_chat_message(
-        client=client,
-        user_id=user_id,
-        session_id=session_id,
-        role="assistant",
-        content=assistant_content,
-        metadata={"router_logs": logs},
-    )
-
-    # (e) Session metadata
-    title = None
-    if result.get("jd_structured") and result["jd_structured"].role:
-        title = f"Hiring: {result['jd_structured'].role}"
-
-    update_session_metadata(
-        client=client,
-        user_id=user_id,
-        session_id=session_id,
-        title=title,
-        job_id=job_id,
-        last_intent=result.get("last_intent"),
-        pending_confirmation=result.get("pending_confirmation"),
-    )
 
         return {
             "response": assistant_content,

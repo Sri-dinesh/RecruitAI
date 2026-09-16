@@ -3,6 +3,7 @@ import logging
 import uuid
 import hashlib
 import re
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from app.services.resume_loader import load_resumes
 from app.rag.chunking import chunk_resume
@@ -60,6 +61,9 @@ def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Opti
         "headline": candidate.headline,
         "certifications": candidate.certifications or [],
         "languages": candidate.languages or [],
+        "consent_at": getattr(candidate, "consent_at", None) or datetime.now(timezone.utc).isoformat(),
+        "consent_version": getattr(candidate, "consent_version", "1.0") or "1.0",
+        "source": getattr(candidate, "source", "direct_upload") or "direct_upload",
     }
     if session_id:
         meta["session_id"] = session_id

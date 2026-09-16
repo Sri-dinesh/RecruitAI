@@ -21,3 +21,7 @@ class Candidate(BaseModel):
     certifications: List[str] = []
     links: List[str] = []
     languages: List[str] = []
+    # AI-SEC-6: Candidate Consent & GDPR Art. 22 compliance
+    consent_at: Optional[str] = None
+    consent_version: Optional[str] = "1.0"
+    source: Optional[str] = "direct_upload"
