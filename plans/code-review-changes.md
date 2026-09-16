@@ -176,14 +176,14 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Redact chat conversation history sent to the model while maintaining an in-memory reversible mapping server-side for recruiter UI rendering.
   - [x] Resolve inverted privacy flaw where blind-hiring mode masked names in the browser while sending unredacted PII to external LLMs.
 
-- [ ] **AI-SEC-3: Implement tiered data retention & cascade erasure** (`backend/app/services/retention.py`, `backend/app/api/routes_privacy.py`)
-  - [ ] Enforce automated retention schedules:
+- [x] **AI-SEC-3: Implement tiered data retention & cascade erasure** (`backend/app/services/retention.py`, `backend/app/api/routes_privacy.py`)
+  - [x] Enforce automated retention schedules:
     - Raw resume text (`candidates.raw_resume_text`): purge after 90 days.
     - Vector embeddings (`resume_chunks`): cascade delete with candidate record.
     - Chat messages (`chat_messages`): retain for 12 months.
     - Candidate evaluations: configurable per-tenant employment law retention (1–2 years).
-  - [ ] Create transactional cascading delete helper `purge_candidate(candidate_id, user_id)`: candidate → chunks → embeddings → applications → interviews → messages.
-  - [ ] Implement GDPR compliance endpoints:
+  - [x] Create transactional cascading delete helper `purge_candidate(candidate_id, user_id)`: candidate → chunks → embeddings → applications → interviews → messages.
+  - [x] Implement GDPR compliance endpoints:
     - `GET /api/privacy/export/{candidate_id}` (GDPR Art. 15/20 data subject export).
     - `DELETE /api/privacy/candidates/{candidate_id}` (GDPR Art. 17 right-to-erasure).
 

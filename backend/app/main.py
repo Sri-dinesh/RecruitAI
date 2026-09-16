@@ -10,6 +10,7 @@ from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_users import router as users_router
+from app.api.routes_privacy import router as privacy_router
 from app.core.config import verify_provider_compliance
 
 import os
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(chat_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
 app.include_router(email_router, prefix="/api")
+app.include_router(privacy_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")
