@@ -246,3 +246,51 @@ class TestHardenedJWTVerification:
             _ensure_valid_uuid("arbitrary-login-name")
         assert exc_info2.value.status_code == 401
 
+
+class TestSEC2FallbackGating:
+    """
+    SEC-2: Gate the SQLite fallback to dev-only & eliminate silent degradation.
+    """
+
+    def test_fallback_client_blocked_in_production(self, monkeypatch):
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        from app.rag.fallback_db import FallbackSupabaseClient
+
+        monkeypatch.setattr(cfg, "IS_PRODUCTION", True)
+        with pytest.raises(HTTPException) as exc_info:
+            FallbackSupabaseClient()
+        assert exc_info.value.status_code == 503
+        assert "SQLite fallback is prohibited in production" in exc_info.value.detail
+
+    def test_vector_store_blocked_in_production_without_creds(self, monkeypatch):
+        from fastapi import HTTPException
+        import app.core.config as cfg
+        import app.rag.vector_store as vs
+
+        monkeypatch.setattr(cfg, "IS_PRODUCTION", True)
+        monkeypatch.setattr(cfg, "SUPABASE_URL", "https://your_supabase.supabase.co")
+        monkeypatch.setattr(vs, "_supabase_client", None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            vs.get_supabase_client()
+        assert exc_info.value.status_code == 503
+
+    def test_mock_auth_rejects_arbitrary_tokens(self, monkeypatch):
+        import app.core.config as cfg
+        from app.rag.fallback_db import MockAuth
+
+        monkeypatch.setattr(cfg, "IS_PRODUCTION", False)
+        monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", True)
+
+        auth = MockAuth()
+        # Empty token
+        assert auth.get_user("").user is None
+        # Arbitrary forged token string
+        assert auth.get_user("attacker-forged-token").user is None
+        # Valid dev token succeeds
+        valid_dev = auth.get_user("mock-token")
+        assert valid_dev.user is not None
+        assert valid_dev.user.id == cfg.LOCAL_DEV_USER_ID
+
+

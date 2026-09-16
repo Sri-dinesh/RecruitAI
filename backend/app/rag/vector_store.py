@@ -1,5 +1,6 @@
+from fastapi import HTTPException, status
 from supabase import create_client, Client
-from app.core.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+from app.core import config
 from typing import List, Dict, Optional
 
 _supabase_client = None
@@ -8,24 +9,40 @@ _use_local_sqlite = False
 def get_supabase_client():
     global _supabase_client, _use_local_sqlite
     
+    # 1. In Production: strictly require live Supabase. Never fallback to SQLite.
+    if getattr(config, "IS_PRODUCTION", False):
+        if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_ROLE_KEY or "your_supabase" in config.SUPABASE_URL:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service configuration missing in production environment.",
+            )
+        if _supabase_client is None:
+            try:
+                client = create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY)
+                client.table("chat_sessions").select("id").limit(1).execute()
+                _supabase_client = client
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Production database connection failure: {e}",
+                )
+        return _supabase_client
+
+    # 2. In Local Dev / Test mode:
     if _use_local_sqlite:
         from app.rag.fallback_db import FallbackSupabaseClient
         return FallbackSupabaseClient()
         
     if _supabase_client is None:
-        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or "your_supabase" in SUPABASE_URL:
-            print("Supabase credentials missing or default. Falling back to local SQLite.")
-            _use_local_sqlite = True
+        if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_ROLE_KEY or "your_supabase" in config.SUPABASE_URL:
             from app.rag.fallback_db import FallbackSupabaseClient
             return FallbackSupabaseClient()
         try:
-            client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-            # Ping test
+            client = create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY)
             client.table("chat_sessions").select("id").limit(1).execute()
             _supabase_client = client
         except Exception as e:
-            print(f"Supabase connection check failed: {e}. Falling back to local SQLite database.")
-            _use_local_sqlite = True
+            print(f"Supabase connection check failed: {e}. Falling back to local SQLite database for this request.")
             from app.rag.fallback_db import FallbackSupabaseClient
             return FallbackSupabaseClient()
             

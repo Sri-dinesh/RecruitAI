@@ -79,6 +79,8 @@ def get_current_user_id(
             user_id = payload.get("sub")
             if user_id:
                 return _ensure_valid_uuid(str(user_id))
+        except HTTPException:
+            raise
         except (ExpiredSignatureError, JWTClaimsError) as e:
             # If token explicitly expired or claims are invalid, reject immediately with 401
             raise HTTPException(

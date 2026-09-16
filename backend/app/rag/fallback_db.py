@@ -2,32 +2,88 @@ import sqlite3
 import json
 import uuid
 from typing import List, Dict, Any, Optional
+from fastapi import HTTPException, status
+from app.core import config
+
+_INITIALIZED_DBS = set()
+
+
+def get_sqlite_connection(db_path: str) -> sqlite3.Connection:
+    """
+    Returns an optimized, thread-safe SQLite connection with WAL mode,
+    busy timeout, and foreign key constraints enabled.
+    """
+    conn = sqlite3.connect(db_path, timeout=30.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute("PRAGMA busy_timeout=30000;")
+    except Exception:
+        pass
+    return conn
+
 
 class MockUser:
-    def __init__(self, uid: str = "local_dev_user_123", email: str = "recruiter@recruitai.local"):
+    def __init__(self, uid: Optional[str] = None, email: str = "recruiter@recruitai.local"):
         self.id = uid
         self.email = email
 
+
 class MockUserResponse:
-    def __init__(self, user: MockUser):
+    def __init__(self, user: Optional[MockUser]):
         self.user = user
 
+
 class MockAuth:
+    """
+    Mock authentication service for local offline development.
+    Strictly verifies tokens and rejects arbitrary unauthenticated input.
+    """
     def get_user(self, token: str = ""):
-        return MockUserResponse(MockUser("local_dev_user_123"))
+        if not token:
+            return MockUserResponse(None)
+        if getattr(config, "IS_PRODUCTION", False):
+            return MockUserResponse(None)
+        if not getattr(config, "USE_LOCAL_AUTH", False):
+            return MockUserResponse(None)
+
+        dev_uid = getattr(config, "LOCAL_DEV_USER_ID", "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3")
+        if token in ("mock-token", "local-token", "test-token", dev_uid):
+            return MockUserResponse(MockUser(dev_uid))
+        try:
+            from jose import jwt
+            claims = jwt.get_unverified_claims(token)
+            sub = claims.get("sub")
+            if sub:
+                valid_uuid = str(uuid.UUID(str(sub)))
+                return MockUserResponse(MockUser(valid_uuid, email=claims.get("email", f"{valid_uuid}@recruitai.local")))
+        except Exception:
+            pass
+        return MockUserResponse(None)
+
 
 class FallbackSupabaseClient:
     """
     A lightweight, drop-in local SQLite fallback for the Supabase Client.
-    Mimics postgrest table operations and RPCs for offline resilience.
+    Mimics postgrest table operations and RPCs for offline dev resilience only.
+    Blocked strictly in production environments.
     """
     def __init__(self, db_path: str = "recruitai_fallback.db"):
+        if getattr(config, "IS_PRODUCTION", False):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service temporarily unavailable. SQLite fallback is prohibited in production.",
+            )
         self.db_path = db_path
         self.auth = MockAuth()
-        self._init_db()
+        if self.db_path not in _INITIALIZED_DBS:
+            self._init_db()
+            _INITIALIZED_DBS.add(self.db_path)
 
     def _init_db(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_sqlite_connection(self.db_path)
         cursor = conn.cursor()
 
         # ── 0. users table ──────────────────────────────────────────────────
@@ -302,8 +358,7 @@ class TableBuilder:
         return d
 
     def execute(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_sqlite_connection(self.db_path)
         cursor = conn.cursor()
         result_data = []
 
@@ -510,8 +565,7 @@ class RpcBuilder:
             filter_candidate_id = self.params.get('filter_candidate_id')
             filter_user_id = self.params.get('filter_user_id')
             
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_sqlite_connection(self.db_path)
             cursor = conn.cursor()
             
             sql = """

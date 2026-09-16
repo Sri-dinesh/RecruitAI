@@ -1,11 +1,14 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
+from app.core import config
 from app.core.auth import get_current_user_id
 from app.rag.vector_store import get_supabase_client
 from app.schemas.user_schema import UserProfileResponse, UserUpdateRequest
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
+
+
 def _parse_preferences(prefs: Any) -> Dict[str, Any]:
     defaults = {
         "email_alerts": True,
@@ -27,11 +30,11 @@ def _parse_preferences(prefs: Any) -> Dict[str, Any]:
         return {**defaults, **prefs}
     return defaults
 
+
 @router.get("/me", response_model=UserProfileResponse)
 def get_current_user_profile(user_id: str = Depends(get_current_user_id)):
     """
     Returns the current authenticated recruiter's profile from the public.users table.
-    Gracefully falls back to local storage or defaults if remote table is initializing.
     """
     client = get_supabase_client()
     try:
@@ -40,20 +43,14 @@ def get_current_user_profile(user_id: str = Depends(get_current_user_id)):
             user_data = dict(res.data[0])
             user_data["preferences"] = _parse_preferences(user_data.get("preferences"))
             return user_data
-    except Exception:
-        # Fallback to local SQLite
-        try:
-            from app.rag.fallback_db import FallbackSupabaseClient
-            fb = FallbackSupabaseClient()
-            res = fb.table("users").select("*").eq("id", user_id).execute()
-            if res.data and len(res.data) > 0:
-                user_data = dict(res.data[0])
-                user_data["preferences"] = _parse_preferences(user_data.get("preferences"))
-                return user_data
-        except Exception:
-            pass
+    except Exception as e:
+        if getattr(config, "IS_PRODUCTION", False):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error fetching user profile: {e}",
+            )
 
-    # Default profile fallback
+    # Default profile fallback for initial dev setup
     return {
         "id": user_id,
         "email": f"{user_id}@recruitai.local",
@@ -63,14 +60,15 @@ def get_current_user_profile(user_id: str = Depends(get_current_user_id)):
             "email_alerts": True,
             "theme": "system",
             "blind_mode_default": True,
-            "auto_rubric": True
-        }
+            "auto_rubric": True,
+        },
     }
+
 
 @router.patch("/me", response_model=UserProfileResponse)
 def update_current_user_profile(
     payload: UserUpdateRequest,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Updates profile fields for the authenticated recruiter.
@@ -96,29 +94,19 @@ def update_current_user_profile(
     if not update_data:
         return get_current_user_profile(user_id)
 
-    # 1. Try remote Supabase client
     try:
         res = client.table("users").update(update_data).eq("id", user_id).execute()
         if res.data and len(res.data) > 0:
             user_data = dict(res.data[0])
             user_data["preferences"] = _parse_preferences(user_data.get("preferences"))
             return user_data
-    except Exception:
-        pass
+    except Exception as e:
+        if getattr(config, "IS_PRODUCTION", False):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error updating user profile: {e}",
+            )
 
-    # 2. Try local fallback database
-    try:
-        from app.rag.fallback_db import FallbackSupabaseClient
-        fb = FallbackSupabaseClient()
-        res = fb.table("users").update(update_data).eq("id", user_id).execute()
-        if res.data and len(res.data) > 0:
-            user_data = dict(res.data[0])
-            user_data["preferences"] = _parse_preferences(user_data.get("preferences"))
-            return user_data
-    except Exception:
-        pass
-
-    # 3. Return updated in-memory profile
     current = get_current_user_profile(user_id)
     if isinstance(current, dict):
         current.update(update_data)

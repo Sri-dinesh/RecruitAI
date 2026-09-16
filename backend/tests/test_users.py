@@ -14,9 +14,8 @@ def use_test_fallback_db():
 
 def test_get_user_profile_unauthorized(monkeypatch):
     """Ensure unauthorized requests return 401 when USE_LOCAL_AUTH=false or 200 in local dev mode."""
-    monkeypatch.setenv("USE_LOCAL_AUTH", "false")
     import app.core.config as cfg
-    cfg.USE_LOCAL_AUTH = False
+    monkeypatch.setattr(cfg, "USE_LOCAL_AUTH", False)
 
     response = client.get("/api/users/me")
     assert response.status_code in (200, 401)
