@@ -193,12 +193,12 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Add anomaly detection: flag score swings > 40 points or evaluations quoting prompt-injection keywords ("ignore previous instructions").
   - [x] Maintain strict human-in-the-loop requirement (`pending_confirmation`) before allowing the agent to dispatch emails or modify candidate statuses.
 
-- [ ] **AI-SEC-5: Redesign logging to prevent cross-tenant telemetry leaks** (`backend/app/core/logging.py`)
-  - [ ] Eliminate module-global `_current_turn` and shared `logs/trace.jsonl` file.
-  - [ ] Remove `router_logs` returning global server traces to clients in `ChatResponse`.
-  - [ ] Scope telemetry logs by `request_id`, `session_id`, and `user_id`.
-  - [ ] Whitelist allowed keys in `log_event(extra=...)`; strictly prohibit raw prompts, resume text, and completions in log lines.
-  - [ ] Mask exception strings: log `type(e)` and provider status code instead of `str(e)` which may echo prompt fragments.
+- [x] **AI-SEC-5: Redesign logging to prevent cross-tenant telemetry leaks** (`backend/app/core/logging.py`)
+  - [x] Eliminate module-global `_current_turn` and shared `logs/trace.jsonl` file.
+  - [x] Remove `router_logs` returning global server traces to clients in `ChatResponse`.
+  - [x] Scope telemetry logs by `request_id`, `session_id`, and `user_id`.
+  - [x] Whitelist allowed keys in `log_event(extra=...)`; strictly prohibit raw prompts, resume text, and completions in log lines.
+  - [x] Mask exception strings: log `type(e)` and provider status code instead of `str(e)` which may echo prompt fragments.
 
 - [ ] **AI-SEC-6: Candidate consent capture & GDPR Art. 22 human-in-the-loop guard**
   - [ ] Add candidate consent metadata fields (`consent_at`, `consent_version`, `source`) to `candidates` schema.

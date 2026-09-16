@@ -13,7 +13,7 @@ from app.graph.builder import graph
 from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
 from app.rag.vector_store import get_supabase_client
-from app.core.logging import get_all_logs
+from app.core.logging import get_all_logs, set_telemetry_context, clear_telemetry_context
 from app.services.persistence_service import (
     persist_job,
     persist_applications,
@@ -171,13 +171,15 @@ def execute_agent_turn(
     4. Serializes output dict for response.
     """
     client = get_supabase_client()
+    set_telemetry_context(user_id=user_id, session_id=session_id)
 
-    # 1. Persist user message
-    persist_chat_message(
-        client=client,
-        user_id=user_id,
-        session_id=session_id,
-        role="user",
+    try:
+        # 1. Persist user message
+        persist_chat_message(
+            client=client,
+            user_id=user_id,
+            session_id=session_id,
+            role="user",
         content=message,
     )
 
@@ -281,15 +283,17 @@ def execute_agent_turn(
         pending_confirmation=result.get("pending_confirmation"),
     )
 
-    return {
-        "response": assistant_content,
-        "jd_structured": res_jd,
-        "resumes": res_resumes,
-        "last_shortlist": res_shortlist,
-        "pending_confirmation": result.get("pending_confirmation"),
-        "last_intent": result.get("last_intent"),
-        "conversation_history": res_history,
-        "router_logs": logs,
-        "scheduled_interviews": result.get("scheduled_interviews"),
-        "session_id": session_id,
-    }
+        return {
+            "response": assistant_content,
+            "jd_structured": res_jd,
+            "resumes": res_resumes,
+            "last_shortlist": res_shortlist,
+            "pending_confirmation": result.get("pending_confirmation"),
+            "last_intent": result.get("last_intent"),
+            "conversation_history": res_history,
+            "router_logs": logs,
+            "scheduled_interviews": result.get("scheduled_interviews"),
+            "session_id": session_id,
+        }
+    finally:
+        clear_telemetry_context()
