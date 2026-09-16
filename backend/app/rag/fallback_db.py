@@ -212,6 +212,17 @@ class FallbackSupabaseClient:
             )
         """)
 
+        # ── 8. session_candidates join table (BUG-3) ────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_candidates (
+                session_id TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (session_id, candidate_id)
+            )
+        """)
+
+
         # Ensure any missing columns from previous schemas are automatically migrated
         def _ensure_col(tbl: str, col: str, col_type: str):
             try:
@@ -513,6 +524,16 @@ class TableBuilder:
                         found = cursor.fetchone()
                         if found:
                             existing_id = found['id']
+                    elif self.table_name == 'session_candidates' and 'session_id' in d and 'candidate_id' in d:
+                        cursor.execute("SELECT session_id, candidate_id FROM session_candidates WHERE session_id = ? AND candidate_id = ?", (d['session_id'], d['candidate_id']))
+                        found = cursor.fetchone()
+                        if found:
+                            upserted_rows.append(self._deserialize_row(found))
+                            continue
+                        else:
+                            cursor.execute("INSERT OR IGNORE INTO session_candidates (session_id, candidate_id) VALUES (?, ?)", (d['session_id'], d['candidate_id']))
+                            upserted_rows.append({"session_id": d['session_id'], "candidate_id": d['candidate_id']})
+                            continue
                     elif 'id' in d and d['id']:
                         cursor.execute(f"SELECT id FROM {self.table_name} WHERE id = ?", (d['id'],))
                         found = cursor.fetchone()
@@ -568,6 +589,11 @@ class RpcBuilder:
             cursor = conn.cursor()
             try:
                 conn.execute("BEGIN IMMEDIATE;")
+                cursor.execute("""
+                    DELETE FROM session_candidates 
+                    WHERE session_id IN (SELECT id FROM chat_sessions WHERE user_id = ?)
+                       OR candidate_id IN (SELECT id FROM candidates WHERE user_id = ?)
+                """, (target_uid, target_uid))
                 cursor.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_uid,))
                 cursor.execute("DELETE FROM interviews WHERE user_id = ?", (target_uid,))
                 cursor.execute("DELETE FROM applications WHERE user_id = ?", (target_uid,))

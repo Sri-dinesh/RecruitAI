@@ -74,20 +74,29 @@ def upsert_candidate_record(candidate: Candidate, user_id: str, session_id: Opti
                 "raw_resume_text": candidate.raw_text,
                 "metadata": meta,
             }).eq("id", cand_id).eq("user_id", user_id).execute()
-            return str(cand_id)
+        else:
+            # Otherwise insert a new candidate record
+            cand_id = str(uuid.uuid4())
+            client.table("candidates").insert({
+                "id": cand_id,
+                "user_id": user_id,
+                "full_name": candidate.name,
+                "email": email,
+                "phone": candidate.phone,
+                "raw_resume_text": candidate.raw_text,
+                "metadata": meta,
+            }).execute()
 
-        # Otherwise insert a new candidate record
-        cand_id = str(uuid.uuid4())
-        client.table("candidates").insert({
-            "id": cand_id,
-            "user_id": user_id,
-            "full_name": candidate.name,
-            "email": email,
-            "phone": candidate.phone,
-            "raw_resume_text": candidate.raw_text,
-            "metadata": meta,
-        }).execute()
-        return cand_id
+        if session_id:
+            try:
+                client.table("session_candidates").upsert({
+                    "session_id": session_id,
+                    "candidate_id": str(cand_id)
+                }).execute()
+            except Exception as sc_err:
+                logging.warning(f"[ingestion] Could not link candidate {cand_id} to session {session_id}: {sc_err}")
+
+        return str(cand_id)
     except Exception as e:
         print(f"[ingestion] Warning: Error upserting candidate to DB: {e}")
         return _ensure_valid_uuid(candidate.candidate_id) if candidate.candidate_id else str(uuid.uuid4())

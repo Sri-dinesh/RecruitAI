@@ -394,19 +394,43 @@ async def get_sessions_endpoint(user_id: str = Depends(get_current_user_id)):
             if jid:
                 apps_by_job.setdefault(jid, set()).add(app["candidate_id"])
 
+        # Relational candidate-session mapping (BUG-3)
+        session_cands_map: Dict[str, set] = {}
+        try:
+            sc_res = client.table("session_candidates").select("session_id, candidate_id").execute()
+            for r in (sc_res.data or []):
+                session_cands_map.setdefault(r["session_id"], set()).add(r["candidate_id"])
+        except Exception as sc_err:
+            logging.warning(f"[sessions] session_candidates query notice: {sc_err}")
+
+        # Expand/contract backfill support for legacy candidates
+        for c in all_cands:
+            meta = c.get("metadata") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except (json.JSONDecodeError, TypeError):
+                    meta = {}
+            s_ids = set()
+            if meta.get("session_id"):
+                s_ids.add(meta["session_id"])
+            if meta.get("session_ids") and isinstance(meta["session_ids"], list):
+                s_ids.update(meta["session_ids"])
+            for sid in s_ids:
+                if sid not in session_cands_map or c["id"] not in session_cands_map[sid]:
+                    session_cands_map.setdefault(sid, set()).add(c["id"])
+                    try:
+                        client.table("session_candidates").upsert({
+                            "session_id": sid,
+                            "candidate_id": c["id"]
+                        }).execute()
+                    except Exception:
+                        pass
+
         for s in sessions_list:
             sid = s["id"]
             jid = s.get("job_id")
-            s_cand_ids = set()
-            for c in all_cands:
-                meta = c.get("metadata") or {}
-                if isinstance(meta, str):
-                    try:
-                        meta = json.loads(meta)
-                    except Exception:
-                        meta = {}
-                if meta.get("session_id") == sid or sid in meta.get("session_ids", []):
-                    s_cand_ids.add(c["id"])
+            s_cand_ids = set(session_cands_map.get(sid, []))
             if jid and jid in apps_by_job:
                 s_cand_ids.update(apps_by_job[jid])
 
@@ -497,6 +521,10 @@ async def reset_all_data_endpoint(user_id: str = Depends(get_current_user_id)):
 
         # 2. Fallback: Strict topological foreign-key cascade order deletion
         # (leaf tables first to prevent foreign key constraint violations)
+        try:
+            client.table("session_candidates").delete().execute()
+        except Exception:
+            pass
         client.table("chat_messages").delete().eq("user_id", user_id).execute()
         client.table("interviews").delete().eq("user_id", user_id).execute()
         client.table("applications").delete().eq("user_id", user_id).execute()
@@ -587,6 +615,13 @@ async def get_session_details_endpoint(
                 apps_for_this_job[a["candidate_id"]] = a
                 candidate_ids_in_job_apps.add(a["candidate_id"])
 
+        session_candidate_ids_rel: set = set()
+        try:
+            sc_res = client.table("session_candidates").select("candidate_id").eq("session_id", session_id).execute()
+            session_candidate_ids_rel = {r["candidate_id"] for r in (sc_res.data or [])}
+        except Exception as sc_err:
+            logging.warning(f"[sessions] session_candidates detail query notice: {sc_err}")
+
         candidates_list = []
         session_candidate_ids = set()
         for c in (cand_res.data or []):
@@ -594,17 +629,28 @@ async def get_session_details_endpoint(
             if isinstance(meta, str):
                 try:
                     meta = json.loads(meta)
-                except Exception:
+                except (json.JSONDecodeError, TypeError):
                     meta = {}
 
-            # Strict campaign isolation:
+            # Strict campaign isolation using relational join table with legacy metadata backfill:
             belongs_to_this_session = (
-                meta.get("session_id") == session_id
-                or session_id in meta.get("session_ids", [])
+                c["id"] in session_candidate_ids_rel
                 or c["id"] in candidate_ids_in_job_apps
+                or meta.get("session_id") == session_id
+                or session_id in (meta.get("session_ids") or [])
             )
             if not belongs_to_this_session:
                 continue
+
+            if c["id"] not in session_candidate_ids_rel:
+                session_candidate_ids_rel.add(c["id"])
+                try:
+                    client.table("session_candidates").upsert({
+                        "session_id": session_id,
+                        "candidate_id": c["id"]
+                    }).execute()
+                except Exception:
+                    pass
 
             session_candidate_ids.add(c["id"])
             app_data = apps_for_this_job.get(c["id"]) or {}
@@ -823,6 +869,10 @@ async def delete_session_endpoint(
     """
     client = get_supabase_client()
     try:
+        try:
+            client.table("session_candidates").delete().eq("session_id", session_id).execute()
+        except Exception:
+            pass
         client.table("chat_sessions").delete().eq("id", session_id).eq("user_id", user_id).execute()
         return {"message": f"Session {session_id} deleted successfully."}
     except Exception as exc:
