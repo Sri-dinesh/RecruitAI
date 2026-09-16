@@ -108,3 +108,68 @@ def test_interview_persistence_no_fabricated_dates_and_candidate_uuid():
     assert row["duration_minutes"] == 20, "Must propagate duration_minutes instead of hardcoding 45"
     assert row["candidate_id"] == cand_id, "Must link by candidate_id UUID"
 
+
+def test_async_chat_job_and_stream():
+    """
+    ARCH-4: Verifies asynchronous job queueing and SSE event streaming.
+    """
+    import time
+    from unittest.mock import patch
+
+    chat_payload = {
+        "message": "async screening request",
+        "conversation_history": [],
+        "async_mode": True,
+    }
+
+    mock_result = {
+        "conversation_history": [
+            {"role": "user", "content": "async screening request"},
+            {"role": "assistant", "content": "Screening completed in background."}
+        ],
+        "jd_structured": None,
+        "resumes": [],
+        "last_shortlist": None,
+        "pending_confirmation": None,
+        "last_intent": "greeting",
+        "scheduled_interviews": []
+    }
+
+    with patch("app.api.routes_chat.graph.invoke", return_value=mock_result):
+        # 1. Enqueue job
+        res = client.post("/api/chat", json=chat_payload)
+        assert res.status_code == 202
+        job_data = res.json()
+        assert "job_id" in job_data
+        assert job_data["status"] == "queued"
+        job_id = job_data["job_id"]
+
+        # 2. Check job status endpoint
+        # Allow worker thread a moment to finish
+        time.sleep(0.1)
+        status_res = client.get(f"/api/chat/jobs/{job_id}")
+        assert status_res.status_code == 200
+        status_data = status_res.json()
+        assert status_data["job_id"] == job_id
+        assert status_data["status"] in ("running", "completed")
+
+        # 3. Stream SSE endpoint
+        stream_res = client.get(f"/api/chat/jobs/{job_id}/stream")
+        assert stream_res.status_code == 200
+        assert "text/event-stream" in stream_res.headers.get("content-type", "")
+        content = stream_res.text
+        assert "event:" in content
+
+
+def test_email_dispatch_endpoint():
+    from unittest.mock import patch, MagicMock
+    mock_tool = MagicMock()
+    mock_tool.invoke.return_value = "Email sent successfully"
+    with patch("app.api.routes_email.send_email_draft", mock_tool):
+        res = client.post("/api/email/send", json={
+            "email_draft": "Hello Candidate, you are invited for an interview.",
+            "recipient_email": "candidate@example.com"
+        })
+        assert res.status_code == 200
+        assert res.json()["status"] == "Email sent successfully"
+

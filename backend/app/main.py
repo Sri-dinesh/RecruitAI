@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_chat import router as chat_router
+from app.api.routes_sessions import router as sessions_router
+from app.api.routes_email import router as email_router
 from app.api.routes_reports import router as reports_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_evaluate import router as evaluate_router
@@ -43,6 +45,8 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(chat_router, prefix="/api")
+app.include_router(sessions_router, prefix="/api")
+app.include_router(email_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(ingest_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")

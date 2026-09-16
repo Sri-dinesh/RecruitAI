@@ -221,3 +221,53 @@ def test_session_candidates_relational_join_and_backfill():
     assert len(sc_deleted.data or []) == 0
 
 
+def test_get_session_details_idempotency_and_no_mutations():
+    """
+    ARCH-3: Verifies that GET /api/sessions/{session_id} is pure and read-only.
+    It must not write or mutate records in `applications` or `candidates`.
+    """
+    import uuid
+    client_db = get_supabase_client()
+    user_id = "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3"
+
+    # 1. Create a session with a linked job
+    s_res = client.post("/api/sessions")
+    session_id = s_res.json()["id"]
+    job_id = str(uuid.uuid4())
+
+    client_db.table("jobs").insert({
+        "id": job_id,
+        "user_id": user_id,
+        "title": "Backend Lead",
+        "raw_jd": "Need Python lead",
+        "jd_structured": {"role": "Backend Lead", "required_skills": ["Python", "Docker"]}
+    }).execute()
+
+    client_db.table("chat_sessions").update({"job_id": job_id}).eq("id", session_id).execute()
+
+    # 2. Add an unscored candidate
+    cand_id = str(uuid.uuid4())
+    client_db.table("candidates").insert({
+        "id": cand_id,
+        "user_id": user_id,
+        "full_name": "Unscored Candidate",
+        "email": "unscored@recruitai.local",
+        "raw_resume_text": "Experienced Python Engineer",
+        "metadata": {"skills": ["Python"], "session_id": session_id}
+    }).execute()
+
+    # Verify no application exists yet
+    apps_before = client_db.table("applications").select("*").eq("candidate_id", cand_id).execute()
+    assert len(apps_before.data or []) == 0
+
+    # 3. Call GET /api/sessions/{session_id} multiple times
+    res1 = client.get(f"/api/sessions/{session_id}")
+    assert res1.status_code == 200
+    res2 = client.get(f"/api/sessions/{session_id}")
+    assert res2.status_code == 200
+
+    # 4. Assert ARCH-3: Zero write mutations occurred in applications table
+    apps_after = client_db.table("applications").select("*").eq("candidate_id", cand_id).execute()
+    assert len(apps_after.data or []) == 0, "GET /sessions/{id} must be pure and read-only; no synchronous applications.upsert allowed!"
+
+
