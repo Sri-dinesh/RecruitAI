@@ -261,30 +261,59 @@ async def chat_endpoint(
                 except Exception as e:
                     logging.warning(f"[chat] Failed to persist application: {e}")
 
-        # (c) Persist Scheduled Interviews
+        # (c) Persist Scheduled Interviews (BUG-4)
         if result.get("scheduled_interviews"):
             for interview in result["scheduled_interviews"]:
                 try:
+                    cand_id = interview.get("candidate_id")
                     cand_name = interview.get("candidate_name", "")
-                    cand_res = (
-                        client.table("candidates")
-                        .select("id")
-                        .eq("user_id", user_id)
-                        .eq("full_name", cand_name)
-                        .limit(1)
-                        .execute()
-                    )
-                    cand_id = cand_res.data[0]["id"] if cand_res.data else None
-                    slot = interview.get("slot") or "2026-08-15T10:00:00Z"
-                    client.table("interviews").insert({
+                    if not cand_id and cand_name:
+                        cand_res = (
+                            client.table("candidates")
+                            .select("id")
+                            .eq("user_id", user_id)
+                            .eq("full_name", cand_name)
+                            .limit(1)
+                            .execute()
+                        )
+                        cand_id = cand_res.data[0]["id"] if cand_res.data else None
+
+                    # Do NOT fabricate past slots — store NULL when slot is unknown or unextracted (BUG-4)
+                    raw_slot = interview.get("slot")
+                    slot = raw_slot.strip() if raw_slot and isinstance(raw_slot, str) and raw_slot.strip() else None
+
+                    # Propagate actual duration and mode from interview object instead of hardcoding
+                    duration = interview.get("duration_minutes") or interview.get("duration") or 30
+                    mode = interview.get("mode") or "video"
+
+                    # Optional application link if available
+                    app_id = interview.get("application_id")
+                    if not app_id and cand_id and job_id:
+                        app_res = (
+                            client.table("applications")
+                            .select("id")
+                            .eq("candidate_id", cand_id)
+                            .eq("job_id", job_id)
+                            .limit(1)
+                            .execute()
+                        )
+                        if app_res.data:
+                            app_id = app_res.data[0]["id"]
+
+                    payload = {
                         "candidate_id": cand_id,
                         "user_id": user_id,
+                        "application_id": app_id,
                         "scheduled_at": slot,
-                        "duration_minutes": 45,
-                        "mode": "video",
+                        "duration_minutes": duration,
+                        "mode": mode,
                         "status": "scheduled",
-                        "feedback": {"candidate_name": cand_name, "booked_at": interview.get("booked_at")}
-                    }).execute()
+                        "feedback": {
+                            "candidate_name": cand_name,
+                            "booked_at": interview.get("booked_at")
+                        }
+                    }
+                    client.table("interviews").insert(payload).execute()
                 except Exception as e:
                     logging.warning(f"[chat] Failed to persist interview: {e}")
 

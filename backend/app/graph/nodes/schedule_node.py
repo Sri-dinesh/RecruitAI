@@ -50,20 +50,25 @@ def _generate_slots(n: int = 5) -> List[dict]:
 
 from app.graph.router_node import resolve_candidate_reference
 
-def _extract_candidate_name(query: str, state: RecruitState) -> Optional[str]:
-    """Extracts candidate name from query using resolve_candidate_reference."""
+def _extract_candidate_info(query: str, state: RecruitState) -> Tuple[Optional[str], Optional[str]]:
+    """Extracts candidate (candidate_id, candidate_name) from query using resolve_candidate_reference."""
     cid = resolve_candidate_reference(query, state)
     resumes = state.get("resumes", []) or state.get("last_shortlist") or []
     if cid:
         c = next((cand for cand in resumes if cand.candidate_id == cid), None)
         if c:
-            return c.name
+            return c.candidate_id, c.name
+        return cid, None
 
     match = re.search(r"\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", query)
     if match:
-        return match.group(1)
+        name = match.group(1)
+        c = next((cand for cand in resumes if cand.name.lower() == name.lower()), None)
+        if c:
+            return c.candidate_id, c.name
+        return None, name
 
-    return None
+    return None, None
 
 
 def _extract_slot_number(query: str) -> Optional[int]:
@@ -98,12 +103,15 @@ def schedule_node(state: RecruitState) -> dict:
             chosen = slots[slot_number - 1]
             label = chosen["label"]
 
-            # Record the interview
+            # Record the interview with real candidate_id, mode, and duration
             scheduled_interviews = state.get("scheduled_interviews") or []
             new_interview = {
+                "candidate_id": pending.get("candidate_id"),
                 "candidate_name": candidate_name,
                 "slot": label,
-                "booked_at": datetime.now().isoformat()
+                "booked_at": datetime.now().isoformat(),
+                "mode": pending.get("mode", "video"),
+                "duration_minutes": pending.get("duration_minutes", 30)
             }
 
             confirmation_msg = (
@@ -138,7 +146,7 @@ def schedule_node(state: RecruitState) -> dict:
             }
 
     # --- CASE 2: New scheduling request - generate slots ---
-    candidate_name = _extract_candidate_name(user_msg, state)
+    cand_id, candidate_name = _extract_candidate_info(user_msg, state)
     jd = state.get("jd_structured")
     role = jd.role if jd else "the position"
 
@@ -156,9 +164,12 @@ def schedule_node(state: RecruitState) -> dict:
 
     pending_data = {
         "action": "schedule_interview",
+        "candidate_id": cand_id,
         "candidate_name": candidate_name or "Candidate",
         "role": role,
-        "slots": slots
+        "slots": slots,
+        "mode": "video",
+        "duration_minutes": 30
     }
 
     return {
@@ -168,3 +179,4 @@ def schedule_node(state: RecruitState) -> dict:
             "content": "\n".join(slot_lines)
         }]
     }
+

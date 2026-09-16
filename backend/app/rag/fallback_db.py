@@ -174,7 +174,7 @@ class FallbackSupabaseClient:
                 application_id TEXT,
                 candidate_id TEXT,
                 user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
-                scheduled_at TIMESTAMP NOT NULL,
+                scheduled_at TIMESTAMP,
                 duration_minutes INTEGER DEFAULT 30,
                 mode TEXT DEFAULT 'video',
                 meeting_link TEXT,
@@ -243,6 +243,38 @@ class FallbackSupabaseClient:
         _ensure_col("chat_sessions", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
         _ensure_col("chat_sessions", "job_id", "TEXT")
         _ensure_col("chat_sessions", "updated_at", "TIMESTAMP")
+
+        # Migrate interviews.scheduled_at if legacy SQLite file had NOT NULL (BUG-4)
+        try:
+            cursor.execute("PRAGMA table_info(interviews)")
+            for col in cursor.fetchall():
+                if col[1] == 'scheduled_at' and col[3] == 1:
+                    cursor.execute("ALTER TABLE interviews RENAME TO _interviews_old")
+                    cursor.execute("""
+                        CREATE TABLE interviews (
+                            id TEXT PRIMARY KEY,
+                            application_id TEXT,
+                            candidate_id TEXT,
+                            user_id TEXT NOT NULL DEFAULT 'local_dev_user_123',
+                            scheduled_at TIMESTAMP,
+                            duration_minutes INTEGER DEFAULT 30,
+                            mode TEXT DEFAULT 'video',
+                            meeting_link TEXT,
+                            status TEXT NOT NULL DEFAULT 'scheduled',
+                            feedback TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    cursor.execute("""
+                        INSERT INTO interviews (id, application_id, candidate_id, user_id, scheduled_at, duration_minutes, mode, meeting_link, status, feedback, created_at, updated_at)
+                        SELECT id, application_id, candidate_id, user_id, scheduled_at, duration_minutes, mode, meeting_link, status, feedback, created_at, updated_at FROM _interviews_old
+                    """)
+                    cursor.execute("DROP TABLE _interviews_old")
+                    break
+        except Exception:
+            pass
+
         _ensure_col("chat_messages", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
 
         conn.commit()
