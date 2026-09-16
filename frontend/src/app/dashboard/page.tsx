@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Users, 
@@ -24,12 +24,8 @@ import {
 } from 'lucide-react';
 import MarkdownText from '@/components/MarkdownText';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
-import { fetchWithAuth } from '@/lib/apiClient';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+import { useCopilotChat } from '@/hooks/useCopilotChat';
+import { ChatMessage } from '@/types/chat';
 
 export default function DashboardOverviewPage() {
   const {
@@ -46,15 +42,27 @@ export default function DashboardOverviewPage() {
     refreshData
   } = useRecruitment();
 
-  // Chat UI state for quick AI copilot interaction (compatible with tests & fast recruiter queries)
-  const [messages, setMessages] = useState<Message[]>([
+  const initialWelcome = useMemo<ChatMessage[]>(() => [
     {
       role: 'assistant',
       content: 'Welcome to **RecruitAI Mission Control**. Ask me anything about your current candidate pool, request candidate ranking summaries, or jump into dedicated workspaces.'
     }
-  ]);
-  const [input, setInput] = useState('');
-  const [isChatLoading, setIsChatLoading] = useState(false);
+  ], []);
+
+  // Unified Copilot Chat hook across dashboard overview and copilot workspace (ARCH-5)
+  const {
+    messages,
+    input,
+    setInput,
+    isLoading: isChatLoading,
+    handleSend
+  } = useCopilotChat({
+    activeSessionId,
+    jd,
+    initialMessages: initialWelcome,
+    onSessionUpdated: refreshData
+  });
+
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // File upload drag & drop state
@@ -66,58 +74,9 @@ export default function DashboardOverviewPage() {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Quick Chat submit handler invoking /api/chat
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isChatLoading) return;
-
-    const userMessage = input.trim();
-    setInput('');
-    const newMessages: Message[] = [...messages, { role: 'user', content: userMessage }];
-    setMessages(newMessages);
-    setIsChatLoading(true);
-
-    try {
-      const payload: any = {
-        message: userMessage,
-        conversation_history: newMessages.slice(-6).map(m => ({ role: m.role, content: m.content })),
-        session_id: activeSessionId || 'default'
-      };
-
-      if (jd) {
-        payload.jd_structured = jd;
-      }
-
-      const res = await fetchWithAuth('/api/chat', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        throw new Error(`Chat API responded with status ${res.status}`);
-      }
-
-      const data = await res.json();
-      const assistantText = data.response || data.message || 'I have analyzed your candidates against the role requirements.';
-      
-      setMessages([...newMessages, { role: 'assistant', content: assistantText }]);
-      
-      // Auto-refresh sessions if session or state changed
-      if (data.session_id) {
-        refreshData();
-      }
-    } catch (err: any) {
-      console.error('Quick chat error:', err);
-      setMessages([
-        ...newMessages,
-        {
-          role: 'assistant',
-          content: `Unable to complete chat request: ${err.message || 'Network error'}. You can also visit the full [AI Copilot](/dashboard/copilot) workspace.`
-        }
-      ]);
-    } finally {
-      setIsChatLoading(false);
-    }
+    handleSend();
   };
 
   // Quick file drop handler for quick ingestion

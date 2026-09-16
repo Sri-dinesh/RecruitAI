@@ -57,10 +57,8 @@ export interface ScheduledInterview {
   feedback?: string;
 }
 
-export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+import { Message, ChatMessage } from '@/types/chat';
+export type { Message, ChatMessage };
 
 export interface Session {
   id: string;
