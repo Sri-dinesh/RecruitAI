@@ -188,6 +188,7 @@ def get_candidate_evaluation(
     client = get_supabase_client()
     norm_cand_id = _to_uuid_str(candidate_id)
     norm_user_id = _to_uuid_str(user_id)
+    found_status = None
     try:
         # 1. Primary check: check application rubric
         app_res = (
@@ -199,6 +200,8 @@ def get_candidate_evaluation(
             .execute()
         )
         if app_res.data:
+            if app_res.data[0].get("status"):
+                found_status = app_res.data[0].get("status")
             reasoning = app_res.data[0].get("match_reasoning") or {}
             if isinstance(reasoning, str):
                 try:
@@ -213,7 +216,7 @@ def get_candidate_evaluation(
                     "tech_score": rubric.get("tech_score", 0),
                     "comm_score": rubric.get("comm_score", 0),
                     "notes": rubric.get("notes", ""),
-                    "status": app_res.data[0].get("status"),
+                    "status": found_status,
                     "updated_at": rubric.get("updated_at")
                 }
 
@@ -233,6 +236,8 @@ def get_candidate_evaluation(
                     meta = json.loads(meta)
                 except (json.JSONDecodeError, TypeError):
                     meta = {}
+            if not found_status and meta.get("status"):
+                found_status = meta.get("status")
             rubric = meta.get("rubric")
             if rubric:
                 return {
@@ -241,7 +246,7 @@ def get_candidate_evaluation(
                     "tech_score": rubric.get("tech_score", 0),
                     "comm_score": rubric.get("comm_score", 0),
                     "notes": rubric.get("notes", ""),
-                    "status": meta.get("status"),
+                    "status": found_status,
                     "updated_at": rubric.get("updated_at")
                 }
     except Exception as e:
@@ -253,7 +258,7 @@ def get_candidate_evaluation(
         "tech_score": 0,
         "comm_score": 0,
         "notes": "",
-        "status": None
+        "status": found_status
     }
 
 
@@ -352,3 +357,81 @@ def export_ats_data(
         "evaluations_count": len(user_evaluations),
         "evaluations": user_evaluations
     }
+
+
+class CandidateStatusRequest(BaseModel):
+    status: str = Field(..., description="Candidate status: shortlisted, offered, rejected, new")
+    session_id: Optional[str] = Field(default=None, description="Optional campaign session UUID")
+
+
+@router.post("/candidates/{candidate_id}/status")
+@router.patch("/candidates/{candidate_id}/status")
+def update_candidate_status_endpoint(
+    candidate_id: str,
+    req: CandidateStatusRequest,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Persists candidate recruitment status directly to PostgreSQL (BUG-6).
+    Updates candidates metadata and applications status for tenant isolation.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    client = get_supabase_client()
+    norm_cand_id = _to_uuid_str(candidate_id)
+    norm_user_id = _to_uuid_str(user_id)
+
+    try:
+        # 1. Update candidate metadata
+        cand_res = (
+            client.table("candidates")
+            .select("id, metadata")
+            .eq("id", norm_cand_id)
+            .eq("user_id", norm_user_id)
+            .limit(1)
+            .execute()
+        )
+        if cand_res.data:
+            cm = cand_res.data[0].get("metadata") or {}
+            if isinstance(cm, str):
+                try:
+                    cm = json.loads(cm)
+                except (json.JSONDecodeError, TypeError):
+                    cm = {}
+            cm["status"] = req.status
+            cm["status_updated_at"] = now_iso
+            if req.session_id:
+                cm["session_id"] = req.session_id
+                s_ids = set(cm.get("session_ids") or [])
+                s_ids.add(req.session_id)
+                cm["session_ids"] = list(s_ids)
+
+            client.table("candidates").update({"metadata": cm}).eq("id", norm_cand_id).eq("user_id", norm_user_id).execute()
+        else:
+            stub_meta = {
+                "status": req.status,
+                "status_updated_at": now_iso
+            }
+            if req.session_id:
+                stub_meta["session_id"] = req.session_id
+                stub_meta["session_ids"] = [req.session_id]
+            client.table("candidates").insert({
+                "id": norm_cand_id,
+                "user_id": norm_user_id,
+                "full_name": f"Candidate {candidate_id}",
+                "email": f"{candidate_id}@recruitai.local",
+                "raw_resume_text": "",
+                "metadata": stub_meta
+            }).execute()
+
+        # 2. Update applications table status if application exists
+        client.table("applications").update({"status": req.status}).eq("candidate_id", norm_cand_id).eq("user_id", norm_user_id).execute()
+
+        return {
+            "status": "success",
+            "candidate_id": candidate_id,
+            "candidate_status": req.status
+        }
+    except Exception as e:
+        logging.error(f"[routes_evaluate] Error updating candidate status: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error updating status: {e}")
+

@@ -133,3 +133,34 @@ def test_evaluation_db_as_single_source_of_truth():
     assert get_data["tech_score"] == 5
     assert get_data["notes"] == "Externally updated notes directly in PostgreSQL"
 
+
+def test_update_candidate_status_persistence():
+    cand_id = "test_cand_status_persist"
+    
+    # 1. Update candidate status to shortlisted
+    res = client.post(f"/api/candidates/{cand_id}/status", json={
+        "status": "shortlisted",
+        "session_id": "test_session_status"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["candidate_status"] == "shortlisted"
+
+    # 2. Query evaluation endpoint to verify candidate status is returned
+    get_res = client.get(f"/api/candidates/{cand_id}/evaluation")
+    assert get_res.status_code == 200
+    assert get_res.json()["status"] == "shortlisted"
+
+    # 3. Patch candidate status to rejected
+    patch_res = client.patch(f"/api/candidates/{cand_id}/status", json={
+        "status": "rejected",
+        "session_id": "test_session_status"
+    })
+    assert patch_res.status_code == 200
+    assert patch_res.json()["candidate_status"] == "rejected"
+
+    get_res2 = client.get(f"/api/candidates/{cand_id}/evaluation")
+    assert get_res2.status_code == 200
+    assert get_res2.json()["status"] == "rejected"
+

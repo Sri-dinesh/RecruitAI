@@ -94,7 +94,7 @@ interface RecruitmentContextType {
   deleteSession: (id: string) => Promise<void>;
   uploadJd: (file?: File, text?: string) => Promise<{ success: boolean; jd?: JobDescription; error?: string }>;
   uploadResumes: (files: File[]) => Promise<{ success: boolean; count?: number; error?: string }>;
-  handleSetStatus: (candidateId: string, candidateName: string, status: CandidateStatus) => Promise<void>;
+  handleSetStatus: (candidateId: string, statusOrName: CandidateStatus | string, maybeStatus?: CandidateStatus) => Promise<void>;
   setIsBlindHiring: (val: boolean) => void;
   saveEvalNotes: (candidateId: string, notes: { tech: number; comm: number; notes: string }) => void;
   refreshData: () => Promise<void>;
@@ -208,13 +208,35 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
           setScheduledInterviews([]);
         }
 
-        // Restore candidate statuses from scoped localStorage
+        // Restore candidate statuses from backend candidate objects first
+        const backendStatuses: Record<string, CandidateStatus> = {};
+        if (data.resumes && Array.isArray(data.resumes)) {
+          data.resumes.forEach((c: any) => {
+            if (c.status && c.status !== 'new' && c.candidate_id) {
+              backendStatuses[c.candidate_id] = c.status as CandidateStatus;
+            }
+          });
+        }
+
+        // Merge with non-stale localStorage cache (24h TTL)
         try {
           const saved = localStorage.getItem(`recruitai_cand_statuses_${sessionId}`);
-          if (saved) setCandidateStatuses(JSON.parse(saved));
-          else setCandidateStatuses({});
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            const cachedStatuses = parsed.statuses || parsed;
+            const cachedAt = parsed.cachedAt || 0;
+            const isStale = cachedAt > 0 && Date.now() - cachedAt > 24 * 60 * 60 * 1000;
+            if (!isStale) {
+              setCandidateStatuses({ ...cachedStatuses, ...backendStatuses });
+            } else {
+              localStorage.removeItem(`recruitai_cand_statuses_${sessionId}`);
+              setCandidateStatuses(backendStatuses);
+            }
+          } else {
+            setCandidateStatuses(backendStatuses);
+          }
         } catch {
-          setCandidateStatuses({});
+          setCandidateStatuses(backendStatuses);
         }
       }
     } catch (err) {
@@ -392,20 +414,63 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     }
   }, [activeSessionId, refreshData]);
 
-  // Set candidate status
-  const handleSetStatus = useCallback(async (candidateId: string, candidateName: string, status: CandidateStatus) => {
-    const next = candidateStatuses[candidateId] === status ? undefined : status;
-    const updated = { ...candidateStatuses };
-    if (next) updated[candidateId] = next;
-    else delete updated[candidateId];
+  // Set candidate status with optimistic UI update, rollback on failure, and backend API persistence (BUG-6)
+  const handleSetStatus = useCallback(async (
+    candidateId: string,
+    statusOrName: CandidateStatus | string,
+    maybeStatus?: CandidateStatus
+  ) => {
+    // Normalizes whether called as (id, status) or legacy (id, name, status)
+    const status: CandidateStatus = (maybeStatus ?? statusOrName) as CandidateStatus;
+    const previousStatus = candidateStatuses[candidateId];
+    const nextStatus = previousStatus === status ? undefined : status;
 
+    // 1. Optimistic UI update
+    const updated = { ...candidateStatuses };
+    if (nextStatus) {
+      updated[candidateId] = nextStatus;
+    } else {
+      delete updated[candidateId];
+    }
     setCandidateStatuses(updated);
+
+    // 2. Cache in localStorage with timestamp for TTL expiration
     if (activeSessionId) {
       try {
-        localStorage.setItem(`recruitai_cand_statuses_${activeSessionId}`, JSON.stringify(updated));
+        localStorage.setItem(
+          `recruitai_cand_statuses_${activeSessionId}`,
+          JSON.stringify({ statuses: updated, cachedAt: Date.now() })
+        );
       } catch {}
     }
-  }, [candidateStatuses, activeSessionId]);
+
+    // 3. Persist to backend PostgreSQL API with rollback on failure
+    try {
+      const payload = {
+        status: nextStatus || 'new',
+        session_id: activeSessionId || undefined,
+      };
+      const res = await fetchWithAuth(`/api/candidates/${candidateId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+    } catch (err) {
+      console.error('[RecruitmentContext] Failed to persist candidate status, rolling back:', err);
+      // Rollback optimistic state
+      const rollback = { ...candidateStatuses };
+      if (previousStatus) {
+        rollback[candidateId] = previousStatus;
+      } else {
+        delete rollback[candidateId];
+      }
+      setCandidateStatuses(rollback);
+    }
+  }, [candidateStatuses, activeSessionId, fetchWithAuth]);
 
   // Masking helpers for Blind Mode
   const maskName = useCallback((name: string, candidateId?: string) => {
