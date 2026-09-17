@@ -195,6 +195,7 @@ create table public.chat_messages (
 );
 
 create index idx_chat_messages_session_id on public.chat_messages(session_id);
+create index idx_chat_messages_user_id on public.chat_messages(user_id);
 create index idx_chat_messages_created_at on public.chat_messages(created_at);
 
 -- ============================================================
@@ -227,6 +228,7 @@ create or replace function public.match_resume_chunks (
   similarity float
 )
 language sql stable
+set search_path = public, pg_temp
 as $$
   select
     rc.id,
@@ -252,7 +254,7 @@ begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql set search_path = public, pg_temp;
 
 create trigger trg_users_updated_at before update on public.users
   for each row execute function public.set_updated_at();
@@ -308,7 +310,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql security definer set search_path = public;
+$$ language plpgsql security definer set search_path = public, pg_temp;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
@@ -334,7 +336,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql security definer set search_path = public;
+$$ language plpgsql security definer set search_path = public, pg_temp;
 
 drop trigger if exists on_auth_user_updated on auth.users;
 create trigger on_auth_user_updated
@@ -386,44 +388,53 @@ alter table public.chat_sessions enable row level security;
 alter table public.chat_messages enable row level security;
 alter table public.session_candidates enable row level security;
 
-create policy "Users manage their own profile" on public.users
-  for all using (auth.uid() = id) with check (auth.uid() = id);
+-- Tenant Isolation Policies hardened with (SELECT auth.uid()) for InitPlan optimization
+create policy "users_tenant_isolation" on public.users
+  for all to authenticated
+  using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
 
-create policy "Users manage their own jobs" on public.jobs
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "jobs_tenant_isolation" on public.jobs
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own candidates" on public.candidates
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "candidates_tenant_isolation" on public.candidates
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own resume_chunks" on public.resume_chunks
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "resume_chunks_tenant_isolation" on public.resume_chunks
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own applications" on public.applications
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "applications_tenant_isolation" on public.applications
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own interviews" on public.interviews
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "interviews_tenant_isolation" on public.interviews
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own chat_sessions" on public.chat_sessions
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "chat_sessions_tenant_isolation" on public.chat_sessions
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-create policy "Users manage their own chat_messages" on public.chat_messages
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "chat_messages_tenant_isolation" on public.chat_messages
+  for all to authenticated
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
-drop policy if exists "session_candidates_tenant_isolation" on public.session_candidates;
 create policy "session_candidates_tenant_isolation" on public.session_candidates
-  for all using (
+  for all to authenticated
+  using (
     exists (
       select 1 from public.chat_sessions s
       where s.id = session_candidates.session_id
-      and (auth.uid() is null or s.user_id = auth.uid())
+      and (s.user_id = (select auth.uid()))
     )
   )
   with check (
     exists (
       select 1 from public.chat_sessions s
       where s.id = session_candidates.session_id
-      and (auth.uid() is null or s.user_id = auth.uid())
+      and (s.user_id = (select auth.uid()))
     )
   );
 
@@ -433,7 +444,9 @@ create policy "session_candidates_tenant_isolation" on public.session_candidates
 
 -- (a) KPI summary: totals across all tables for a user
 CREATE OR REPLACE FUNCTION public.get_analytics_summary(p_user_id uuid)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   SELECT jsonb_build_object(
     'total_candidates',       (SELECT COUNT(*) FROM public.candidates   WHERE user_id = p_user_id),
     'total_jobs',             (SELECT COUNT(*) FROM public.jobs          WHERE user_id = p_user_id),
@@ -451,7 +464,9 @@ $$;
 
 -- (b) Pipeline funnel: per-stage counts
 CREATE OR REPLACE FUNCTION public.get_pipeline_funnel(p_user_id uuid)
-RETURNS TABLE(stage text, count bigint, percentage numeric) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS TABLE(stage text, count bigint, percentage numeric) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   WITH totals AS (
     SELECT
       COUNT(*) FILTER (WHERE status = 'new')                  AS cnt_new,
@@ -465,7 +480,7 @@ RETURNS TABLE(stage text, count bigint, percentage numeric) LANGUAGE sql STABLE 
     WHERE user_id = p_user_id
   )
   SELECT stage, count,
-    CASE WHEN cnt_total > 0 THEN ROUND((count::numeric / cnt_total * 100), 1) ELSE 0 END AS percentage
+    CASE WHEN cnt_total > 0 THEN ROUND((count::numeric / cnt_total * 100), 1) ELSE 0.0 END AS percentage
   FROM (
     VALUES
       ('New',                  (SELECT cnt_new          FROM totals), (SELECT cnt_total FROM totals)),
@@ -478,26 +493,41 @@ RETURNS TABLE(stage text, count bigint, percentage numeric) LANGUAGE sql STABLE 
 $$;
 
 -- (c) Candidates ingested per day over the last N days
+DROP FUNCTION IF EXISTS public.get_candidates_over_time(uuid, integer);
 CREATE OR REPLACE FUNCTION public.get_candidates_over_time(p_user_id uuid, days int DEFAULT 30)
-RETURNS TABLE(day date, count bigint) LANGUAGE sql STABLE SECURITY DEFINER AS $$
-  SELECT DATE(created_at) AS day, COUNT(*) AS count
-  FROM public.candidates
-  WHERE user_id = p_user_id
-    AND created_at >= NOW() - (days || ' days')::interval
-  GROUP BY DATE(created_at)
-  ORDER BY day ASC;
+RETURNS TABLE(day text, count bigint) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  WITH date_series AS (
+    SELECT generate_series(
+      CURRENT_DATE - (days || ' days')::interval,
+      CURRENT_DATE::timestamp,
+      '1 day'::interval
+    )::date AS d
+  )
+  SELECT
+    TO_CHAR(ds.d, 'YYYY-MM-DD') AS day,
+    COUNT(c.id) AS count
+  FROM date_series ds
+  LEFT JOIN public.candidates c
+    ON c.user_id = p_user_id AND c.created_at::date = ds.d
+  GROUP BY ds.d
+  ORDER BY ds.d ASC;
 $$;
 
 -- (d) Match score distribution in quality buckets
+DROP FUNCTION IF EXISTS public.get_match_score_distribution(uuid);
 CREATE OR REPLACE FUNCTION public.get_match_score_distribution(p_user_id uuid)
-RETURNS TABLE(bucket text, count bigint, min_score int, max_score int) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS TABLE(bucket text, count bigint, min_score int, max_score int) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   SELECT
     CASE
-      WHEN match_score >= 90 THEN 'Excellent (90-100)'
-      WHEN match_score >= 75 THEN 'Strong (75-89)'
-      WHEN match_score >= 60 THEN 'Good (60-74)'
-      WHEN match_score >= 40 THEN 'Fair (40-59)'
-      ELSE 'Poor (0-39)'
+      WHEN match_score >= 90 THEN 'Top Tier (90-100%)'
+      WHEN match_score >= 75 THEN 'Strong Fit (75-89%)'
+      WHEN match_score >= 60 THEN 'Good Fit (60-74%)'
+      WHEN match_score >= 40 THEN 'Fair Fit (40-59%)'
+      ELSE 'Low Fit (<40%)'
     END AS bucket,
     COUNT(*) AS count,
     CASE WHEN match_score >= 90 THEN 90 WHEN match_score >= 75 THEN 75 WHEN match_score >= 60 THEN 60 WHEN match_score >= 40 THEN 40 ELSE 0 END AS min_score,
@@ -509,35 +539,47 @@ RETURNS TABLE(bucket text, count bigint, min_score int, max_score int) LANGUAGE 
 $$;
 
 -- (e) Top demanded skills across all parsed JDs
+DROP FUNCTION IF EXISTS public.get_top_skills(uuid, integer);
 CREATE OR REPLACE FUNCTION public.get_top_skills(p_user_id uuid, top_n int DEFAULT 12)
-RETURNS TABLE(skill text, demand_count bigint) LANGUAGE sql STABLE SECURITY DEFINER AS $$
-  SELECT skill, COUNT(*) AS demand_count
-  FROM public.jobs, jsonb_array_elements_text(jd_structured->'required_skills') AS skill
-  WHERE user_id = p_user_id
-    AND jd_structured IS NOT NULL
-    AND jd_structured ? 'required_skills'
-  GROUP BY skill
+RETURNS TABLE(skill text, demand_count bigint) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT
+    LOWER(TRIM(skill_elem)) AS skill,
+    COUNT(*) AS demand_count
+  FROM public.candidates c,
+  LATERAL jsonb_array_elements_text(
+    CASE
+      WHEN jsonb_typeof(c.metadata->'skills') = 'array' THEN c.metadata->'skills'
+      ELSE '[]'::jsonb
+    END
+  ) AS skill_elem
+  WHERE c.user_id = p_user_id
+    AND TRIM(skill_elem) <> ''
+  GROUP BY LOWER(TRIM(skill_elem))
   ORDER BY demand_count DESC
   LIMIT top_n;
 $$;
 
 -- (f) Hiring velocity — avg time (days) between candidate creation and key milestones
 CREATE OR REPLACE FUNCTION public.get_hiring_velocity(p_user_id uuid)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   SELECT jsonb_build_object(
     'avg_days_to_shortlist',
-      ROUND(AVG(
+      COALESCE(ROUND(AVG(
         EXTRACT(EPOCH FROM (a.updated_at - c.created_at)) / 86400.0
-      ) FILTER (WHERE a.status IN ('shortlisted','interview_scheduled','interviewed','offered'))::numeric, 1),
+      ) FILTER (WHERE a.status IN ('shortlisted','interview_scheduled','interviewed','offered'))::numeric, 1), 0),
     'avg_days_to_interview',
-      ROUND(AVG(
+      COALESCE(ROUND(AVG(
         EXTRACT(EPOCH FROM (i.scheduled_at - c.created_at)) / 86400.0
-      )::numeric, 1),
+      )::numeric, 1), 0),
     'avg_days_to_offer',
-      ROUND(AVG(
+      COALESCE(ROUND(AVG(
         EXTRACT(EPOCH FROM (a.updated_at - c.created_at)) / 86400.0
-      ) FILTER (WHERE a.status = 'offered')::numeric, 1),
-    'total_time_tracked', COUNT(DISTINCT a.candidate_id)
+      ) FILTER (WHERE a.status = 'offered')::numeric, 1), 0),
+    'total_time_tracked', COALESCE(COUNT(DISTINCT a.candidate_id), 0)
   )
   FROM public.applications a
   JOIN public.candidates c ON c.id = a.candidate_id AND c.user_id = p_user_id
@@ -551,7 +593,9 @@ RETURNS TABLE(
   job_id uuid, title text, status text, created_at timestamptz,
   total_applied bigint, total_shortlisted bigint, total_interviewed bigint,
   total_offered bigint, avg_match_score numeric
-) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   SELECT
     j.id AS job_id,
     j.title,
@@ -571,9 +615,12 @@ $$;
 
 -- (h) Recent activity feed (last 20 events across candidates, applications, interviews)
 CREATE OR REPLACE FUNCTION public.get_recent_activity(p_user_id uuid, limit_n int DEFAULT 20)
-RETURNS TABLE(event_type text, description text, entity_id uuid, occurred_at timestamptz) LANGUAGE sql STABLE SECURITY DEFINER AS $$
+RETURNS TABLE(event_type text, description text, entity_id uuid, occurred_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
   (
-    SELECT 'candidate_added'::text, ('New resume: ' || full_name), id, created_at
+    SELECT 'candidate_added'::text AS event_type, ('New resume: ' || full_name) AS description, id AS entity_id, created_at AS occurred_at
     FROM public.candidates WHERE user_id = p_user_id
   )
   UNION ALL
@@ -598,15 +645,25 @@ RETURNS TABLE(event_type text, description text, entity_id uuid, occurred_at tim
   LIMIT limit_n;
 $$;
 
--- Grant execute permissions for authenticated users
-GRANT EXECUTE ON FUNCTION public.get_analytics_summary(uuid)              TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_pipeline_funnel(uuid)                TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_candidates_over_time(uuid, int)      TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_match_score_distribution(uuid)       TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_top_skills(uuid, int)                TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_hiring_velocity(uuid)                TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_jobs_summary(uuid)                   TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_recent_activity(uuid, int)           TO authenticated;
+-- Revoke anon execution on SECURITY DEFINER functions
+REVOKE EXECUTE ON FUNCTION public.get_analytics_summary(uuid) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_pipeline_funnel(uuid) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_candidates_over_time(uuid, integer) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_match_score_distribution(uuid) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_top_skills(uuid, integer) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_hiring_velocity(uuid) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_jobs_summary(uuid) FROM anon, public;
+REVOKE EXECUTE ON FUNCTION public.get_recent_activity(uuid, integer) FROM anon, public;
+
+-- Grant execution to authenticated and service_role
+GRANT EXECUTE ON FUNCTION public.get_analytics_summary(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_pipeline_funnel(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_candidates_over_time(uuid, integer) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_match_score_distribution(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_top_skills(uuid, integer) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_hiring_velocity(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_jobs_summary(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_recent_activity(uuid, integer) TO authenticated, service_role;
 
 -- ============================================================
 -- 14. Transactional Atomic Workspace Reset RPC (SEC-3)
@@ -615,7 +672,7 @@ CREATE OR REPLACE FUNCTION public.reset_user_workspace(target_user_id UUID)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   -- Security: verify caller only resets their own data when called from client context
@@ -641,8 +698,12 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.reset_user_workspace(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.reset_user_workspace(UUID) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.reset_user_workspace(UUID) FROM anon, public;
+GRANT EXECUTE ON FUNCTION public.reset_user_workspace(UUID) TO authenticated, service_role;
+
+-- Revoke execute on trigger functions from all client roles
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon, authenticated, public;
+REVOKE EXECUTE ON FUNCTION public.handle_user_updated() FROM anon, authenticated, public;
 
 -- Notify schema reload
 NOTIFY pgrst, 'reload schema';

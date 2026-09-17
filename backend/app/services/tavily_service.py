@@ -226,7 +226,7 @@ class TavilyService:
         key = (TAVILY_API_KEY or "").strip()
         if key and "your_tavily" not in key and not key.startswith("placeholder"):
             try:
-                from tavily import TavilyClient
+                from tavily import TavilyClient  # type: ignore[import-untyped]
                 self._client = TavilyClient(api_key=key)
                 logger.info("TavilyClient initialized successfully.")
             except Exception as e:
