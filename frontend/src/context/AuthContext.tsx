@@ -102,14 +102,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     fetchSession();
 
-    // 2. Real-time auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // 2. Real-time auth state change listener with debounced profile queries (UI-1)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user?.id) {
-        await fetchProfile(session.user.id);
-      } else {
+      if (!session?.user?.id) {
         setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      // Only fetch profile on SIGNED_IN or USER_UPDATED, preventing redundant database queries on TOKEN_REFRESHED
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        await fetchProfile(session.user.id);
       }
       setLoading(false);
     });

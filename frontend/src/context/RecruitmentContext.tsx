@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
 import { fetchWithAuth } from '@/lib/apiClient';
 import {
@@ -115,16 +116,12 @@ const RecruitmentContext = createContext<RecruitmentContextType | undefined>(und
 
 export function RecruitmentProvider({ children }: { children: React.ReactNode }) {
   const { user, profile } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(null);
-  const [jd, setJd] = useState<JobDescription | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [candidateStatuses, setCandidateStatuses] = useState<Record<string, CandidateStatus>>({});
-  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
   const [isBlindHiring, setIsBlindHiring] = useState(false);
-  const [apiConnected, setApiConnected] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, CandidateStatus>>({});
   const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
   const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
 
@@ -151,126 +148,158 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
-  // Check health and ping API
-  const checkHealth = useCallback(async () => {
-    try {
-      const res = await fetchWithAuth('/api/health');
-      setApiConnected(res.ok);
-    } catch {
-      setApiConnected(false);
-    }
-  }, []);
+  // 1. Health check query with TanStack Query (UI-1)
+  const healthQuery = useQuery<boolean>({
+    queryKey: ['health'],
+    queryFn: async () => {
+      try {
+        const res = await fetchWithAuth('/api/health');
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    staleTime: 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
 
-  // Fetch all sessions
-  const fetchSessions = useCallback(async () => {
-    try {
+  const apiConnected = healthQuery.data ?? false;
+
+  // 2. Sessions list query with TanStack Query (UI-1)
+  const sessionsQuery = useQuery<Session[]>({
+    queryKey: ['sessions'],
+    queryFn: async () => {
       const res = await fetchWithAuth('/api/sessions');
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data.sessions || []);
-        setSessions(list);
-        return list;
-      }
-    } catch (err) {
-      console.warn('[RecruitmentContext] Error fetching sessions:', err);
-    }
-    return [];
-  }, []);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data.sessions || []);
+    },
+    staleTime: 30_000,
+    retry: 2,
+    refetchOnWindowFocus: false,
+  });
 
-  // Load specific session with atomic state batching and zero premature state wiping (ARCH-7)
-  const loadSession = useCallback(async (sessionId: string) => {
-    setLoading(true);
+  const sessions = useMemo(() => sessionsQuery.data || [], [sessionsQuery.data]);
 
-    try {
-      const res = await fetchWithAuth(`/api/sessions/${sessionId}`);
-      if (res.ok) {
-        const data: Session = await res.json();
+  // 3. Active Session detail query with TanStack Query (UI-1)
+  const sessionDetailQuery = useQuery<Session>({
+    queryKey: ['session', activeSessionId],
+    queryFn: async () => {
+      if (!activeSessionId) throw new Error('No active session ID');
+      const res = await fetchWithAuth(`/api/sessions/${activeSessionId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+    enabled: !!activeSessionId,
+    staleTime: 30_000,
+    retry: 2,
+    refetchOnWindowFocus: false,
+  });
 
-        // Extract backend statuses
-        const backendStatuses: Record<string, CandidateStatus> = {};
-        if (data.resumes && Array.isArray(data.resumes)) {
-          data.resumes.forEach((c: any) => {
-            if (c.status && c.status !== 'new' && c.candidate_id) {
-              backendStatuses[c.candidate_id] = c.status as CandidateStatus;
-            }
-          });
+  const activeSessionData = sessionDetailQuery.data || null;
+
+  // Derived state from active session query
+  const jd: JobDescription | null = activeSessionData?.jd_structured || null;
+  const candidates: Candidate[] = useMemo(() => {
+    return activeSessionData?.resumes && Array.isArray(activeSessionData.resumes)
+      ? activeSessionData.resumes
+      : [];
+  }, [activeSessionData?.resumes]);
+
+  const scheduledInterviews: ScheduledInterview[] = useMemo(() => {
+    return activeSessionData?.scheduled_interviews && Array.isArray(activeSessionData.scheduled_interviews)
+      ? activeSessionData.scheduled_interviews
+      : [];
+  }, [activeSessionData?.scheduled_interviews]);
+
+  // Merge backend statuses, sessionStorage cached statuses, and optimistic UI mutations
+  const candidateStatuses: Record<string, CandidateStatus> = useMemo(() => {
+    const backendStatuses: Record<string, CandidateStatus> = {};
+    if (activeSessionData?.resumes && Array.isArray(activeSessionData.resumes)) {
+      activeSessionData.resumes.forEach((c: any) => {
+        if (c.status && c.status !== 'new' && c.candidate_id) {
+          backendStatuses[c.candidate_id] = c.status as CandidateStatus;
         }
-
-        // Merge with non-stale cached statuses (via typed sessionStorage with 24h TTL)
-        const cachedStatuses = getStoredCandidateStatuses(sessionId);
-        const resolvedStatuses = { ...cachedStatuses, ...backendStatuses };
-
-        // Atomic update of state: batch in a single render pass after network response validation
-        setActiveSessionId(sessionId);
-        setActiveSessionIdState(sessionId);
-        setJd(data.jd_structured || null);
-        setCandidates(data.resumes && Array.isArray(data.resumes) ? data.resumes : []);
-        setScheduledInterviews(data.scheduled_interviews && Array.isArray(data.scheduled_interviews) ? data.scheduled_interviews : []);
-        setCandidateStatuses(resolvedStatuses);
-      } else {
-        console.warn(`[RecruitmentContext] Session fetch returned HTTP ${res.status}`);
-      }
-    } catch (err) {
-      console.warn('[RecruitmentContext] Error loading session:', err);
-    } finally {
-      setLoading(false);
+      });
     }
-  }, []);
 
-  // Create new session
+    const cachedStatuses = activeSessionId ? getStoredCandidateStatuses(activeSessionId) : {};
+    return { ...cachedStatuses, ...backendStatuses, ...optimisticStatuses };
+  }, [activeSessionData?.resumes, activeSessionId, optimisticStatuses]);
+
+  // Select or switch active session ID
+  const selectActiveSession = useCallback(async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setActiveSessionIdState(sessionId);
+    setOptimisticStatuses({});
+    await queryClient.prefetchQuery({
+      queryKey: ['session', sessionId],
+      queryFn: async () => {
+        const res = await fetchWithAuth(`/api/sessions/${sessionId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      },
+      staleTime: 30_000,
+    });
+  }, [queryClient]);
+
+  // Create new session mutation
   const createSession = useCallback(async (): Promise<string | null> => {
-    setLoading(true);
+    setIsMutating(true);
     try {
       const res = await fetchWithAuth('/api/sessions', { method: 'POST' });
       if (res.ok) {
         const newSession = await res.json();
-        setSessions((prev) => [newSession, ...prev]);
-        await loadSession(newSession.id);
+        queryClient.setQueryData<Session[]>(['sessions'], (old = []) => [newSession, ...old]);
+        await selectActiveSession(newSession.id);
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
         return newSession.id;
       }
     } catch (err) {
       console.warn('[RecruitmentContext] Error creating session:', err);
     } finally {
-      setLoading(false);
+      setIsMutating(false);
     }
     return null;
-  }, [loadSession]);
+  }, [queryClient, selectActiveSession]);
 
-  // Reset all recruitment workspace data for a 100% fresh start
-  const resetAllData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchWithAuth('/api/sessions/reset-all', { method: 'POST' });
-      if (res.ok) {
-        clearAllRecruitAIStorage();
-        setCandidates([]);
-        setJd(null);
-        setScheduledInterviews([]);
-        setCandidateStatuses({});
-        setEvalNotes({});
-        setSessions([]);
-        await createSession();
-        return { success: true };
+  // Automatic session resolution on initial sessions query completion
+  useEffect(() => {
+    if (sessionsQuery.isLoading) return;
+
+    if (activeSessionId) {
+      // If current active session is not in sessions list, fall back
+      if (sessions.length > 0 && !sessions.some((s) => s.id === activeSessionId)) {
+        selectActiveSession(sessions[0].id);
       }
-      const err = await res.json().catch(() => ({ detail: 'Reset failed' }));
-      return { success: false, error: err.detail || 'Reset failed' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Error resetting workspace data' };
-    } finally {
-      setLoading(false);
+      return;
     }
-  }, [createSession]);
+
+    const storedId = getActiveSessionId();
+    if (storedId && sessions.some((s) => s.id === storedId)) {
+      selectActiveSession(storedId);
+    } else if (sessions.length > 0) {
+      selectActiveSession(sessions[0].id);
+    } else if (!isMutating) {
+      // Auto-create initial default session if workspace has none
+      createSession();
+    }
+  }, [sessionsQuery.isLoading, sessions, activeSessionId, isMutating, selectActiveSession, createSession]);
 
   // Delete session
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
       const res = await fetchWithAuth(`/api/sessions/${sessionId}`, { method: 'DELETE' });
       if (res.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        queryClient.setQueryData<Session[]>(['sessions'], (old = []) =>
+          old.filter((s) => s.id !== sessionId)
+        );
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
         if (activeSessionId === sessionId) {
           const remaining = sessions.filter((s) => s.id !== sessionId);
           if (remaining.length > 0) {
-            await loadSession(remaining[0].id);
+            await selectActiveSession(remaining[0].id);
           } else {
             await createSession();
           }
@@ -279,43 +308,45 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     } catch (err) {
       console.warn('[RecruitmentContext] Error deleting session:', err);
     }
-  }, [activeSessionId, sessions, loadSession, createSession]);
+  }, [activeSessionId, sessions, selectActiveSession, createSession, queryClient]);
 
-  // Initial load
-  useEffect(() => {
-    let isMounted = true;
-    const init = async () => {
-      await checkHealth();
-      const sessList = await fetchSessions();
-      if (!isMounted) return;
-
-      const storedId = getActiveSessionId();
-      if (storedId && sessList.some((s: Session) => s.id === storedId)) {
-        await loadSession(storedId);
-      } else if (sessList.length > 0) {
-        await loadSession(sessList[0].id);
-      } else {
-        await createSession();
-      }
-    };
-    init();
-    return () => {
-      isMounted = false;
-    };
-  }, [checkHealth, fetchSessions, loadSession, createSession]);
-
-  // Refresh active campaign data
+  // Refresh active campaign data and sessions via TanStack Query invalidation
   const refreshData = useCallback(async () => {
-    if (activeSessionId) {
-      await loadSession(activeSessionId);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+      activeSessionId
+        ? queryClient.invalidateQueries({ queryKey: ['session', activeSessionId] })
+        : Promise.resolve(),
+    ]);
+  }, [queryClient, activeSessionId]);
+
+  // Reset all recruitment workspace data for a 100% fresh start
+  const resetAllData = useCallback(async () => {
+    setIsMutating(true);
+    try {
+      const res = await fetchWithAuth('/api/sessions/reset-all', { method: 'POST' });
+      if (res.ok) {
+        clearAllRecruitAIStorage();
+        queryClient.removeQueries();
+        setOptimisticStatuses({});
+        setEvalNotes({});
+        setActiveSessionIdState(null);
+        await createSession();
+        return { success: true };
+      }
+      const err = await res.json().catch(() => ({ detail: 'Reset failed' }));
+      return { success: false, error: err.detail || 'Reset failed' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Error resetting workspace data' };
+    } finally {
+      setIsMutating(false);
     }
-    await fetchSessions();
-  }, [activeSessionId, loadSession, fetchSessions]);
+  }, [createSession, queryClient]);
 
   // Upload JD (file or text)
   const uploadJd = useCallback(async (file?: File, text?: string) => {
     if (!activeSessionId) return { success: false, error: 'No active campaign' };
-    setLoading(true);
+    setIsMutating(true);
     try {
       const formData = new FormData();
       formData.append('session_id', activeSessionId);
@@ -326,7 +357,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         const textFile = new File([new Blob([text], { type: 'text/plain' })], 'job_description.txt');
         formData.append('file', textFile);
       } else {
-        setLoading(false);
+        setIsMutating(false);
         return { success: false, error: 'No JD provided' };
       }
 
@@ -338,7 +369,6 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       if (res.ok) {
         const data = await res.json();
         const parsedJd = data.jd_structured || data.job || data;
-        if (parsedJd) setJd(parsedJd);
         await refreshData();
         return { success: true, jd: parsedJd };
       } else {
@@ -348,14 +378,14 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     } catch (err: any) {
       return { success: false, error: err?.message || 'Error uploading JD' };
     } finally {
-      setLoading(false);
+      setIsMutating(false);
     }
   }, [activeSessionId, refreshData]);
 
   // Upload Resumes
   const uploadResumes = useCallback(async (files: File[]) => {
     if (!activeSessionId) return { success: false, error: 'No active campaign' };
-    setLoading(true);
+    setIsMutating(true);
     try {
       const formData = new FormData();
       files.forEach((f) => formData.append('files', f));
@@ -375,7 +405,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     } catch (err: any) {
       return { success: false, error: err?.message || 'Error uploading resumes' };
     } finally {
-      setLoading(false);
+      setIsMutating(false);
     }
   }, [activeSessionId, refreshData]);
 
@@ -385,23 +415,30 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     statusOrName: CandidateStatus | string,
     maybeStatus?: CandidateStatus
   ) => {
-    // Normalizes whether called as (id, status) or legacy (id, name, status)
     const status: CandidateStatus = (maybeStatus ?? statusOrName) as CandidateStatus;
     const previousStatus = candidateStatuses[candidateId];
     const nextStatus = previousStatus === status ? undefined : status;
 
     // 1. Optimistic UI update
-    const updated = { ...candidateStatuses };
-    if (nextStatus) {
-      updated[candidateId] = nextStatus;
-    } else {
-      delete updated[candidateId];
-    }
-    setCandidateStatuses(updated);
+    setOptimisticStatuses((prev) => {
+      const updated = { ...prev };
+      if (nextStatus) {
+        updated[candidateId] = nextStatus;
+      } else {
+        delete updated[candidateId];
+      }
+      return updated;
+    });
 
     // 2. Cache in typed sessionStorage with timestamp for TTL expiration (ARCH-7)
     if (activeSessionId) {
-      setStoredCandidateStatuses(activeSessionId, updated);
+      const currentMap = { ...candidateStatuses };
+      if (nextStatus) {
+        currentMap[candidateId] = nextStatus;
+      } else {
+        delete currentMap[candidateId];
+      }
+      setStoredCandidateStatuses(activeSessionId, currentMap);
     }
 
     // 3. Persist to backend PostgreSQL API with rollback on failure
@@ -419,18 +456,25 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       if (!res.ok) {
         throw new Error(`Server returned status ${res.status}`);
       }
+
+      // Invalidate active session query in background
+      if (activeSessionId) {
+        queryClient.invalidateQueries({ queryKey: ['session', activeSessionId] });
+      }
     } catch (err) {
       console.error('[RecruitmentContext] Failed to persist candidate status, rolling back:', err);
       // Rollback optimistic state
-      const rollback = { ...candidateStatuses };
-      if (previousStatus) {
-        rollback[candidateId] = previousStatus;
-      } else {
-        delete rollback[candidateId];
-      }
-      setCandidateStatuses(rollback);
+      setOptimisticStatuses((prev) => {
+        const rollback = { ...prev };
+        if (previousStatus) {
+          rollback[candidateId] = previousStatus;
+        } else {
+          delete rollback[candidateId];
+        }
+        return rollback;
+      });
     }
-  }, [candidateStatuses, activeSessionId, fetchWithAuth]);
+  }, [candidateStatuses, activeSessionId, queryClient]);
 
   // Masking helpers for Blind Mode
   const maskName = useCallback((name: string, candidateId?: string) => {
@@ -452,7 +496,8 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     return '+1 (***) ***-****';
   }, [isBlindHiring]);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId) || null;
+  const activeSession = sessions.find((s) => s.id === activeSessionId) || activeSessionData;
+  const loading = sessionsQuery.isLoading || (!!activeSessionId && sessionDetailQuery.isLoading) || isMutating;
 
   return (
     <RecruitmentContext.Provider
@@ -470,7 +515,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         evalNotes,
         inspectedCandidate,
         setInspectedCandidate,
-        setActiveSessionId: loadSession,
+        setActiveSessionId: selectActiveSession,
         createSession,
         deleteSession,
         uploadJd,

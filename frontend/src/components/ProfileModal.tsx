@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, UserProfile, UserPreferences } from '@/context/AuthContext';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { 
   User, 
   Sparkles, 
@@ -82,16 +83,13 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
     }
   }, [isOpen, profile, user]);
 
-  // Handle ESC key to close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(modalRef, {
+    isActive: isOpen,
+    onEscape: onClose,
+    autoFocus: true,
+  });
 
   // Centralized Profile Save handler
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -135,7 +133,13 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-modal-title"
+      aria-describedby="profile-modal-desc"
+    >
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -147,11 +151,13 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
 
       {/* Modal Dialog Card */}
       <motion.div
+        ref={modalRef}
+        tabIndex={-1}
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 flex flex-col max-h-[90vh] outline-none"
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
@@ -160,14 +166,14 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Account &amp; System Preferences</h2>
-              <p className="text-xs text-slate-500">Manage your recruiter identity, screening thresholds, and security</p>
+              <h2 id="profile-modal-title" className="text-base font-bold text-slate-900">Account &amp; System Preferences</h2>
+              <p id="profile-modal-desc" className="text-xs text-slate-500">Manage your recruiter identity, screening thresholds, and security</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-            title="Close (Esc)"
+            aria-label="Close profile settings modal"
           >
             <X className="w-5 h-5" />
           </button>

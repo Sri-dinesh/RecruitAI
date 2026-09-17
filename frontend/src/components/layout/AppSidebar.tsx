@@ -26,6 +26,7 @@ import {
 import Logo from '@/components/brand/Logo';
 import { useAuth } from '@/context/AuthContext';
 import { useRecruitment } from '@/context/RecruitmentContext';
+import ConfirmationModal from '@/components/ui/ConfirmationModal';
 
 interface AppSidebarProps {
   onOpenSettings: () => void;
@@ -60,6 +61,7 @@ export default function AppSidebar({ onOpenSettings, isOpenMobile, onCloseMobile
 
   const [campaignsOpen, setCampaignsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const getBadge = (key?: string) => {
     if (key === 'candidates' && candidates.length > 0) return candidates.length;
@@ -176,12 +178,7 @@ export default function AppSidebar({ onOpenSettings, isOpenMobile, onCloseMobile
                   <div className="pt-2 mt-2 border-t border-slate-100">
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (window.confirm('Are you sure you want to completely reset all campaigns, candidates, and workspace data for a clean fresh start?')) {
-                          await resetAllData();
-                          setCampaignsOpen(false);
-                        }
-                      }}
+                      onClick={() => setIsResetConfirmOpen(true)}
                       className="w-full text-left text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 p-2 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <Trash2 className="w-3 h-3 text-rose-500" /> Reset Workspace (Fresh Start)
@@ -190,6 +187,20 @@ export default function AppSidebar({ onOpenSettings, isOpenMobile, onCloseMobile
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <ConfirmationModal
+              isOpen={isResetConfirmOpen}
+              title="Reset Entire Workspace?"
+              message="Are you sure you want to completely reset all campaigns, candidates, and workspace data for a clean fresh start? This action cannot be undone."
+              confirmLabel="Reset All Data"
+              variant="danger"
+              onConfirm={async () => {
+                setIsResetConfirmOpen(false);
+                await resetAllData();
+                setCampaignsOpen(false);
+              }}
+              onCancel={() => setIsResetConfirmOpen(false)}
+            />
           </div>
         </div>
 

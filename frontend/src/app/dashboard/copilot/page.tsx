@@ -17,6 +17,7 @@ import { CopilotCanvas } from '@/components/copilot/CopilotCanvas';
 import { CopilotDock } from '@/components/copilot/CopilotDock';
 import { PresetsDeckDrawer } from '@/components/copilot/PresetsDeckDrawer';
 import { CandidateMentionPopover } from '@/components/copilot/CandidateMentionPopover';
+import ConfirmationModal from '@/components/ui/ConfirmationModal';
 import { ChatMessage } from '@/types/chat';
 
 export default function CopilotPage() {
@@ -71,6 +72,7 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
   const [activeCategory, setActiveCategory] = useState<string>('screening');
   const [candidateFilter, setCandidateFilter] = useState('');
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -222,7 +224,13 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
 
           {/* Clear Session View */}
           <button
-            onClick={handleClearHistory}
+            onClick={() => {
+              if (messages.length > 1) {
+                setIsResetConfirmOpen(true);
+              } else {
+                handleClearHistory();
+              }
+            }}
             className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
             title="Reset conversation view"
           >
@@ -279,6 +287,20 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
         roleName={jd?.role || 'General Software Engineering'}
         onSelectPrompt={handleSend}
         onInjectCandidateQuery={handleInjectCandidateQuery}
+      />
+
+      {/* Confirmation Modal for Resetting Copilot History */}
+      <ConfirmationModal
+        isOpen={isResetConfirmOpen}
+        title="Reset Copilot Conversation?"
+        message="Are you sure you want to clear conversation history for this recruitment session? This will clear the active message canvas."
+        confirmLabel="Reset Conversation"
+        variant="warning"
+        onConfirm={() => {
+          setIsResetConfirmOpen(false);
+          handleClearHistory();
+        }}
+        onCancel={() => setIsResetConfirmOpen(false)}
       />
 
     </div>

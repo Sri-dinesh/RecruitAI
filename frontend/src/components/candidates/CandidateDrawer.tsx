@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   X, Sparkles, Star, Briefcase, GraduationCap, MapPin, 
   Mail, Phone, ExternalLink, Award, CheckCircle2, XCircle, 
   Send, Calendar, AlertTriangle, FileText
 } from 'lucide-react';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import Link from 'next/link';
 
 interface CandidateDrawerProps {
@@ -30,6 +31,13 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
 
   const activeCandidate = propCandidate !== undefined ? propCandidate : inspectedCandidate;
   const handleClose = propOnClose || (() => setInspectedCandidate(null));
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(drawerRef, {
+    isActive: !!activeCandidate,
+    onEscape: handleClose,
+    autoFocus: true,
+  });
 
   if (!activeCandidate) return null;
 
@@ -55,9 +63,18 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="candidate-drawer-title"
+      aria-describedby="candidate-drawer-headline"
+      onClick={handleClose}
+    >
       <div 
-        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300"
+        ref={drawerRef}
+        tabIndex={-1}
+        className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-300 outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -68,7 +85,7 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-lg text-slate-900 truncate">{displayName}</h3>
+                <h3 id="candidate-drawer-title" className="font-extrabold text-lg text-slate-900 truncate">{displayName}</h3>
                 {currentStatus && (
                   <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded-full border ${
                     currentStatus === 'shortlisted' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -79,15 +96,15 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 font-medium truncate">
+              <p id="candidate-drawer-headline" className="text-xs text-slate-500 font-medium truncate">
                 {activeCandidate.headline || 'Candidate Profile Evaluation'}
               </p>
             </div>
           </div>
           <button 
             onClick={handleClose}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition shrink-0"
-            title="Close drawer"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition shrink-0 cursor-pointer"
+            aria-label="Close candidate drawer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -154,16 +171,16 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
                 <label className="text-xs font-bold text-slate-700 block">
                   Technical Architecture Fit (1-5 ⭐):
                 </label>
-                <div className="flex gap-1">
+                <div className="flex gap-1" role="group" aria-label="Technical Architecture Fit rating">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       type="button"
                       onClick={() => handleRatingChange('tech', star)}
-                      className={`text-xl p-0.5 transition hover:scale-110 ${
+                      className={`text-xl p-0.5 transition hover:scale-110 cursor-pointer ${
                         star <= (notesData.tech || 0) ? 'text-amber-400' : 'text-slate-200 hover:text-amber-200'
                       }`}
-                      title={`${star} star`}
+                      aria-label={`Rate technical architecture fit ${star} of 5 stars`}
                     >
                       ★
                     </button>
@@ -176,16 +193,16 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
                 <label className="text-xs font-bold text-slate-700 block">
                   Communication & Team Fit (1-5 ⭐):
                 </label>
-                <div className="flex gap-1">
+                <div className="flex gap-1" role="group" aria-label="Communication and team fit rating">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       type="button"
                       onClick={() => handleRatingChange('comm', star)}
-                      className={`text-xl p-0.5 transition hover:scale-110 ${
+                      className={`text-xl p-0.5 transition hover:scale-110 cursor-pointer ${
                         star <= (notesData.comm || 0) ? 'text-amber-400' : 'text-slate-200 hover:text-amber-200'
                       }`}
-                      title={`${star} star`}
+                      aria-label={`Rate communication fit ${star} of 5 stars`}
                     >
                       ★
                     </button>

@@ -97,10 +97,7 @@ export default function DashboardOverviewPage() {
     }
   };
 
-  // Helper references to /api/ingest and /api/sessions
-  const getSessionUrl = (id: string) => `/api/sessions/${id}`;
-  const ingestEndpoint = '/api/ingest';
-
+  // Ingestion and session state managed via useRecruitment (/api/ingest, /api/sessions)
   // Metrics computation
   const totalCandidates = candidates.length;
   const highMatchCount = candidates.filter(c => (c.match_score || 0) >= 85).length;

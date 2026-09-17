@@ -43,9 +43,6 @@ export function useCopilotChat({
   }, []);
 
   const handleClearHistory = useCallback(() => {
-    if (messages.length > 1 && !confirm('Reset conversation history for this session?')) {
-      return;
-    }
     setMessages([
       {
         role: 'assistant',
@@ -53,7 +50,7 @@ export function useCopilotChat({
         agentSteps: ['Supervisor: Reset session memory']
       }
     ]);
-  }, [messages.length]);
+  }, []);
 
   const handleExportChat = useCallback(() => {
     const text = messages

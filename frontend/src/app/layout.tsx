@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import QueryProvider from "@/providers/QueryProvider";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -241,7 +242,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col font-sans bg-[#F8F6F2] text-[#111111]">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   );
