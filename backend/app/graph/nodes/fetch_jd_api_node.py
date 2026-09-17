@@ -43,7 +43,7 @@ def fetch_jd_api_node(state: RecruitState) -> dict:
                 break
                 
     try:
-        jd_structured = fetch_live_job_description(query, location)
+        jd_structured = fetch_live_job_description(query, location, use_tavily=True)
         
         success_msg = (
             f"Successfully fetched live Job Description for **{jd_structured.role}** via API.\n\n"

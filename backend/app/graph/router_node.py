@@ -19,7 +19,8 @@ INTENT_PLAIN_MAP = {
     "schedule": "scheduling or booking an interview time slot",
     "redflags": "detecting red flags, timeline gaps, or inconsistencies in resumes",
     "fetch_jd_api": "fetching job descriptions from live APIs",
-    "query_candidate": "answering candidate-specific questions about skills, projects, and background"
+    "query_candidate": "answering candidate-specific questions about skills, projects, and background",
+    "web_intel": "searching the web for real-time company, certification, or tech intelligence"
 }
 
 def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
@@ -100,7 +101,15 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     if re.search(r"\b(interview|prep|preparation|practice)\b.*\b(question|questions|prep)\b", q) or re.search(r"\b(question|questions)\b.*\b(interview|prep|candidate)\b", q):
         return "interview_questions", 1.0
 
-    # 13. simple greeting or fallback check
+    # 13. salary check
+    if re.search(r"\b(salary|compensation|market pay|pay range|salary range|package|remuneration|ctc)\b", q):
+        return "salary", 1.0
+
+    # 14. web_intel check
+    if re.search(r"\b(search the web|search online|look up on web|web search|market intelligence|search internet)\b", q):
+        return "web_intel", 1.0
+
+    # 15. simple greeting or fallback check
     if q in ["hi", "hello", "hey", "who are you", "help"]:
         return "other", 1.0
 
@@ -145,6 +154,7 @@ def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str,
         "- redflags: Detect red flags or issues in resumes (e.g. 'check for red flags', 'any gaps in resumes', 'resume issues')\n"
         "- fetch_jd_api: Fetch live job descriptions from external APIs (e.g. 'fetch JD for Frontend Developer via API', 'get job description for python from internet')\n"
         "- query_candidate: Ask specific questions about candidate skills, projects, experience, education, or background (e.g. 'what are the skills of X', 'what projects did X work on')\n"
+        "- web_intel: Search the web for company background, tech stack vetting, market intelligence, or external info (e.g. 'search the web for...', 'tell me about Stripe')\n"
         "- other: Greetings, chit-chat, clarify, or unclassified queries.\n\n"
         "Return a JSON object: {\"intent\": \"<intent>\", \"confidence\": <float_0_to_1>}."
     )
@@ -157,7 +167,7 @@ def llm_classify(query: str, state: Optional[RecruitState] = None) -> Tuple[str,
 
     valid_intents = [
         "load_context", "screen", "rewrite_jd", "interview_questions", "salary",
-        "compare", "email", "trend", "schedule", "redflags", "fetch_jd_api", "query_candidate", "other"
+        "compare", "email", "trend", "schedule", "redflags", "fetch_jd_api", "query_candidate", "web_intel", "other"
     ]
 
     try:

@@ -47,10 +47,14 @@ def get_mock_jd(query: str) -> JobDescription:
         tone="professional"
     )
 
-def fetch_live_job_description(query: str, location: Optional[str] = None) -> JobDescription:
+def fetch_live_job_description(
+    query: str,
+    location: Optional[str] = None,
+    use_tavily: bool = False
+) -> JobDescription:
     """
     Fetches job listings from live APIs and constructs a structured JobDescription.
-    Supports IndianAPI and SerpApi, with a robust fallback to structured mock JDs.
+    Supports IndianAPI, SerpApi, and Tavily Live Search, with a robust fallback to structured mock JDs.
     """
     # Try IndianAPI first
     if INDIANAPI_JOBS_KEY:
@@ -96,6 +100,24 @@ def fetch_live_job_description(query: str, location: Optional[str] = None) -> Jo
                     return map_raw_job_to_jd(jobs[0], "SerpApi")
         except Exception as e:
             print(f"[SerpApi] failed to fetch: {e}. Trying fallback...")
+
+    # Try Tavily live search if enabled or requested
+    if use_tavily:
+        from app.services.tavily_service import get_tavily_service
+        tavily_svc = get_tavily_service()
+        if tavily_svc.is_available:
+            try:
+                live_jobs = tavily_svc.search_live_jobs(query, location, max_results=3)
+                if live_jobs:
+                    job_data = {
+                        "title": live_jobs[0].get("title", query),
+                        "description": live_jobs[0].get("description", ""),
+                        "company": "Top Industry Employer",
+                        "location": location or "Remote"
+                    }
+                    return map_raw_job_to_jd(job_data, "Tavily")
+            except Exception as e:
+                print(f"[Tavily] live job search failed: {e}. Trying fallback...")
 
     # Default fallback to mock JD
     print(f"Using local mock fallback job description for query '{query}'")

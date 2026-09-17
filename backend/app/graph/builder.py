@@ -20,6 +20,7 @@ from app.graph.nodes.trend_node import trend_node
 from app.graph.nodes.schedule_node import schedule_node
 from app.graph.nodes.redflags_node import redflags_node
 from app.graph.nodes.candidate_qa_node import candidate_qa_node
+from app.graph.nodes.web_intel_node import web_intel_node
 
 def supervisor_agent_node(state: RecruitState) -> dict:
     """
@@ -128,6 +129,8 @@ def interview_salary_agent_node(state: RecruitState) -> dict:
         return trend_node(state)
     elif intent == "schedule":
         return schedule_node(state)
+    elif intent == "web_intel":
+        return web_intel_node(state)
     return {}
 
 def fallback_node(state: RecruitState) -> dict:
@@ -179,7 +182,7 @@ def route_to_subagent(state: RecruitState) -> str:
         return "jd_agent"
     elif intent in ["screen", "count", "compare", "redflags", "query_candidate"]:
         return "screening_agent"
-    elif intent in ["interview_questions", "salary", "email", "trend", "schedule"]:
+    elif intent in ["interview_questions", "salary", "email", "trend", "schedule", "web_intel"]:
         return "interview_salary_agent"
     elif intent == "finalize_shortlist":
         return "hitl_confirm"

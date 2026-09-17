@@ -1,26 +1,33 @@
 import re
+from typing import Optional
 from app.graph.state import RecruitState
-from app.tools.tavily_search import search_salary_data
+from app.services.tavily_service import get_tavily_service
+
 
 def salary_node(state: RecruitState) -> dict:
     """
-    Salary benchmark node.
-    Extracts role/location from query or loaded JD.
-    Calls Tavily search tool directly (never uses RAG) and flags cached vs live status.
+    Enterprise salary benchmark node.
+    Extracts role, location, and seniority from query or active JD.
+    Calls TavilyService for real-time compensation intelligence with verified citations.
     """
     history = state.get("conversation_history", [])
     jd = state.get("jd_structured")
     user_msg = history[-1]["content"] if history else ""
-    
+    user_msg_lower = user_msg.lower()
+
     # 1. Resolve role title
     role = None
-    # Check if query mentions a role (e.g. "salary for Python Developer")
-    match = re.search(r"salary (?:expectations|range|for)\s+([a-zA-Z\s\-]+)", user_msg, re.IGNORECASE)
+    match = re.search(r"(?:salary|compensation|pay|rate|package)\s+(?:expectations|range|for|of)?\s+([a-zA-Z\s\-]+)", user_msg, re.IGNORECASE)
     if match:
-        role = match.group(1).strip()
-    elif jd:
+        extracted = match.group(1).strip()
+        # Clean trailing query tokens like 'in india', 'in us', '2026'
+        cleaned = re.sub(r"\b(in|for|at|around|202\d|india|us|usa|uk)\b.*$", "", extracted, flags=re.IGNORECASE).strip()
+        if len(cleaned) > 2:
+            role = cleaned
+
+    if not role and jd:
         role = jd.role
-        
+
     if not role:
         return {
             "conversation_history": history + [{
@@ -28,29 +35,32 @@ def salary_node(state: RecruitState) -> dict:
                 "content": "I need a Job Description loaded first to benchmark salary, or you can ask me explicitly (e.g. 'what is the salary for a Technical Recruiter?')."
             }]
         }
-        
-    # 2. Resolve location (default to India)
+
+    # 2. Resolve location
     location = "India"
-    user_msg_lower = user_msg.lower()
-    if "us" in user_msg_lower or "united states" in user_msg_lower or "america" in user_msg_lower:
+    if any(k in user_msg_lower for k in ["us", "united states", "america", "usa", "nyc", "sf", "california", "texas"]):
         location = "US"
-    elif "uk" in user_msg_lower or "united kingdom" in user_msg_lower or "london" in user_msg_lower:
+    elif any(k in user_msg_lower for k in ["uk", "united kingdom", "london"]):
         location = "UK"
-    elif "india" in user_msg_lower or "inr" in user_msg_lower:
+    elif any(k in user_msg_lower for k in ["india", "inr", "bangalore", "bengaluru", "delhi", "mumbai", "hyderabad", "pune"]):
         location = "India"
-        
-    # 3. Call Tavily search tool (strictly no RAG)
-    result_text, is_live = search_salary_data(role, location)
-    
-    # 4. Format status indicator per Section 6.3
-    status_tag = "**[LIVE DATA - TAVILY REAL-TIME SEARCH]**" if is_live else "**[OFFLINE DATA - CACHED FALLBACK]**"
-    
+
+    # 3. Detect experience level
+    exp_match = re.search(r"\b(entry|junior|mid|senior|lead|staff|principal)\b", user_msg_lower)
+    exp_level: Optional[str] = exp_match.group(1).capitalize() if exp_match else None
+
+    # 4. Query enterprise TavilyService
+    service = get_tavily_service()
+    benchmark = service.get_salary_benchmark(role=role, location=location, experience_level=exp_level)
+
+    status_tag = "**[LIVE DATA - TAVILY REAL-TIME SEARCH]**" if benchmark.is_live else "**[OFFLINE DATA - CACHED FALLBACK]**"
+
     response = (
         f"### Salary Benchmark: **{role}** ({location})\n"
         f"Source Status: {status_tag}\n\n"
-        f"{result_text}"
+        f"{benchmark.to_markdown()}"
     )
-    
+
     return {
         "conversation_history": history + [{
             "role": "assistant",

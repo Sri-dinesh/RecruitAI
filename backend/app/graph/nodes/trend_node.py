@@ -11,20 +11,28 @@ from app.tools.skill_trend_tool import search_skill_trends
 def _extract_skills_from_trend_text(trend_text: str) -> List[str]:
     """
     Parses trending skill names from the tool output text.
-    Looks for bullet point list items.
+    Looks for bullet point list items while ignoring citations and web links.
     """
     skills = []
+    in_citations = False
     for line in trend_text.splitlines():
-        line = line.strip()
-        if line.startswith("- "):
-            # Remove markdown bold markers and extract skill name
-            skill = line[2:].strip()
-            # If it has a colon (from Tavily results), take the part before the colon
+        trimmed = line.strip()
+        if "citations" in trimmed.lower() or "sources" in trimmed.lower():
+            in_citations = True
+            continue
+        if in_citations and trimmed.startswith("#"):
+            in_citations = False
+
+        if not in_citations and trimmed.startswith("- "):
+            # Ignore markdown link citations e.g. - [TechCrunch](...)
+            if trimmed.startswith("- [") or "http://" in trimmed or "https://" in trimmed:
+                continue
+            skill = trimmed[2:].strip()
             if "**:" in skill:
                 skill = skill.split("**:")[0].replace("**", "").strip()
             elif "**" in skill:
                 skill = skill.replace("**", "").strip()
-            if skill:
+            if skill and len(skill) < 60:
                 skills.append(skill)
     return skills
 
