@@ -8,6 +8,7 @@ create extension if not exists vector;
 create extension if not exists pgcrypto;
 
 -- 2. Drop all previous tables, triggers, and functions cleanly (Fresh Reset)
+drop table if exists public.session_candidates cascade;
 drop table if exists public.chat_messages cascade;
 drop table if exists public.interviews cascade;
 drop table if exists public.applications cascade;
@@ -147,7 +148,7 @@ create table public.interviews (
   application_id uuid references public.applications(id) on delete cascade,
   candidate_id uuid references public.candidates(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  scheduled_at timestamptz not null,
+  scheduled_at timestamptz,
   duration_minutes int default 30,
   mode text check (mode in ('phone', 'video', 'onsite')),
   meeting_link text,
@@ -195,6 +196,19 @@ create table public.chat_messages (
 
 create index idx_chat_messages_session_id on public.chat_messages(session_id);
 create index idx_chat_messages_created_at on public.chat_messages(created_at);
+
+-- ============================================================
+-- 9b. SESSION_CANDIDATES — indexed relational join table (BUG-3)
+-- ============================================================
+create table public.session_candidates (
+  session_id uuid not null references public.chat_sessions(id) on delete cascade,
+  candidate_id uuid not null references public.candidates(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (session_id, candidate_id)
+);
+
+create index idx_session_candidates_session_id on public.session_candidates(session_id);
+create index idx_session_candidates_candidate_id on public.session_candidates(candidate_id);
 
 -- ============================================================
 -- 10. RPC: Vector similarity search joining candidate details
@@ -370,6 +384,7 @@ alter table public.applications enable row level security;
 alter table public.interviews enable row level security;
 alter table public.chat_sessions enable row level security;
 alter table public.chat_messages enable row level security;
+alter table public.session_candidates enable row level security;
 
 create policy "Users manage their own profile" on public.users
   for all using (auth.uid() = id) with check (auth.uid() = id);
@@ -394,6 +409,23 @@ create policy "Users manage their own chat_sessions" on public.chat_sessions
 
 create policy "Users manage their own chat_messages" on public.chat_messages
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "session_candidates_tenant_isolation" on public.session_candidates;
+create policy "session_candidates_tenant_isolation" on public.session_candidates
+  for all using (
+    exists (
+      select 1 from public.chat_sessions s
+      where s.id = session_candidates.session_id
+      and (auth.uid() is null or s.user_id = auth.uid())
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.chat_sessions s
+      where s.id = session_candidates.session_id
+      and (auth.uid() is null or s.user_id = auth.uid())
+    )
+  );
 
 -- ============================================================
 -- 13. ANALYTICS — Read-only RPC functions for the Dashboard
@@ -575,6 +607,42 @@ GRANT EXECUTE ON FUNCTION public.get_top_skills(uuid, int)                TO aut
 GRANT EXECUTE ON FUNCTION public.get_hiring_velocity(uuid)                TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_jobs_summary(uuid)                   TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_recent_activity(uuid, int)           TO authenticated;
+
+-- ============================================================
+-- 14. Transactional Atomic Workspace Reset RPC (SEC-3)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.reset_user_workspace(target_user_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Security: verify caller only resets their own data when called from client context
+  IF auth.uid() IS NOT NULL AND auth.uid() != target_user_id THEN
+    RAISE EXCEPTION 'Unauthorized: cannot reset data for another tenant';
+  END IF;
+
+  -- Delete in strict topological cascade order to prevent FK restrict violations
+  DELETE FROM public.session_candidates WHERE session_id IN (SELECT id FROM public.chat_sessions WHERE user_id = target_user_id);
+  DELETE FROM public.chat_messages WHERE user_id = target_user_id;
+  DELETE FROM public.interviews WHERE user_id = target_user_id;
+  DELETE FROM public.applications WHERE user_id = target_user_id;
+  DELETE FROM public.resume_chunks WHERE user_id = target_user_id;
+  DELETE FROM public.candidates WHERE user_id = target_user_id;
+  DELETE FROM public.chat_sessions WHERE user_id = target_user_id;
+  DELETE FROM public.jobs WHERE user_id = target_user_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'user_id', target_user_id,
+    'reset_at', NOW()
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.reset_user_workspace(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reset_user_workspace(UUID) TO service_role;
 
 -- Notify schema reload
 NOTIFY pgrst, 'reload schema';
