@@ -214,9 +214,9 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Fix attribute injection XSS vulnerabilities (missing quote escaping on markdown links).
   - [x] Collapse confusing duplicate props (`text` vs `content`) into a single `content` prop.
 
-- [ ] **ENG-2: Fix un-mocked external network calls in automated tests** (`backend/tests/test_real_api.py`)
-  - [ ] Mock IndianAPI and SerpApi HTTP responses in [test_real_api.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/tests/test_real_api.py).
-  - [ ] Ensure `pytest backend/tests/` runs 100% offline, deterministically, and never hangs in socket polling state (`poll_schedule_timeout`).
+- [x] **ENG-2: Fix un-mocked external network calls in automated tests** (`backend/tests/test_real_api.py`)
+  - [x] Mock IndianAPI and SerpApi HTTP responses in [test_real_api.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/tests/test_real_api.py).
+  - [x] Ensure `pytest backend/tests/` runs 100% offline, deterministically, and never hangs in socket polling state (`poll_schedule_timeout`).
 
 - [ ] **ENG-3: Add API-surface contract tests** (`backend/tests/`)
   - [ ] Add contract tests for `routes_chat.py` (previously 826 lines with zero direct test coverage).
