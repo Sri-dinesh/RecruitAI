@@ -229,11 +229,11 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Enforce upstream JSON schema mode on LLM requests; delete `ast.literal_eval` fallback.
   - [x] Implement token and cost accounting: log `{model, tokens_in, tokens_out, latency, tenant_id}` per turn.
 
-- [ ] **ENG-5: Operational hardening & configuration cleanliness**
-  - [ ] Fix [backend/app/core/config.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/app/core/config.py): prevent import-time crash on invalid `SMTP_PORT`; decouple `IS_PRODUCTION` from platform-specific `bool(os.getenv("RENDER"))`.
-  - [ ] Fix [backend/app/main.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/app/main.py): remove hardcoded `reload=True`, `host="0.0.0.0"`, and `port=8000` from production invocation; drive from environment variables.
-  - [ ] Redact health probe: split `/api/health` into a shallow public liveness probe and an authenticated deep readiness check (`/api/health/ready`), eliminating public database error string leaks.
-  - [ ] Replace raw `detail=str(exc)` in route exception handlers with opaque error messages and server-side request tracking IDs (`ref={request_id}`).
+- [x] **ENG-5: Operational hardening & configuration cleanliness**
+  - [x] Fix [backend/app/core/config.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/app/core/config.py): prevent import-time crash on invalid `SMTP_PORT`; decouple `IS_PRODUCTION` from platform-specific `bool(os.getenv("RENDER"))`.
+  - [x] Fix [backend/app/main.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/app/main.py): remove hardcoded `reload=True`, `host="0.0.0.0"`, and `port=8000` from production invocation; drive from environment variables.
+  - [x] Redact health probe: split `/api/health` into a shallow public liveness probe and an authenticated deep readiness check (`/api/health/ready`), eliminating public database error string leaks.
+  - [x] Replace raw `detail=str(exc)` in route exception handlers with opaque error messages and server-side request tracking IDs (`ref={request_id}`).
 
 - [ ] **ENG-6: Establish CI code quality gates** (`.github/workflows/ci.yml`)
   - [ ] Add `ruff check .` with rules:

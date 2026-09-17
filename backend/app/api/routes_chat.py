@@ -123,8 +123,13 @@ async def chat_endpoint(
         )
         return ChatResponse(**result)
     except Exception as exc:
-        logger.error(f"[chat_endpoint] Agent execution failed: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(exc))
+        import uuid
+        ref_id = uuid.uuid4().hex[:8]
+        logger.error(f"[chat_endpoint ref={ref_id}] Agent execution failed: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent execution failed. (ref={ref_id})"
+        )
 
 
 @router.get("/chat/jobs/{job_id}")

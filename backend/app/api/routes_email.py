@@ -37,5 +37,10 @@ async def send_email_endpoint(
         )
         return EmailResponse(status=res)
     except Exception as exc:
-        logger.error(f"[email] Failed to dispatch email to {req.recipient_email}: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+        import uuid
+        ref_id = uuid.uuid4().hex[:8]
+        logger.error(f"[email ref={ref_id}] Failed to dispatch email to {req.recipient_email}: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Email dispatch failed. Please contact support with reference ref={ref_id}"
+        )
