@@ -211,6 +211,22 @@ async def deep_readiness_check(
     return await check_system_readiness(response)
 
 
+@app.get("/api/metrics")
+async def get_metrics_endpoint(
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    RED/USE Operational metrics & Prometheus export (OPS-1).
+    Returns real-time rates, errors, p50/p95/p99 latencies, queue depths, and token costs.
+    """
+    from app.core.telemetry import metrics_registry
+    accept = request.headers.get("accept", "")
+    if "text/plain" in accept:
+        return Response(content=metrics_registry.to_prometheus_format(), media_type="text/plain")
+    return metrics_registry.get_summary()
+
+
 def start_server():
     """
     Starts the FastAPI server using Uvicorn driven by environment variables (ENG-5).

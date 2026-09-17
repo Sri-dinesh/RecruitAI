@@ -249,11 +249,11 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
 
 ### Section 6: 🟢 P3 — Observability, Operations & Frontend Polish
 
-- [ ] **OPS-1: Distributed tracing and metrics**
-  - [ ] Instrument OpenTelemetry spans across HTTP controllers, services, LangGraph nodes, and LLM calls.
-  - [ ] Instrument RED/USE metrics: request rates, error rates, p95/p99 latencies, queue depths, and token usage per tenant.
-  - [ ] Define explicit Service Level Objectives (SLOs) in `docs/slo.md` (e.g., 99% chat acknowledgment < 2s; 95% screening < 30s) with automated alerting.
-  - [ ] Create operational runbooks for production alerts (symptoms, queries, mitigations, escalation paths).
+- [x] **OPS-1: Distributed tracing and metrics**
+  - [x] Instrument OpenTelemetry spans across HTTP controllers, services, LangGraph nodes, and LLM calls.
+  - [x] Instrument RED/USE metrics: request rates, error rates, p95/p99 latencies, queue depths, and token usage per tenant.
+  - [x] Define explicit Service Level Objectives (SLOs) in `docs/slo.md` (e.g., 99% chat acknowledgment < 2s; 95% screening < 30s) with automated alerting.
+  - [x] Create operational runbooks for production alerts (symptoms, queries, mitigations, escalation paths).
 
 - [ ] **UI-1: Frontend accessibility, caching & dialog polish**
   - [ ] Replace `window.confirm` dialogs in `AppSidebar.tsx` and Copilot with accessible modal confirmation components.
