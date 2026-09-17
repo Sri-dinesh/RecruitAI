@@ -209,10 +209,10 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
 
 ### Section 5: 🟡 P2 — Engineering Standards, Infrastructure & Testing
 
-- [ ] **ENG-1: Replace hand-rolled regex markdown compiler with audited parser** (`frontend/src/components/MarkdownText.tsx`)
-  - [ ] Replace custom 174-line regex-to-HTML parser and `dangerouslySetInnerHTML` with `react-markdown` + `rehype-sanitize`.
-  - [ ] Fix attribute injection XSS vulnerabilities (missing quote escaping on markdown links).
-  - [ ] Collapse confusing duplicate props (`text` vs `content`) into a single `content` prop.
+- [x] **ENG-1: Replace hand-rolled regex markdown compiler with audited parser** (`frontend/src/components/MarkdownText.tsx`)
+  - [x] Replace custom 174-line regex-to-HTML parser and `dangerouslySetInnerHTML` with `react-markdown` + `rehype-sanitize`.
+  - [x] Fix attribute injection XSS vulnerabilities (missing quote escaping on markdown links).
+  - [x] Collapse confusing duplicate props (`text` vs `content`) into a single `content` prop.
 
 - [ ] **ENG-2: Fix un-mocked external network calls in automated tests** (`backend/tests/test_real_api.py`)
   - [ ] Mock IndianAPI and SerpApi HTTP responses in [test_real_api.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/tests/test_real_api.py).

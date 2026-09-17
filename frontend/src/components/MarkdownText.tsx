@@ -1,174 +1,130 @@
+'use client';
+
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
-export default function MarkdownText({ text, content }: { text?: string; content?: string }) {
-  const markdownSource = text ?? content ?? '';
-  if (!markdownSource) return null;
+interface MarkdownTextProps {
+  content?: string;
+  text?: string;
+  className?: string;
+}
 
-  const compileMarkdownToHtml = (markdown: string): string => {
-    if (!markdown) return '';
-    
-    // 1. Separate code blocks to avoid compiling markdown inside code
-    const codeBlocks: string[] = [];
-    let processed = markdown.replace(/```([\s\S]*?)```/g, (match, code) => {
-      const id = `__CODE_BLOCK_${codeBlocks.length}__`;
-      // Escape inside code block
-      const escapedCode = code
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      codeBlocks.push(`<pre class="bg-slate-50 text-slate-800 p-3.5 rounded-xl border border-slate-200 font-mono text-[11px] overflow-x-auto my-3 shadow-inner"><code>${escapedCode}</code></pre>`);
-      return id;
-    });
+// Allow target="_blank" and rel attributes on anchor elements
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    a: [...(defaultSchema.attributes?.a || []), ['target', '_blank'], ['rel', 'noopener noreferrer']],
+  },
+};
 
-    // Escape HTML in the rest of the text
-    processed = processed
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // 2. Parse Headings
-    processed = processed.replace(/^#### (.*?)$/gm, '<h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mt-3.5 mb-1.5">$1</h4>');
-    processed = processed.replace(/^### (.*?)$/gm, '<h3 class="text-xs font-extrabold text-brand-primary uppercase tracking-wider mt-4 mb-2">$1</h3>');
-    processed = processed.replace(/^## (.*?)$/gm, '<h2 class="text-sm font-extrabold text-slate-900 mt-5 mb-2.5 pb-1 border-b border-slate-200">$1</h2>');
-    processed = processed.replace(/^# (.*?)$/gm, '<h1 class="text-base font-black text-slate-900 mt-6 mb-3">$1</h1>');
-
-    // 3. Parse Horizontal Rules
-    processed = processed.replace(/^---$/gm, '<hr class="border-slate-200 my-4" />');
-
-    // 4. Parse Tables
-    const lines = processed.split('\n');
-    let inTable = false;
-    let tableHtml = '';
-    const newLines: string[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith('|') && line.endsWith('|')) {
-        if (!inTable) {
-          inTable = true;
-          tableHtml = '<div class="overflow-x-auto my-4 rounded-xl border border-slate-200 bg-white"><table class="w-full text-left border-collapse text-xs">';
-          const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<thead class="bg-slate-100 border-b border-slate-200"><tr class="text-slate-700 font-bold">';
-          cols.forEach(col => {
-            tableHtml += `<th class="py-2.5 px-3.5 font-bold">${col}</th>`;
-          });
-          tableHtml += '</tr></thead><tbody>';
-          
-          if (i + 1 < lines.length && lines[i + 1].trim().startsWith('|') && lines[i + 1].includes('-')) {
-            i++; // Skip alignment row
-          }
-        } else {
-          const cols = line.split('|').slice(1, -1).map(c => c.trim());
-          tableHtml += '<tr class="border-b border-slate-200 hover:bg-slate-50/50">';
-          cols.forEach(col => {
-            const cellHtml = compileInline(col);
-            tableHtml += `<td class="py-2 px-3.5 text-slate-700 font-medium">${cellHtml}</td>`;
-          });
-          tableHtml += '</tr>';
-        }
-      } else {
-        if (inTable) {
-          inTable = false;
-          tableHtml += '</tbody></table></div>';
-          newLines.push(tableHtml);
-          tableHtml = '';
-        }
-        newLines.push(lines[i]);
-      }
-    }
-    if (inTable) {
-      tableHtml += '</tbody></table></div>';
-      newLines.push(tableHtml);
-    }
-    processed = newLines.join('\n');
-
-    // Inline elements compiler with strict link URL scheme sanitization
-    function compileInline(text: string): string {
-      return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em class="italic text-slate-700">$1</em>')
-        .replace(/`(.*?)`/g, '<code class="bg-indigo-50 text-indigo-700 font-mono text-[11px] px-1.5 py-0.5 rounded border border-indigo-100">$1</code>')
-        .replace(/\[(.*?)\]\((.*?)\)/g, (_match, linkText, href) => {
-          const cleanHref = href.trim();
-          if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(cleanHref)) {
-            return `<a href="${cleanHref}" target="_blank" rel="noopener noreferrer" class="text-brand-primary hover:underline font-medium">${linkText}</a>`;
-          }
-          return linkText;
-        });
-    }
-
-    // 5. Parse Lists
-    const finalLines = processed.split('\n');
-    let inUl = false;
-    let inOl = false;
-    const outputLines: string[] = [];
-
-    for (let i = 0; i < finalLines.length; i++) {
-      const line = finalLines[i];
-      const trimmed = line.trim();
-
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-        if (inOl) {
-          outputLines.push('</ol>');
-          inOl = false;
-        }
-        if (!inUl) {
-          outputLines.push('<ul class="list-disc list-inside ml-4 my-2 text-slate-700 space-y-1">');
-          inUl = true;
-        }
-        const content = trimmed.replace(/^[-*]\s+/, '');
-        outputLines.push(`<li>${compileInline(content)}</li>`);
-        continue;
-      }
-
-      if (/^\d+\.\s+/.test(trimmed)) {
-        if (inUl) {
-          outputLines.push('</ul>');
-          inUl = false;
-        }
-        if (!inOl) {
-          outputLines.push('<ol class="list-decimal list-inside ml-4 my-2 text-slate-700 space-y-1">');
-          inOl = true;
-        }
-        const content = trimmed.replace(/^\d+\.\s+/, '');
-        outputLines.push(`<li>${compileInline(content)}</li>`);
-        continue;
-      }
-
-      if (inUl) {
-        outputLines.push('</ul>');
-        inUl = false;
-      }
-      if (inOl) {
-        outputLines.push('</ol>');
-        inOl = false;
-      }
-
-      // Paragraph wrapper
-      if (trimmed && !trimmed.startsWith('<h') && !trimmed.startsWith('<div') && !trimmed.startsWith('<table') && !trimmed.startsWith('<tr') && !trimmed.startsWith('<td') && !trimmed.startsWith('<th') && !trimmed.startsWith('<hr') && !trimmed.startsWith('<thead') && !trimmed.startsWith('<tbody') && !trimmed.startsWith('__CODE_BLOCK_')) {
-        outputLines.push(`<p class="text-slate-700 my-1">${compileInline(line)}</p>`);
-      } else {
-        outputLines.push(line);
-      }
-    }
-
-    if (inUl) outputLines.push('</ul>');
-    if (inOl) outputLines.push('</ol>');
-
-    let finalHtml = outputLines.join('\n');
-
-    // Restore separated code blocks
-    codeBlocks.forEach((codeBlock, idx) => {
-      finalHtml = finalHtml.replace(`__CODE_BLOCK_${idx}__`, codeBlock);
-    });
-
-    return finalHtml;
-  };
+/**
+ * Production-grade markdown compiler replacing hand-rolled regex parser.
+ * Backed by react-markdown, remark-gfm (tables, checklists, autolinks),
+ * and rehype-sanitize to prevent XSS and attribute injection vulnerabilities (ENG-1).
+ */
+export default function MarkdownText({ content, text, className = '' }: MarkdownTextProps) {
+  const rawContent = content ?? text ?? '';
+  if (!rawContent) return null;
 
   return (
-    <div 
-      className="space-y-1.5 text-sm leading-relaxed select-text"
-      dangerouslySetInnerHTML={{ __html: compileMarkdownToHtml(markdownSource) }}
-    />
+    <div className={`space-y-2 text-sm leading-relaxed select-text ${className}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+        components={{
+          h1: ({ children }) => (
+            <h1 className="text-base font-black text-slate-900 mt-5 mb-2 tracking-tight">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-sm font-extrabold text-slate-900 mt-4 mb-2 pb-1 border-b border-slate-200">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-xs font-extrabold text-indigo-600 uppercase tracking-wider mt-3.5 mb-1.5">{children}</h3>
+          ),
+          h4: ({ children }) => (
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mt-3 mb-1">{children}</h4>
+          ),
+          p: ({ children }) => (
+            <p className="text-slate-700 my-1 leading-relaxed">{children}</p>
+          ),
+          strong: ({ children }) => (
+            <strong className="font-bold text-slate-900">{children}</strong>
+          ),
+          em: ({ children }) => (
+            <em className="italic text-slate-700">{children}</em>
+          ),
+          code: ({ className: codeClassName, children, ...props }) => {
+            const isInline = !codeClassName && typeof children === 'string' && !children.includes('\n');
+            if (isInline) {
+              return (
+                <code className="bg-indigo-50 text-indigo-700 font-mono text-[11px] px-1.5 py-0.5 rounded border border-indigo-100" {...props}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className="font-mono text-[11px] text-slate-800" {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre className="bg-slate-50 text-slate-800 p-3.5 rounded-xl border border-slate-200 font-mono text-[11px] overflow-x-auto my-3 shadow-inner">
+              {children}
+            </pre>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc list-inside ml-2 my-2 text-slate-700 space-y-1">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal list-inside ml-2 my-2 text-slate-700 space-y-1">{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="text-slate-700">{children}</li>
+          ),
+          hr: () => <hr className="border-slate-200 my-4" />,
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-4 rounded-xl border border-slate-200 bg-white shadow-xs">
+              <table className="w-full text-left border-collapse text-xs">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">{children}</thead>
+          ),
+          th: ({ children }) => (
+            <th className="py-2.5 px-3.5 font-bold text-slate-800">{children}</th>
+          ),
+          tr: ({ children }) => (
+            <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">{children}</tr>
+          ),
+          td: ({ children }) => (
+            <td className="py-2 px-3.5 text-slate-700 font-medium">{children}</td>
+          ),
+          a: ({ href, children }) => {
+            const safeHref = href && /^(https?:\/\/|\/|#|mailto:|tel:)/i.test(href) ? href : '#';
+            return (
+              <a
+                href={safeHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:text-indigo-800 hover:underline font-medium inline-flex items-center gap-0.5"
+              >
+                {children}
+              </a>
+            );
+          },
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-4 border-indigo-300 pl-3 my-2 text-slate-600 italic">
+              {children}
+            </blockquote>
+          ),
+        }}
+      >
+        {rawContent}
+      </ReactMarkdown>
+    </div>
   );
 }

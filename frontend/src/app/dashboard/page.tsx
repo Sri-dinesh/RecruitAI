@@ -49,7 +49,7 @@ export default function DashboardOverviewPage() {
     }
   ], []);
 
-  // Unified Copilot Chat hook across dashboard overview and copilot workspace (ARCH-5)
+  // Unified Copilot Chat hook targeting /api/chat endpoint via useCopilotChat (ARCH-5)
   const {
     messages,
     input,
