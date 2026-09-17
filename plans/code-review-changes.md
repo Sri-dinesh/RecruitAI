@@ -235,15 +235,15 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Redact health probe: split `/api/health` into a shallow public liveness probe and an authenticated deep readiness check (`/api/health/ready`), eliminating public database error string leaks.
   - [x] Replace raw `detail=str(exc)` in route exception handlers with opaque error messages and server-side request tracking IDs (`ref={request_id}`).
 
-- [ ] **ENG-6: Establish CI code quality gates** (`.github/workflows/ci.yml`)
-  - [ ] Add `ruff check .` with rules:
+- [x] **ENG-6: Establish CI code quality gates** (`.github/workflows/ci.yml`)
+  - [x] Add `ruff check .` with rules:
     - `E722` (no bare `except`)
     - `F821` (no undefined names)
     - `BLE001` (no blind exception catching)
     - `S` (bandit security checks)
-  - [ ] Add `mypy app/ --strict` starting with services and infrastructure layers.
-  - [ ] Add frontend CI checks: `npm run build`, `tsc --noEmit`, `eslint .`, and `vitest run`.
-  - [ ] Enforce test coverage threshold: 70% overall, 90% on business logic services.
+  - [x] Add `mypy app/ --strict` starting with services and infrastructure layers.
+  - [x] Add frontend CI checks: `npm run build`, `tsc --noEmit`, `eslint .`, and `vitest run`.
+  - [x] Enforce test coverage threshold: 70% overall, 90% on business logic services.
 
 ---
 

@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import HTTPException, status
 from app.core import config
 
-_INITIALIZED_DBS = set()
+_INITIALIZED_DBS: set[str] = set()
 
 
 def get_sqlite_connection(db_path: str) -> sqlite3.Connection:
@@ -291,15 +291,17 @@ class TableBuilder:
     def __init__(self, db_path: str, table_name: str):
         self.db_path = db_path
         self.table_name = table_name
-        self.query_type = None  # 'select', 'insert', 'update', 'delete'
-        self.select_columns = "*"
-        self.insert_data = None
-        self.update_data = None
-        self.eq_filters = []
-        self.neq_filters = []
-        self.order_by = None
-        self.order_desc = False
-        self.limit_val = None
+        self.query_type: Optional[str] = None  # 'select', 'insert', 'update', 'delete'
+        self.select_columns: str = "*"
+        self.insert_data: Any = None
+        self.update_data: Optional[dict] = None
+        self.upsert_data: Any = None
+        self.on_conflict: Optional[str] = None
+        self.eq_filters: List[tuple] = []
+        self.neq_filters: List[tuple] = []
+        self.order_by: Optional[str] = None
+        self.order_desc: bool = False
+        self.limit_val: Optional[int] = None
 
     def select(self, columns: str = "*"):
         self.query_type = 'select'

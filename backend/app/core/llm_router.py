@@ -199,8 +199,8 @@ def call_llm(
     for model_name in order:
         start_time = time.time()
         try:
-            # Build messages in LangChain format
-            messages = []
+            from langchain_core.messages import BaseMessage
+            messages: List[BaseMessage] = []
             if system_instruction:
                 messages.append(SystemMessage(content=system_instruction))
             messages.append(HumanMessage(content=prompt))

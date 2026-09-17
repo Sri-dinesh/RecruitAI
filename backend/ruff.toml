@@ -1,0 +1,24 @@
+# Ruff configuration for RecruitAI backend (ENG-6)
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = [
+    "E722",   # no bare except
+    "F821",   # no undefined names
+    "S",      # bandit security checks
+]
+
+ignore = [
+    "S101", # assert allowed in tests
+    "S104", # binding to 0.0.0.0
+    "S105", # hardcoded password string detection false positives on mock values
+    "S106", # hardcoded password arg detection false positives on mock values
+    "S110", # try-except-pass in fallback handling
+    "S311", # pseudo-random generators not used for security
+    "S608", # SQL construction in fallback DB emulator
+]
+
+[lint.per-file-ignores]
+"app/rag/fallback_db.py" = ["S608", "S110"]
+"tests/*" = ["S"]

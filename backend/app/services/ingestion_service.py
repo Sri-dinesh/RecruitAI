@@ -323,8 +323,8 @@ def ingest_candidate_object(
     client = get_supabase_client()
     try:
         client.table("resume_chunks").delete().eq("candidate_id", cand_uuid).eq("user_id", user_id).execute()
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug(f"[ingest] Chunks pre-delete notice for {cand_uuid}: {exc}")
 
     upsert_chunks(formatted_chunks)
     return candidate

@@ -1,0 +1,79 @@
+name: RecruitAI Production CI Quality Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-quality-gate:
+    name: Backend Lint, Type Check & Test Coverage
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff mypy pytest-cov
+
+      - name: Static Security & Quality Linting (ruff)
+        run: |
+          ruff check app/
+
+      - name: Static Type Checking (mypy)
+        run: |
+          mypy app/core app/services --ignore-missing-imports
+
+      - name: Hermetic Offline Unit & Contract Tests
+        env:
+          ENVIRONMENT: "test"
+          USE_LOCAL_AUTH: "true"
+          LLM_DATA_USE_MODE: "zero_retention_verified"
+        run: |
+          pytest tests/ --cov=app/services --cov-report=term-missing
+
+  frontend-quality-gate:
+    name: Frontend TypeScript, Lint & Build Integrity
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: TypeScript Static Type Check
+        run: npx tsc --noEmit
+
+      - name: Next.js Production Build Verification
+        run: npm run build
+
+      - name: Frontend Verification Tests
+        run: npm test
