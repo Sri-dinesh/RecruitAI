@@ -218,11 +218,11 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Mock IndianAPI and SerpApi HTTP responses in [test_real_api.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/tests/test_real_api.py).
   - [x] Ensure `pytest backend/tests/` runs 100% offline, deterministically, and never hangs in socket polling state (`poll_schedule_timeout`).
 
-- [ ] **ENG-3: Add API-surface contract tests** (`backend/tests/`)
-  - [ ] Add contract tests for `routes_chat.py` (previously 826 lines with zero direct test coverage).
-  - [ ] Add integration tests for multi-file upload partial failure semantics (`routes_ingest.py`).
-  - [ ] Add test coverage for candidate status persistence and ATS exports (`routes_evaluate.py`).
-  - [ ] Add regression tests for metadata JSON serialization in `ingestion_service.py` to prevent recurrence of BUG-1.
+- [x] **ENG-3: Add API-surface contract tests** (`backend/tests/`)
+  - [x] Add contract tests for `routes_chat.py` (previously 826 lines with zero direct test coverage).
+  - [x] Add integration tests for multi-file upload partial failure semantics (`routes_ingest.py`).
+  - [x] Add test coverage for candidate status persistence and ATS exports (`routes_evaluate.py`).
+  - [x] Add regression tests for metadata JSON serialization in `ingestion_service.py` to prevent recurrence of BUG-1.
 
 - [ ] **ENG-4: LLM reliability engineering: circuit breakers & cost accounting** (`backend/app/core/llm_router.py`)
   - [ ] Replace pure round-robin rotation with a circuit breaker tracking consecutive model failures with cooldown periods.

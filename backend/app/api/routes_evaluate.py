@@ -350,6 +350,30 @@ def export_ats_data(
     except Exception as e:
         logging.warning(f"[routes_evaluate] ATS export DB query notice: {e}")
 
+    if req.format.lower() == "csv":
+        import io
+        import csv
+        from fastapi.responses import Response
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Candidate ID", "Candidate Name", "Email", "Status", "Match Score", "Tech Score", "Comm Score", "Notes"])
+        for cid, eval_data in user_evaluations.items():
+            writer.writerow([
+                eval_data.get("candidate_id", cid),
+                eval_data.get("candidate_name", "Candidate"),
+                eval_data.get("candidate_email", ""),
+                eval_data.get("status", "new"),
+                eval_data.get("match_score", 0),
+                eval_data.get("tech_score", 0),
+                eval_data.get("comm_score", 0),
+                eval_data.get("notes", "").replace("\n", " "),
+            ])
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=ats_export.csv"}
+        )
+
     return {
         "status": "success",
         "format": req.format,
@@ -439,7 +463,8 @@ def update_candidate_status_endpoint(
         return {
             "status": "success",
             "candidate_id": candidate_id,
-            "candidate_status": req.status
+            "candidate_status": req.status,
+            "new_status": req.status
         }
     except Exception as e:
         logging.error(f"[routes_evaluate] Error updating candidate status: {e}")

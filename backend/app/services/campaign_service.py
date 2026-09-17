@@ -210,10 +210,20 @@ def execute_agent_turn(
         result = graph.invoke(initial_state)
 
         # 4. Serialize outputs
-        res_jd = result["jd_structured"].model_dump() if result.get("jd_structured") else None
-        res_resumes = [c.model_dump() for c in result.get("resumes", [])]
+        res_jd = None
+        jd_val = result.get("jd_structured")
+        if jd_val:
+            res_jd = jd_val.model_dump() if hasattr(jd_val, "model_dump") else jd_val
+
+        res_resumes = [
+            c.model_dump() if hasattr(c, "model_dump") else c
+            for c in result.get("resumes", [])
+        ]
         res_shortlist = (
-            [c.model_dump() for c in result["last_shortlist"]]
+            [
+                c.model_dump() if hasattr(c, "model_dump") else c
+                for c in result["last_shortlist"]
+            ]
             if result.get("last_shortlist")
             else None
         )
@@ -232,12 +242,13 @@ def execute_agent_turn(
         # 5. Atomic persistence:
         # (a) Job
         job_id = None
-        if result.get("jd_structured") and result["jd_structured"].role:
+        jd_role = getattr(jd_val, "role", None) if jd_val else (jd_val.get("role") if isinstance(jd_val, dict) else None)
+        if jd_val and jd_role:
             job_id = persist_job(
                 client=client,
                 user_id=user_id,
-                jd_structured=result["jd_structured"],
-                raw_text=getattr(result["jd_structured"], "raw_text", "") or "",
+                jd_structured=jd_val,
+                raw_text=getattr(jd_val, "raw_text", "") or (jd_val.get("raw_text", "") if isinstance(jd_val, dict) else ""),
             )
 
         # (b) Shortlist / Applications
@@ -270,8 +281,8 @@ def execute_agent_turn(
 
         # (e) Session metadata
         title = None
-        if result.get("jd_structured") and result["jd_structured"].role:
-            title = f"Hiring: {result['jd_structured'].role}"
+        if jd_val and jd_role:
+            title = f"Hiring: {jd_role}"
 
         update_session_metadata(
             client=client,
