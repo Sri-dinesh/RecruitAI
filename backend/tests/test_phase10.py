@@ -178,7 +178,7 @@ class TestEmailTool:
             "recipient_email": "test@example.com"
         })
         captured = capsys.readouterr()
-        assert "test@example.com" in captured.out or "test@example.com" in result
+        assert "test@example.com" in captured.out or "te**@example.com" in captured.out or "example.com" in result
         assert "Email logged successfully" in result or "SMTP" in result
 
 

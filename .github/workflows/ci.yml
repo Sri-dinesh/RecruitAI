@@ -44,6 +44,9 @@ jobs:
           ENVIRONMENT: "test"
           USE_LOCAL_AUTH: "true"
           LLM_DATA_USE_MODE: "zero_retention_verified"
+          GEMINI_API_KEY: "mock_test_gemini_key_for_ci_12345"
+          SUPABASE_URL: "https://placeholder-recruitai.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder"
         run: |
           pytest tests/ --cov=app/services --cov-report=term-missing
 

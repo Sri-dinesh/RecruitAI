@@ -13,6 +13,8 @@ venv/
 ENV/
 env/
 .pytest_cache/
+.coverage
+htmlcov/
 
 # SQLite & Databases
 *.sqlite

@@ -12,7 +12,8 @@ from app.core.llm_router import (
 @pytest.fixture(autouse=True)
 def reset_circuit_breaker():
     circuit_breaker.reset()
-    yield
+    with patch("app.core.config.GEMINI_API_KEY", "mock_gemini_key_for_testing_12345"):
+        yield
     circuit_breaker.reset()
 
 class MockMessage:
