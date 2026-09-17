@@ -6,7 +6,7 @@ from app.services.document_parser import parse_document
 from app.services.resume_parser import parse_structured_resume
 
 def load_resumes(directory_path: str) -> List[Candidate]:
-    candidates = []
+    candidates: List[Candidate] = []
     dir_path = Path(directory_path)
     
     if not dir_path.exists() or not dir_path.is_dir():

@@ -52,8 +52,8 @@ def embed_text(text: str) -> List[float]:
             contents=sanitized_text.strip(),
             config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM)
         )
-        if resp.embeddings and len(resp.embeddings) > 0:
-            return resp.embeddings[0].values
+        if resp.embeddings and len(resp.embeddings) > 0 and resp.embeddings[0].values is not None:
+            return list(resp.embeddings[0].values)
         return [0.0] * EMBEDDING_DIM
     except Exception as exc:
         logger.error(f"[embeddings] gemini-embedding-2 call failed: {exc}")

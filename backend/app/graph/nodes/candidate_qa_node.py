@@ -51,12 +51,14 @@ def candidate_qa_node(state: RecruitState) -> dict:
         if target_candidate.summary:
             context_text += f"Summary: {target_candidate.summary}\n"
             
-        context_text += f"\nFull Resume Text:\n{target_candidate.raw_text[:3000]}\n"
+        raw_snippet = (target_candidate.raw_text or "")[:3000]
+        context_text += f"\nFull Resume Text:\n{raw_snippet}\n"
     else:
         if resumes:
             context_text = "Available Loaded Candidates:\n\n"
             for c in resumes[:5]:
-                context_text += f"--- Candidate: {c.name} ---\nSkills: {', '.join(c.skills[:10])}\n{c.raw_text[:1000]}\n\n"
+                cand_raw = (c.raw_text or "")[:1000]
+                context_text += f"--- Candidate: {c.name} ---\nSkills: {', '.join(c.skills[:10])}\n{cand_raw}\n\n"
         else:
             context_text = "No candidate resumes are currently loaded in the active workspace context."
 

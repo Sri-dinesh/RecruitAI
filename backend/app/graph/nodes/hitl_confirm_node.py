@@ -48,7 +48,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
         if action == "finalize_shortlist":
             resumes = state.get("resumes", [])
             committed_names = []
-            for cid in payload:
+            for cid in (payload or []):
                 c = next((cand for cand in resumes if cand.candidate_id == cid), None)
                 if c:
                     committed_names.append(c.name)
@@ -64,7 +64,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
             
         elif action == "replace_jd":
             from app.schemas.jd_schema import JobDescription
-            new_jd = JobDescription(**payload)
+            new_jd = JobDescription(**(payload or {}))
             content = f"[SUCCESS] **Job Description Updated**: Successfully set active JD to **{new_jd.role}**."
             return {
                 "jd_structured": new_jd,
@@ -95,7 +95,7 @@ def hitl_confirm_node(state: RecruitState) -> dict:
             excluded_any = False
             
             # Simple keyword parsing to exclude names (e.g., "remove Bob", "remove Alice Smith")
-            for cid in payload:
+            for cid in (payload or []):
                 c = next((cand for cand in resumes if cand.candidate_id == cid), None)
                 if c:
                     first_name = c.name.split()[0].lower()

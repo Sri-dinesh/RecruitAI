@@ -70,7 +70,9 @@ def run_repl():
         "conversation_history": [],
         "last_shortlist": None,
         "pending_confirmation": None,
-        "last_intent": None
+        "last_intent": None,
+        "scheduled_interviews": None,
+        "user_id": None,
     }
     
     while True:

@@ -38,7 +38,7 @@ def extract_candidate_experience(candidate: Candidate) -> float:
         return candidate.experience_years
         
     # Fast regex heuristic extraction
-    regex_exp = extract_experience_via_regex(candidate.raw_text)
+    regex_exp = extract_experience_via_regex(candidate.raw_text or "")
     if regex_exp is not None:
         candidate.experience_years = regex_exp
         return regex_exp

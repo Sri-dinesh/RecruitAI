@@ -14,7 +14,7 @@ BUSINESS_DAY_SLOTS = ["10:00 AM", "2:00 PM", "4:00 PM"]
 
 def _next_business_days(n: int) -> List[datetime]:
     """Returns the next n business days (Mon-Fri) from today."""
-    days = []
+    days: List[datetime] = []
     current = datetime.now()
     while len(days) < n:
         current += timedelta(days=1)
@@ -29,7 +29,7 @@ def _generate_slots(n: int = 5) -> List[dict]:
     Returns a list of dicts with slot_number, date, time, label.
     """
     business_days = _next_business_days(5)
-    slots = []
+    slots: List[dict] = []
     idx = 1
     for day in business_days:
         for time_str in BUSINESS_DAY_SLOTS:

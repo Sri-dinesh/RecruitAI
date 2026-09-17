@@ -265,7 +265,7 @@ async def get_candidates_over_time(
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         cands = client.table("candidates").select("created_at").eq("user_id", user_id).gte("created_at", cutoff).execute().data or []
 
-        counts_by_day = collections.Counter()
+        counts_by_day: collections.Counter[str] = collections.Counter()
         for c in cands:
             raw_dt = c.get("created_at") or ""
             day_str = raw_dt[:10]
@@ -311,27 +311,26 @@ async def get_match_distribution(user_id: str = Depends(get_current_user_id)):
                 if meta.get("match_score") is not None:
                     scores.append(float(meta["match_score"]))
 
-        buckets = [
-            {"bucket": "Top Tier (90-100%)", "min_score": 90, "max_score": 100, "count": 0},
-            {"bucket": "Strong Fit (75-89%)", "min_score": 75, "max_score": 89, "count": 0},
-            {"bucket": "Good Fit (60-74%)", "min_score": 60, "max_score": 74, "count": 0},
-            {"bucket": "Fair Fit (40-59%)", "min_score": 40, "max_score": 59, "count": 0},
-            {"bucket": "Low Fit (<40%)", "min_score": 0, "max_score": 39, "count": 0},
-        ]
-
+        tier_counts = [0, 0, 0, 0, 0]
         for s in scores:
             if s >= 90:
-                buckets[0]["count"] += 1
+                tier_counts[0] += 1
             elif s >= 75:
-                buckets[1]["count"] += 1
+                tier_counts[1] += 1
             elif s >= 60:
-                buckets[2]["count"] += 1
+                tier_counts[2] += 1
             elif s >= 40:
-                buckets[3]["count"] += 1
+                tier_counts[3] += 1
             else:
-                buckets[4]["count"] += 1
+                tier_counts[4] += 1
 
-        return [MatchBucket(**b) for b in buckets]
+        return [
+            MatchBucket(bucket="Top Tier (90-100%)", min_score=90, max_score=100, count=tier_counts[0]),
+            MatchBucket(bucket="Strong Fit (75-89%)", min_score=75, max_score=89, count=tier_counts[1]),
+            MatchBucket(bucket="Good Fit (60-74%)", min_score=60, max_score=74, count=tier_counts[2]),
+            MatchBucket(bucket="Fair Fit (40-59%)", min_score=40, max_score=59, count=tier_counts[3]),
+            MatchBucket(bucket="Low Fit (<40%)", min_score=0, max_score=39, count=tier_counts[4]),
+        ]
     except Exception as exc:
         logger.error(f"[analytics] Match distribution fallback failed: {exc}")
         return [
@@ -360,7 +359,7 @@ async def get_top_skills(
 
     # ── Fallback direct table queries ──
     try:
-        skills_counter = collections.Counter()
+        skills_counter: collections.Counter[str] = collections.Counter()
 
         # 1. From Jobs
         jobs = client.table("jobs").select("jd_structured").eq("user_id", user_id).execute().data or []

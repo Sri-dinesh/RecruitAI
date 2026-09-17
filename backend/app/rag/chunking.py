@@ -6,9 +6,9 @@ def chunk_resume(text: str, candidate_id: str, candidate_name: str, chunk_size_w
     preserving semantic sections (e.g. Experience, Education) before splitting by size.
     """
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    chunks = []
+    chunks: List[Dict] = []
     
-    current_chunk_words = []
+    current_chunk_words: List[str] = []
     
     for para in paragraphs:
         para_words = para.split()

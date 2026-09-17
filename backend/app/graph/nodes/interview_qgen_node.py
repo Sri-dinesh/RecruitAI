@@ -1,6 +1,7 @@
 import re
-from typing import Any, List
+from typing import Any, List, Optional
 from app.graph.state import RecruitState
+from app.schemas.candidate_schema import Candidate
 from app.core.llm_router import call_llm
 from app.graph.router_node import resolve_candidate_reference
 from app.rag.embeddings import embed_text
@@ -61,6 +62,7 @@ def interview_qgen_node(state: RecruitState) -> dict:
 
     # 4. Resolve specific candidate ID
     candidate_id = resolve_candidate_reference(user_msg, state)
+    candidate: Optional[Candidate] = None
     
     # If not resolved and resumes exist, check if there's only 1 candidate or ask
     if not candidate_id:

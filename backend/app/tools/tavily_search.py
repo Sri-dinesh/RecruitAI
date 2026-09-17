@@ -15,7 +15,7 @@ def search_salary_data(role: str, location: str = "India") -> Tuple[str, bool]:
     """
     query = f"salary expectations range benchmarks for '{role}' in {location} 2026"
     
-    tavily_active = bool(TAVILY_API_KEY) and "your_tavily" not in TAVILY_API_KEY
+    tavily_active = bool(TAVILY_API_KEY) and "your_tavily" not in (TAVILY_API_KEY or "")
     
     if tavily_active:
         try:

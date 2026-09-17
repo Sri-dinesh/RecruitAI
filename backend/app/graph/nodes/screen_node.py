@@ -146,19 +146,19 @@ def screen_node(state: RecruitState) -> dict:
     # Valid candidate IDs set for rejection of hallucinated / unmapped candidates
     valid_c_ids = {c.candidate_id for c in resumes}
     eval_map = {}
-    for e in evaluations:
-        cid = e.get("candidate_id")
+    for ev in evaluations:
+        cid = ev.get("candidate_id")
         if not cid or cid not in valid_c_ids:
             continue
         # AI-SEC-4 Semantic Validation: clamp match_score to 0-100
-        raw_score = float(e.get("match_score", 0.0) or 0.0)
+        raw_score = float(ev.get("match_score", 0.0) or 0.0)
         clamped_score = max(0.0, min(100.0, raw_score))
-        e["match_score"] = clamped_score
+        ev["match_score"] = clamped_score
 
         # Restore any opaque tokens in reasoning
-        if "reasoning" in e:
-            e["reasoning"] = sanitizer.restore_text(e["reasoning"])
-        eval_map[cid] = e
+        if "reasoning" in ev:
+            ev["reasoning"] = sanitizer.restore_text(ev["reasoning"])
+        eval_map[cid] = ev
     
     # 5. Update Candidate objects and sort them stably
     screened_candidates = []

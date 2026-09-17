@@ -22,7 +22,7 @@ def search_skill_trends(role: str) -> str:
     """
     query = f"trending skills for {role} developers 2026"
 
-    tavily_active = bool(TAVILY_API_KEY) and "your_tavily" not in TAVILY_API_KEY
+    tavily_active = bool(TAVILY_API_KEY) and "your_tavily" not in (TAVILY_API_KEY or "")
 
     if tavily_active:
         try:

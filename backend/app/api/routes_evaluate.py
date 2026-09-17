@@ -441,7 +441,7 @@ def update_candidate_status_endpoint(
 
             client.table("candidates").update({"metadata": cm}).eq("id", norm_cand_id).eq("user_id", norm_user_id).execute()
         else:
-            stub_meta = {
+            stub_meta: dict[str, Any] = {
                 "status": req.status,
                 "status_updated_at": now_iso
             }
