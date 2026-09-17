@@ -55,16 +55,16 @@ Modern technical recruiting suffers from critical bottlenecks: unstructured resu
 ## 2. Visual Architecture & Pipeline Diagrams
 
 ### 🖥️ Co-Pilot Workspace Dashboard
-![RecruitAI Co-Pilot Dashboard](RecruitAI-Co-Pilot-Dashboard.png)
+![RecruitAI Co-Pilot Dashboard](docs/assets/RecruitAI-Co-Pilot-Dashboard.png)
 
 ### 🏗️ System Architecture & Multi-Tenant Topology
-![RecruitAI System Architecture](recruitai-systemarchitecture.png)
+![RecruitAI System Architecture](docs/assets/recruitai-systemarchitecture.png)
 
 ### ⚡ Core AI Pipeline & Semantic Retrieval
-![RecruitAI Core AI Pipeline](recruitai-coreaipipeline.png)
+![RecruitAI Core AI Pipeline](docs/assets/recruitai-coreaipipeline.png)
 
 ### 🔄 End-to-End User Flow & How It Works
-![RecruitAI User Flow](recruitai-userflow-HowItWorks.png)
+![RecruitAI User Flow](docs/assets/recruitai-userflow-HowItWorks.png)
 
 ---
 
