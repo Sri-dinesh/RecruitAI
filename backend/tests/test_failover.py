@@ -6,7 +6,14 @@ from app.core.llm_router import (
     ROTATING_MODELS,
     get_next_model_order,
     extract_text,
+    circuit_breaker,
 )
+
+@pytest.fixture(autouse=True)
+def reset_circuit_breaker():
+    circuit_breaker.reset()
+    yield
+    circuit_breaker.reset()
 
 class MockMessage:
     def __init__(self, content):

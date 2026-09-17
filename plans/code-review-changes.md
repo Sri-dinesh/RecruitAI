@@ -224,10 +224,10 @@ Phase 3: LLM Reliability, Testing & Observability     ───► Weeks 5–6
   - [x] Add test coverage for candidate status persistence and ATS exports (`routes_evaluate.py`).
   - [x] Add regression tests for metadata JSON serialization in `ingestion_service.py` to prevent recurrence of BUG-1.
 
-- [ ] **ENG-4: LLM reliability engineering: circuit breakers & cost accounting** (`backend/app/core/llm_router.py`)
-  - [ ] Replace pure round-robin rotation with a circuit breaker tracking consecutive model failures with cooldown periods.
-  - [ ] Enforce upstream JSON schema mode on LLM requests; delete `ast.literal_eval` fallback.
-  - [ ] Implement token and cost accounting: log `{model, tokens_in, tokens_out, latency, tenant_id}` per turn.
+- [x] **ENG-4: LLM reliability engineering: circuit breakers & cost accounting** (`backend/app/core/llm_router.py`)
+  - [x] Replace pure round-robin rotation with a circuit breaker tracking consecutive model failures with cooldown periods.
+  - [x] Enforce upstream JSON schema mode on LLM requests; delete `ast.literal_eval` fallback.
+  - [x] Implement token and cost accounting: log `{model, tokens_in, tokens_out, latency, tenant_id}` per turn.
 
 - [ ] **ENG-5: Operational hardening & configuration cleanliness**
   - [ ] Fix [backend/app/core/config.py](file:///home/dracarys/Projects/personal-stuff/RecruitAI/backend/app/core/config.py): prevent import-time crash on invalid `SMTP_PORT`; decouple `IS_PRODUCTION` from platform-specific `bool(os.getenv("RENDER"))`.

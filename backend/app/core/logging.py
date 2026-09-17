@@ -30,6 +30,11 @@ ALLOWED_EXTRA_KEYS = {
     "step",
     "routing_reason",
     "token_count",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+    "latency_ms",
+    "circuit_state",
 }
 
 FORBIDDEN_KEY_SUBSTRINGS = ("prompt", "resume", "completion", "text", "message", "candidate_name", "email", "phone")
@@ -76,10 +81,10 @@ def mask_exception(exc: Exception) -> Dict[str, Any]:
 
 def log_event(
     intent: str,
-    confidence: float,
-    provider: str,
-    latency_ms: float,
-    node: str,
+    confidence: float = 1.0,
+    provider: str = "gemini",
+    latency_ms: float = 0.0,
+    node: str = "system",
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
