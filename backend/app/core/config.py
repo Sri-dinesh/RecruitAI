@@ -22,9 +22,7 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 # In production, bypass is strictly disabled. Defaults to False for security.
 USE_LOCAL_AUTH = False if IS_PRODUCTION else (os.getenv("USE_LOCAL_AUTH", "false").lower() == "true")
 LOCAL_DEV_USER_ID = os.getenv("LOCAL_DEV_USER_ID", "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3")
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
-APILAYER_API_KEY = os.getenv("APILAYER_API_KEY")
-INDIANAPI_JOBS_KEY = os.getenv("INDIANAPI_JOBS_KEY")
+
 
 # SMTP Configuration - Safe parsing prevents import crash on invalid port string (ENG-5)
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")

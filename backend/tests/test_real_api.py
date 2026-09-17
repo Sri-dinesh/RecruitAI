@@ -4,7 +4,6 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from unittest.mock import patch, MagicMock
-import httpx
 from app.services.job_desc_api import fetch_live_job_description, get_mock_jd
 from app.services.resume_api import parse_resume_via_api, get_mock_parsed_resume
 from app.schemas.jd_schema import JobDescription
@@ -13,89 +12,60 @@ from app.schemas.candidate_schema import Candidate
 
 def test_fetch_live_job_description_fallback_on_network_error():
     """
-    Ensure network failure deterministically falls back to high quality mock JD
-    without raising exceptions or hanging on socket connections (ENG-2).
+    Ensure Tavily failure deterministically falls back to high quality mock JD
+    without raising exceptions or crashing the workflow.
     """
-    with patch("httpx.get", side_effect=httpx.ConnectError("Network unreachable")):
-        jd = fetch_live_job_description(query="Frontend React Developer")
+    with patch("app.services.job_desc_api.get_tavily_service") as mock_get_svc:
+        mock_svc = MagicMock()
+        mock_svc.is_available = True
+        mock_svc.search_live_jobs.side_effect = RuntimeError("Tavily service unreachable")
+        mock_get_svc.return_value = mock_svc
+
+        jd = fetch_live_job_description(query="Frontend React Developer", use_tavily=True)
         assert isinstance(jd, JobDescription)
         assert jd.role == "Frontend Engineer"
         assert "React" in jd.required_skills
         assert jd.experience_years == 3
 
 
-def test_fetch_live_job_description_indianapi_mock():
+def test_fetch_live_job_description_tavily_mock():
     """
-    Hermetically mock IndianAPI 200 OK response and verify job description extraction (ENG-2).
+    Hermetically mock Tavily live job discovery response and verify job description extraction.
     """
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {
-        "jobs": [
-            {
-                "title": "Senior React Developer",
-                "description": "5+ years building Next.js apps with TypeScript and Tailwind CSS.",
-                "company_name": "Acme Corp",
-                "location": "Remote"
-            }
-        ]
-    }
-    with patch("app.services.job_desc_api.INDIANAPI_JOBS_KEY", "test-key"):
-        with patch("httpx.get", return_value=mock_resp):
-            with patch("app.services.job_desc_api.map_raw_job_to_jd") as mock_mapper:
-                mock_mapper.return_value = JobDescription(
-                    role="Senior React Developer",
-                    required_skills=["React", "Next.js", "TypeScript"],
-                    experience_years=5,
-                    raw_text="5+ years building Next.js apps",
-                    company_name="Acme Corp",
-                    location="Remote"
-                )
-                jd = fetch_live_job_description(query="React Developer")
-                assert jd.role == "Senior React Developer"
-                assert jd.company_name == "Acme Corp"
-                mock_mapper.assert_called_once()
+    mock_jobs = [
+        {
+            "title": "Senior React Developer",
+            "description": "5+ years building Next.js apps with TypeScript and Tailwind CSS.",
+            "company": "Acme Corp",
+            "location": "Remote"
+        }
+    ]
+    with patch("app.services.job_desc_api.get_tavily_service") as mock_get_svc:
+        mock_svc = MagicMock()
+        mock_svc.is_available = True
+        mock_svc.search_live_jobs.return_value = mock_jobs
+        mock_get_svc.return_value = mock_svc
 
-
-def test_fetch_live_job_description_serpapi_mock():
-    """
-    Hermetically mock SerpApi google_jobs 200 OK response and verify job description extraction (ENG-2).
-    """
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {
-        "jobs_results": [
-            {
-                "title": "Staff Backend Python Architect",
-                "description": "Expert in FastAPI, PostgreSQL, and distributed microservices.",
-                "company_name": "Google",
-                "location": "Mountain View, CA"
-            }
-        ]
-    }
-    with patch("app.services.job_desc_api.INDIANAPI_JOBS_KEY", None):
-        with patch("app.services.job_desc_api.SERPAPI_API_KEY", "serp-key-123"):
-            with patch("httpx.get", return_value=mock_resp):
-                with patch("app.services.job_desc_api.map_raw_job_to_jd") as mock_mapper:
-                    mock_mapper.return_value = JobDescription(
-                        role="Staff Backend Python Architect",
-                        required_skills=["Python", "FastAPI", "PostgreSQL"],
-                        experience_years=8,
-                        raw_text="Staff backend engineer role",
-                        company_name="Google",
-                        location="Mountain View, CA"
-                    )
-                    jd = fetch_live_job_description(query="Python Architect")
-                    assert jd.role == "Staff Backend Python Architect"
-                    assert jd.company_name == "Google"
-                    mock_mapper.assert_called_once()
+        with patch("app.services.job_desc_api.map_raw_job_to_jd") as mock_mapper:
+            mock_mapper.return_value = JobDescription(
+                role="Senior React Developer",
+                required_skills=["React", "Next.js", "TypeScript"],
+                experience_years=5,
+                raw_text="5+ years building Next.js apps",
+                company_name="Acme Corp",
+                location="Remote"
+            )
+            jd = fetch_live_job_description(query="React Developer", use_tavily=True)
+            assert jd.role == "Senior React Developer"
+            assert jd.company_name == "Acme Corp"
+            mock_mapper.assert_called_once()
 
 
 def test_get_mock_jd():
     jd_back = get_mock_jd("backend developer")
     assert jd_back.role == "Backend Python Developer"
     assert "FastAPI" in jd_back.required_skills
-    
+
     jd_generic = get_mock_jd("machine learning specialist")
     assert "Machine Learning Specialist" in jd_generic.role
     assert jd_generic.experience_years == 2

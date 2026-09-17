@@ -94,7 +94,7 @@ This document contains operational procedures for responding to production alert
    ```bash
    export ASYNC_WORKER_CONCURRENCY="8"
    ```
-2. Check if Tavily or SerpApi calls are hanging; verify hermetic fallback is active.
+2. Check if Tavily search API calls are hanging; verify hermetic fallback is active.
 
 ---
 

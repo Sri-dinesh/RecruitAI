@@ -357,9 +357,7 @@ RecruitAI/
    # Auth Mode (Set to "false" for production JWT authentication)
    USE_LOCAL_AUTH=false
 
-   # Optional External APIs & SMTP
-   SERPAPI_API_KEY=
-   APILAYER_API_KEY=
+   # Optional SMTP Email Outreach
    SMTP_SERVER=smtp.gmail.com
    SMTP_PORT=587
    SMTP_USERNAME=

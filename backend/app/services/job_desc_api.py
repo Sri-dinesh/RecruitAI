@@ -1,10 +1,10 @@
-import httpx
-import os
-import json
+import logging
 from typing import Optional
-from app.core.config import INDIANAPI_JOBS_KEY, SERPAPI_API_KEY
 from app.schemas.jd_schema import JobDescription
-from app.core.llm_router import call_llm, parse_json_safely
+from app.services.tavily_service import get_tavily_service
+
+logger = logging.getLogger(__name__)
+
 
 def get_mock_jd(query: str) -> JobDescription:
     """
@@ -47,63 +47,17 @@ def get_mock_jd(query: str) -> JobDescription:
         tone="professional"
     )
 
+
 def fetch_live_job_description(
     query: str,
     location: Optional[str] = None,
-    use_tavily: bool = False
+    use_tavily: bool = True
 ) -> JobDescription:
     """
-    Fetches job listings from live APIs and constructs a structured JobDescription.
-    Supports IndianAPI, SerpApi, and Tavily Live Search, with a robust fallback to structured mock JDs.
+    Fetches real-time job listings using Tavily's job board discovery engine,
+    with a deterministic fallback to structured mock JDs.
     """
-    # Try IndianAPI first
-    if INDIANAPI_JOBS_KEY:
-        try:
-            headers = {"X-Api-Key": INDIANAPI_JOBS_KEY}
-            params = {"limit": "20"}
-            response = httpx.get("https://jobs.indianapi.in/jobs", headers=headers, params=params, timeout=5.0)
-            if response.status_code == 200:
-                jobs_data = response.json()
-                jobs = jobs_data if isinstance(jobs_data, list) else jobs_data.get("jobs", [])
-                
-                matched_job = None
-                for job in jobs:
-                    title = job.get("title", "").lower()
-                    description = job.get("description", "").lower()
-                    if query.lower() in title or query.lower() in description:
-                        matched_job = job
-                        break
-                
-                if not matched_job and jobs:
-                    matched_job = jobs[0]
-                    
-                if matched_job:
-                    return map_raw_job_to_jd(matched_job, "IndianAPI")
-        except Exception as e:
-            print(f"[IndianAPI] failed to fetch: {e}. Trying SerpApi fallback...")
-
-    # Try SerpApi second
-    if SERPAPI_API_KEY:
-        try:
-            q = f"{query} {location}" if location else query
-            params = {
-                "engine": "google_jobs",
-                "q": q,
-                "api_key": SERPAPI_API_KEY,
-                "hl": "en"
-            }
-            response = httpx.get("https://serpapi.com/search.json", params=params, timeout=5.0)
-            if response.status_code == 200:
-                data = response.json()
-                jobs = data.get("jobs_results", [])
-                if jobs:
-                    return map_raw_job_to_jd(jobs[0], "SerpApi")
-        except Exception as e:
-            print(f"[SerpApi] failed to fetch: {e}. Trying fallback...")
-
-    # Try Tavily live search if enabled or requested
     if use_tavily:
-        from app.services.tavily_service import get_tavily_service
         tavily_svc = get_tavily_service()
         if tavily_svc.is_available:
             try:
@@ -112,29 +66,29 @@ def fetch_live_job_description(
                     job_data = {
                         "title": live_jobs[0].get("title", query),
                         "description": live_jobs[0].get("description", ""),
-                        "company": "Top Industry Employer",
+                        "company": live_jobs[0].get("company", "Top Industry Employer"),
                         "location": location or "Remote"
                     }
                     return map_raw_job_to_jd(job_data, "Tavily")
             except Exception as e:
-                print(f"[Tavily] live job search failed: {e}. Trying fallback...")
+                logger.warning(f"[Tavily] Live job search failed: {e}. Falling back to mock JD.")
 
-    # Default fallback to mock JD
-    print(f"Using local mock fallback job description for query '{query}'")
+    logger.info(f"Using local mock fallback job description for query '{query}'")
     return get_mock_jd(query)
+
 
 def map_raw_job_to_jd(job_data: dict, source_name: str) -> JobDescription:
     """
-    Helper to map raw job dictionary (from SerpApi or IndianAPI) into a JobDescription
+    Maps raw job dictionary from live search into a validated JobDescription
     using LLM-assisted schema extraction and heuristic fallback.
     """
     title = job_data.get("title") or job_data.get("job_title") or "Software Engineer"
     desc = job_data.get("description") or job_data.get("job_description") or ""
-    company = job_data.get("company_name") or job_data.get("company") or "Unknown Company"
+    company = job_data.get("company_name") or job_data.get("company") or "Top Industry Employer"
     location = job_data.get("location") or "Remote"
-    
+
     full_text = f"Job Title: {title}\nCompany: {company}\nLocation: {location}\nDescription:\n{desc}"
-    
+
     from app.services.jd_parser import parse_structured_jd
     jd = parse_structured_jd(full_text)
     if not jd.company_name or jd.company_name == "Unknown Company":
@@ -142,4 +96,3 @@ def map_raw_job_to_jd(job_data: dict, source_name: str) -> JobDescription:
     if not jd.location:
         jd.location = location
     return jd
-

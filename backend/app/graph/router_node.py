@@ -90,7 +90,7 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
         return "redflags", 1.0
 
     # 10. fetch live jd check
-    if re.search(r"\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b.*\b(api|internet|web|online|live|indianapi|serpapi)\b", q) or re.search(r"\b(api|internet|web|online|live|indianapi|serpapi)\b.*\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b", q):
+    if re.search(r"\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b.*\b(api|internet|web|online|live|tavily)\b", q) or re.search(r"\b(api|internet|web|online|live|tavily)\b.*\b(fetch|get|pull|search|benchmark)\b.*\b(jd|job description|jobs)\b", q):
         return "fetch_jd_api", 1.0
 
     # 11. rewrite_jd check

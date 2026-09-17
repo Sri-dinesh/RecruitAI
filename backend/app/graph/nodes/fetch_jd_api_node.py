@@ -6,7 +6,7 @@ from app.schemas.jd_schema import JobDescription
 
 def fetch_jd_api_node(state: RecruitState) -> dict:
     """
-    Node that coordinates fetching job description via live APIs (e.g. IndianAPI, SerpApi)
+    Node that coordinates fetching job description via live Tavily search API
     and updating state.
     """
     history = state.get("conversation_history", [])
