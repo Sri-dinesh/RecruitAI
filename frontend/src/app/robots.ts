@@ -1,7 +1,8 @@
 import type { MetadataRoute } from 'next';
+import { SITE_URL } from '@/config/site';
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = 'https://recruitaiofficial.vercel.app';
+  const baseUrl = SITE_URL;
 
   return {
     rules: [

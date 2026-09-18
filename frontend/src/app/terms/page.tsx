@@ -2,23 +2,24 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import Footer from '@/components/Footer';
+import { SITE_URL, TERMS_URL } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions',
   description: 'Terms and Conditions for RecruitAI — platform usage policies, intellectual property, and service agreements.',
   alternates: {
-    canonical: 'https://recruitaiofficial.vercel.app/terms',
+    canonical: TERMS_URL,
   },
   openGraph: {
     title: 'Terms & Conditions | RecruitAI',
     description: 'Terms and Conditions for RecruitAI — platform usage policies and service agreements.',
-    url: 'https://recruitaiofficial.vercel.app/terms',
+    url: TERMS_URL,
   },
 };
 
 const lastUpdated = 'September 11, 2026';
 const contactEmail = 'santhisridinesh@gmail.com';
-const siteUrl = 'https://recruitaiofficial.vercel.app';
+const siteUrl = SITE_URL;
 
 const toc = [
   { id: 'eligibility', label: '1. Eligibility & Accounts' },

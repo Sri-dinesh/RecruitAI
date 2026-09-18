@@ -3,35 +3,39 @@ import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "./supabase";
 
-export const CLOUD_BACKEND_URL = "https://recruitai-vpbe.onrender.com";
-
 /**
- * Strict Environment URL Separation:
- * 1. In Local Development (__DEV__):
- *    Use the LOCAL backend URL only.
- *    Priority:
- *    - EXPO_PUBLIC_DEV_LAN_URL (e.g. http://192.168.x.x:8000 for physical phone testing on same WiFi)
- *    - Android Emulator (http://10.0.2.2:8000)
- *    - iOS Simulator / Web (http://localhost:8000)
- *    Strictly prevents using or switching to production in local dev.
- *
- * 2. In Production (!__DEV__):
- *    Use the PRODUCTION Cloud backend URL only (https://recruitai-vpbe.onrender.com).
- *    Strictly prevents using or switching to localhost / LAN in production.
+ * Resolves the Backend API URL strictly from environment variables:
+ * - Production: EXPO_PUBLIC_BACKEND_URL (configured in .env.production / EAS build secrets)
+ * - Development: EXPO_PUBLIC_DEV_LAN_URL, EXPO_PUBLIC_BACKEND_URL, or local emulator fallback
  */
 export const getBackendUrl = (): string => {
+  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+  const lanUrl = process.env.EXPO_PUBLIC_DEV_LAN_URL?.trim();
+  const localUrl = process.env.EXPO_PUBLIC_LOCAL_URL?.trim();
+
+  // In production builds (!__DEV__), strictly require and use the environment backend URL
   if (!__DEV__) {
-    // Production builds strictly use the cloud backend URL
-    if (process.env.EXPO_PUBLIC_BACKEND_URL && process.env.EXPO_PUBLIC_BACKEND_URL.trim()) {
-      return process.env.EXPO_PUBLIC_BACKEND_URL.trim().replace(/\/$/, "");
+    if (backendUrl) {
+      return backendUrl.replace(/\/$/, "");
     }
-    return CLOUD_BACKEND_URL;
+    console.warn(
+      "[apiClient] EXPO_PUBLIC_BACKEND_URL is not set in production. Please configure it in your environment."
+    );
+    return "";
   }
 
-  // Local development mode (__DEV__) strictly uses local URLs
-  if (process.env.EXPO_PUBLIC_DEV_LAN_URL && process.env.EXPO_PUBLIC_DEV_LAN_URL.trim()) {
-    return process.env.EXPO_PUBLIC_DEV_LAN_URL.trim().replace(/\/$/, "");
+  // In development mode (__DEV__), allow LAN overrides for physical device testing
+  if (lanUrl) {
+    return lanUrl.replace(/\/$/, "");
   }
+  if (backendUrl) {
+    return backendUrl.replace(/\/$/, "");
+  }
+  if (localUrl) {
+    return localUrl.replace(/\/$/, "");
+  }
+
+  // Development emulator / simulator fallback
   if (Platform.OS === "android") {
     return "http://10.0.2.2:8000";
   }

@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { SITE_URL } from '@/config/site';
 
 const CONTACT_EMAIL = 'santhisridinesh@gmail.com';
-const SITE_URL = 'https://recruitaiofficial.vercel.app';
 const WEB3FORMS_ACCESS_KEY = process.env.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY || '';
 
 export default function DeleteAccountForm() {

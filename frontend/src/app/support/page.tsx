@@ -4,22 +4,23 @@ import Logo from '@/components/brand/Logo';
 import SupportContactForm from '@/components/forms/SupportContactForm';
 import PlayStoreBadge from '@/components/brand/PlayStoreBadge';
 import Footer from '@/components/Footer';
+import { SITE_URL, SUPPORT_URL } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Support & Contact',
   description: 'Support and contact for RecruitAI — technical help, account assistance, and inquiries. Contact santhisridinesh@gmail.com',
   alternates: {
-    canonical: 'https://recruitaiofficial.vercel.app/support',
+    canonical: SUPPORT_URL,
   },
   openGraph: {
     title: 'Support & Contact | RecruitAI',
     description: 'Support and contact for RecruitAI — technical help, account assistance, and inquiries.',
-    url: 'https://recruitaiofficial.vercel.app/support',
+    url: SUPPORT_URL,
   },
 };
 
 const contactEmail = 'santhisridinesh@gmail.com';
-const siteUrl = 'https://recruitaiofficial.vercel.app';
+const siteUrl = SITE_URL;
 
 export default function SupportPage() {
   return (

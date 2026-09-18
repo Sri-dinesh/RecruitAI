@@ -1,15 +1,16 @@
 import type { Metadata } from 'next';
+import { SITE_URL } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Sign In or Create Account',
   description: 'Access the RecruitAI platform. Sign in to your recruiter account or start a new hiring campaign with multi-agent candidate screening.',
   alternates: {
-    canonical: 'https://recruitaiofficial.vercel.app/auth',
+    canonical: `${SITE_URL}/auth`,
   },
   openGraph: {
     title: 'Sign In or Create Account | RecruitAI',
     description: 'Sign in to access your recruitment pipelines, candidates, and AI co-pilot.',
-    url: 'https://recruitaiofficial.vercel.app/auth',
+    url: `${SITE_URL}/auth`,
   },
 };
 

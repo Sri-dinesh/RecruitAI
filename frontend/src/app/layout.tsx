@@ -3,6 +3,7 @@ import { Fraunces, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import QueryProvider from "@/providers/QueryProvider";
+import { SITE_URL } from "@/config/site";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -23,7 +24,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://recruitaiofficial.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "RecruitAI | Precision Candidate Intelligence & AI Recruiter",
     template: "%s | RecruitAI",
@@ -45,18 +46,18 @@ export const metadata: Metadata = {
     "technical recruiting automation",
     "unbiased hiring platform"
   ],
-  authors: [{ name: "RecruitAI Team", url: "https://recruitaiofficial.vercel.app" }],
+  authors: [{ name: "RecruitAI Team", url: SITE_URL }],
   creator: "RecruitAI",
   publisher: "RecruitAI",
   category: "technology",
   classification: "Recruitment & Talent Intelligence Software",
   alternates: {
-    canonical: "https://recruitaiofficial.vercel.app",
+    canonical: SITE_URL,
   },
   openGraph: {
     title: "RecruitAI | Precision Candidate Intelligence & AI Recruiter",
     description: "Autonomous multi-agent recruitment platform. Automate technical evaluations, enforce blind screening, and streamline hiring with human-in-the-loop oversight.",
-    url: "https://recruitaiofficial.vercel.app",
+    url: SITE_URL,
     siteName: "RecruitAI",
     locale: "en_US",
     type: "website",
@@ -120,9 +121,9 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "WebApplication",
-      "@id": "https://recruitaiofficial.vercel.app/#webapp",
+      "@id": `${SITE_URL}/#webapp`,
       "name": "RecruitAI",
-      "url": "https://recruitaiofficial.vercel.app",
+      "url": SITE_URL,
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web, Android, iOS",
       "offers": {
@@ -143,21 +144,21 @@ const jsonLd = {
         "Greenhouse, Lever, and Workday ATS Export",
         "Real-Time Hiring Analytics and Pipeline Velocity Tracking"
       ],
-      "screenshot": "https://recruitaiofficial.vercel.app/og-image.png",
+      "screenshot": `${SITE_URL}/og-image.png`,
       "author": {
         "@type": "Organization",
         "name": "RecruitAI",
-        "url": "https://recruitaiofficial.vercel.app"
+        "url": SITE_URL
       }
     },
     {
       "@type": "Organization",
-      "@id": "https://recruitaiofficial.vercel.app/#organization",
+      "@id": `${SITE_URL}/#organization`,
       "name": "RecruitAI",
-      "url": "https://recruitaiofficial.vercel.app",
+      "url": SITE_URL,
       "logo": {
         "@type": "ImageObject",
-        "url": "https://recruitaiofficial.vercel.app/logo.png",
+        "url": `${SITE_URL}/logo.png`,
         "width": 512,
         "height": 512
       },
@@ -169,16 +170,16 @@ const jsonLd = {
     },
     {
       "@type": "WebSite",
-      "@id": "https://recruitaiofficial.vercel.app/#website",
-      "url": "https://recruitaiofficial.vercel.app",
+      "@id": `${SITE_URL}/#website`,
+      "url": SITE_URL,
       "name": "RecruitAI",
       "publisher": {
-        "@id": "https://recruitaiofficial.vercel.app/#organization"
+        "@id": `${SITE_URL}/#organization`
       }
     },
     {
       "@type": "FAQPage",
-      "@id": "https://recruitaiofficial.vercel.app/#faq",
+      "@id": `${SITE_URL}/#faq`,
       "mainEntity": [
         {
           "@type": "Question",

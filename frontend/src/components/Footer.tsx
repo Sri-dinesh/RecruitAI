@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import PlayStoreBadge, { GooglePlayIcon, PLAY_STORE_URL } from '@/components/brand/PlayStoreBadge';
 import { useAuth } from '@/context/AuthContext';
+import { SITE_URL } from '@/config/site';
 
 export interface FooterProps {
   variant?: 'full' | 'simple';
@@ -21,6 +22,7 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
 
   const isAuth = mounted && !authLoading && !!user;
   const currentYear = new Date().getFullYear();
+  const displayHost = SITE_URL.replace(/^https?:\/\//, '');
 
   if (variant === 'simple') {
     return (
@@ -29,12 +31,12 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
           <div className="text-sm text-muted text-center md:text-left">
             © {currentYear} RecruitAI •{' '}
             <a
-              href="https://recruitaiofficial.vercel.app"
+              href={SITE_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:text-foreground transition-colors"
             >
-              recruitaiofficial.vercel.app
+              {displayHost}
             </a>{' '}
             •{' '}
             <a
@@ -164,12 +166,12 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
               </li>
               <li>
                 <a
-                  href="https://recruitaiofficial.vercel.app"
+                  href={SITE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-foreground transition-colors"
                 >
-                  recruitaiofficial.vercel.app
+                  {displayHost}
                 </a>
               </li>
               <li>

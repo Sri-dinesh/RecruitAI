@@ -2,24 +2,25 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import Footer from '@/components/Footer';
+import { SITE_URL, PRIVACY_URL } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
   description: 'Privacy Policy for RecruitAI — how we collect, use, and protect your data. Strict Supabase Row-Level Security, zero data resale, and Google Play compliance.',
   alternates: {
-    canonical: 'https://recruitaiofficial.vercel.app/privacy',
+    canonical: PRIVACY_URL,
   },
   openGraph: {
     title: 'Privacy Policy | RecruitAI',
     description: 'Privacy Policy for RecruitAI — how we collect, use, and protect your data.',
-    url: 'https://recruitaiofficial.vercel.app/privacy',
+    url: PRIVACY_URL,
   },
 };
 
 const lastUpdated = 'September 11, 2026';
 const effectiveDate = 'September 11, 2026';
 const contactEmail = 'santhisridinesh@gmail.com';
-const siteUrl = 'https://recruitaiofficial.vercel.app';
+const siteUrl = SITE_URL;
 
 const toc = [
   { id: 'controller', label: '1. Data Controller' },

@@ -3,6 +3,7 @@ import type { User, Session, AuthError } from "@supabase/supabase-js";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/lib/supabase";
+import { RECOVERY_REDIRECT_URL } from "@/constants/links";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -128,12 +129,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const resetPasswordForEmail = async (email: string) => {
     try {
-      // Always use the live production domain so email links work universally
-      // on mobile phones (via App Links / Universal Links) and web browsers.
-      const redirectUrl = "https://recruitaiofficial.vercel.app/auth/callback?type=recovery";
-
+      // Use environment-configured redirect URL so email links work universally
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: redirectUrl,
+        redirectTo: RECOVERY_REDIRECT_URL,
       });
       return { error };
     } catch (err: any) {

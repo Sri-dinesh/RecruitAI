@@ -3,22 +3,23 @@ import Link from 'next/link';
 import Logo from '@/components/brand/Logo';
 import DeleteAccountForm from '@/components/forms/DeleteAccountForm';
 import Footer from '@/components/Footer';
+import { SITE_URL, DATA_DELETION_URL } from '@/config/site';
 
 export const metadata: Metadata = {
   title: 'Delete Account & Data',
   description: 'How to delete your RecruitAI account and data — self-service and verified compliance deletion. Contact santhisridinesh@gmail.com',
   alternates: {
-    canonical: 'https://recruitaiofficial.vercel.app/data-deletion',
+    canonical: DATA_DELETION_URL,
   },
   openGraph: {
     title: 'Delete Account & Data | RecruitAI',
     description: 'How to delete your RecruitAI account and data — self-service and verified deletion request.',
-    url: 'https://recruitaiofficial.vercel.app/data-deletion',
+    url: DATA_DELETION_URL,
   },
 };
 
 const contactEmail = 'santhisridinesh@gmail.com';
-const siteUrl = 'https://recruitaiofficial.vercel.app';
+const siteUrl = SITE_URL;
 
 export default function DeleteAccountPage() {
   return (

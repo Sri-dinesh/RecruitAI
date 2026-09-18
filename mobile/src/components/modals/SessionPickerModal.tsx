@@ -24,6 +24,12 @@ import { useRecruit } from "@/context/RecruitContext";
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
 import { selectionHaptic, impactHaptic } from "@/lib/haptics";
+import {
+  PRIVACY_URL,
+  TERMS_URL,
+  SUPPORT_URL,
+  DATA_DELETION_URL,
+} from "@/constants/links";
 
 export interface SessionPickerModalProps {
   onClose?: () => void;
@@ -279,7 +285,7 @@ export const SessionPickerModal = forwardRef<
           </View>
           <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/privacy")}
+              onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans text-[11px] text-brand-primary underline">
@@ -288,7 +294,7 @@ export const SessionPickerModal = forwardRef<
             </TouchableOpacity>
             <Text className="text-slate-300 text-[11px]">•</Text>
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/terms")}
+              onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans text-[11px] text-brand-primary underline">
@@ -297,7 +303,7 @@ export const SessionPickerModal = forwardRef<
             </TouchableOpacity>
             <Text className="text-slate-300 text-[11px]">•</Text>
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/support")}
+              onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans text-[11px] text-brand-primary underline">
@@ -306,7 +312,7 @@ export const SessionPickerModal = forwardRef<
             </TouchableOpacity>
             <Text className="text-slate-300 text-[11px]">•</Text>
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/data-deletion")}
+              onPress={() => WebBrowser.openBrowserAsync(DATA_DELETION_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans text-[11px] text-rose-600 underline">

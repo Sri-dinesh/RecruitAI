@@ -33,6 +33,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
 import { selectionHaptic, warningHaptic, successHaptic } from "@/lib/haptics";
+import { PRIVACY_URL, TERMS_URL } from "@/constants/links";
 import PasswordMeter, { getPasswordStrength } from "@/components/common/PasswordMeter";
 
 export default function SignupScreen() {
@@ -346,7 +347,7 @@ export default function SignupScreen() {
               By creating an account, you agree to RecruitAI's{" "}
             </Text>
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/terms")}
+              onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans-bold text-[11px] text-brand-primary underline">
@@ -357,7 +358,7 @@ export default function SignupScreen() {
               {" "}and{" "}
             </Text>
             <TouchableOpacity
-              onPress={() => WebBrowser.openBrowserAsync("https://recruitaiofficial.vercel.app/privacy")}
+              onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)}
               activeOpacity={0.7}
             >
               <Text className="font-sans-bold text-[11px] text-brand-primary underline">

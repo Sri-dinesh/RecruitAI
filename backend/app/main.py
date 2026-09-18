@@ -16,7 +16,7 @@ from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_users import router as users_router
 from app.api.routes_privacy import router as privacy_router
-from app.core.config import verify_provider_compliance, IS_PRODUCTION
+from app.core.config import verify_provider_compliance, IS_PRODUCTION, ALLOWED_ORIGINS
 from app.core.auth import get_current_user_id
 
 logger = logging.getLogger("recruitai.server")
@@ -28,26 +28,10 @@ app = FastAPI(title="RecruitAI API Server", version="2.0")
 
 SERVER_START_TIME = time.time()
 
-# Strict, secure CORS policy: only whitelist authorized production web clients & local dev
-DEFAULT_ALLOWED_ORIGINS = [
-    "https://recruitaiofficial.vercel.app",
-    "https://recruitai.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:8081",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8081",
-]
-env_origins = os.getenv("ALLOWED_ORIGINS", "")
-allowed_origins = list(DEFAULT_ALLOWED_ORIGINS)
-if env_origins:
-    for o in env_origins.split(","):
-        clean_o = o.strip()
-        if clean_o and clean_o not in allowed_origins:
-            allowed_origins.append(clean_o)
-
+# Strict, secure CORS policy driven by environment configuration (ALLOWED_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=r"^https:\/\/recruitai(-[a-zA-Z0-9]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

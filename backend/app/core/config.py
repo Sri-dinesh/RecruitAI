@@ -23,6 +23,22 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 USE_LOCAL_AUTH = False if IS_PRODUCTION else (os.getenv("USE_LOCAL_AUTH", "false").lower() == "true")
 LOCAL_DEV_USER_ID = os.getenv("LOCAL_DEV_USER_ID", "e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3")
 
+# CORS Configuration - Allowed Origins
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://recruitaiofficial.vercel.app",
+    "https://recruitai.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:8081",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8081",
+]
+env_origins = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = (
+    [o.strip() for o in env_origins.split(",") if o.strip()]
+    if env_origins
+    else list(DEFAULT_ALLOWED_ORIGINS)
+)
+
 
 # SMTP Configuration - Safe parsing prevents import crash on invalid port string (ENG-5)
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
