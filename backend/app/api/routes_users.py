@@ -13,7 +13,7 @@ def _parse_preferences(prefs: Any) -> Dict[str, Any]:
     defaults = {
         "email_alerts": True,
         "theme": "system",
-        "blind_mode_default": True,
+        "blind_mode_default": False,
         "auto_rubric": True,
         "match_threshold": 75,
         "default_export_format": "pdf",
@@ -59,7 +59,7 @@ def get_current_user_profile(user_id: str = Depends(get_current_user_id)):
         "preferences": {
             "email_alerts": True,
             "theme": "system",
-            "blind_mode_default": True,
+            "blind_mode_default": False,
             "auto_rubric": True,
         },
     }
@@ -89,7 +89,16 @@ def update_current_user_profile(
     if payload.role is not None and payload.role in ("recruiter", "employer"):
         update_data["role"] = payload.role
     if payload.preferences is not None:
-        update_data["preferences"] = payload.preferences
+        current_prof = get_current_user_profile(user_id)
+        existing_prefs = (
+            current_prof.get("preferences", {})
+            if isinstance(current_prof, dict)
+            else getattr(current_prof, "preferences", {})
+        )
+        if not isinstance(existing_prefs, dict):
+            existing_prefs = _parse_preferences(existing_prefs)
+        merged_prefs = {**existing_prefs, **payload.preferences}
+        update_data["preferences"] = merged_prefs
 
     if not update_data:
         return get_current_user_profile(user_id)

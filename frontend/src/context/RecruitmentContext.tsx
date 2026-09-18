@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
-import { fetchWithAuth } from '@/lib/apiClient';
+import { fetchWithAuth, downloadPdfReport } from '@/lib/apiClient';
 import {
   getActiveSessionId,
   setActiveSessionId,
@@ -11,6 +11,8 @@ import {
   setStoredCandidateStatuses,
   getStoredEvalNotes,
   setStoredEvalNotes,
+  getStoredBlindMode,
+  setStoredBlindMode,
   clearAllRecruitAIStorage
 } from '@/lib/sessionStorage';
 
@@ -92,6 +94,8 @@ interface RecruitmentContextType {
   candidateStatuses: Record<string, CandidateStatus>;
   scheduledInterviews: ScheduledInterview[];
   isBlindHiring: boolean;
+  messages: ChatMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   apiConnected: boolean;
   loading: boolean;
   evalNotes: Record<string, { tech: number; comm: number; notes: string }>;
@@ -110,6 +114,7 @@ interface RecruitmentContextType {
   maskName: (name: string, candidateId?: string) => string;
   maskEmail: (email?: string, candidateId?: string) => string;
   maskPhone: (phone?: string) => string;
+  exportPdfReport: () => Promise<string>;
 }
 
 const RecruitmentContext = createContext<RecruitmentContextType | undefined>(undefined);
@@ -119,16 +124,49 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
   const queryClient = useQueryClient();
 
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(null);
-  const [isBlindHiring, setIsBlindHiring] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isBlindHiring, setIsBlindHiringState] = useState<boolean>(() => {
+    const saved = getStoredBlindMode();
+    if (saved !== null) {
+      return saved;
+    }
+    return false; // Standard Mode is strictly default (blind mode OFF, all candidate names visible)
+  });
   const [isMutating, setIsMutating] = useState(false);
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, CandidateStatus>>({});
   const [evalNotes, setEvalNotes] = useState<Record<string, { tech: number; comm: number; notes: string }>>({});
   const [inspectedCandidate, setInspectedCandidate] = useState<Candidate | null>(null);
 
-  // Sync initial blind hiring from recruiter profile
+  // Recruiter manual toggle for Blind / Standard Mode
+  // Standard Mode (false) is default. Setting is persisted to localStorage & synced to backend.
+  // The option will NOT change unless the user manually changes it.
+  const setIsBlindHiring = useCallback((val: boolean) => {
+    setIsBlindHiringState(val);
+    setStoredBlindMode(val);
+
+    fetchWithAuth('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        preferences: {
+          blind_mode_default: val,
+        },
+      }),
+    }).catch((err) => {
+      console.warn('[RecruitmentContext] Failed to sync blind mode preference to backend:', err);
+    });
+  }, []);
+
+  // Sync initial blind hiring from recruiter profile ONLY if user has not already chosen a setting locally
   useEffect(() => {
+    const localChoice = getStoredBlindMode();
+    if (localChoice !== null) {
+      // User's manual selection in local storage is authoritative; do not overwrite!
+      return;
+    }
     if (profile?.preferences?.blind_mode_default !== undefined) {
-      setIsBlindHiring(profile.preferences.blind_mode_default);
+      const serverPref = profile.preferences.blind_mode_default === true;
+      setIsBlindHiringState(serverPref);
+      setStoredBlindMode(serverPref);
     }
   }, [profile?.preferences?.blind_mode_default]);
 
@@ -166,7 +204,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
 
   const apiConnected = healthQuery.data ?? false;
 
-  // 2. Sessions list query with TanStack Query (UI-1)
+  // 2. Sessions list query with TanStack Query (UI-1) - polls every 8s for new sessions from mobile
   const sessionsQuery = useQuery<Session[]>({
     queryKey: ['sessions'],
     queryFn: async () => {
@@ -175,14 +213,15 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       const data = await res.json();
       return Array.isArray(data) ? data : (data.sessions || []);
     },
-    staleTime: 30_000,
+    staleTime: 4_000,
+    refetchInterval: 8_000,
     retry: 2,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   const sessions = useMemo(() => sessionsQuery.data || [], [sessionsQuery.data]);
 
-  // 3. Active Session detail query with TanStack Query (UI-1)
+  // 3. Active Session detail query with TanStack Query (UI-1) - polls every 4s for cross-device real-time sync
   const sessionDetailQuery = useQuery<Session>({
     queryKey: ['session', activeSessionId],
     queryFn: async () => {
@@ -192,12 +231,33 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       return await res.json();
     },
     enabled: !!activeSessionId,
-    staleTime: 30_000,
+    staleTime: 2_000,
+    refetchInterval: 4_000,
     retry: 2,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   const activeSessionData = sessionDetailQuery.data || null;
+
+  // Real-time synchronization: sync conversation history from active session into shared messages state
+  useEffect(() => {
+    if (activeSessionData?.conversation_history && activeSessionData.conversation_history.length > 0) {
+      const serverHistory = activeSessionData.conversation_history as ChatMessage[];
+      setMessages((prev) => {
+        if (serverHistory.length !== prev.length) {
+          return serverHistory;
+        }
+        if (prev.length > 0 && serverHistory.length > 0) {
+          const lastPrev = prev[prev.length - 1];
+          const lastServer = serverHistory[serverHistory.length - 1];
+          if (lastPrev.content !== lastServer.content || lastPrev.role !== lastServer.role) {
+            return serverHistory;
+          }
+        }
+        return prev.length === 0 ? serverHistory : prev;
+      });
+    }
+  }, [activeSessionData?.id, activeSessionData?.conversation_history]);
 
   // Derived state from active session query
   const jd: JobDescription | null = activeSessionData?.jd_structured || null;
@@ -233,14 +293,24 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     setActiveSessionId(sessionId);
     setActiveSessionIdState(sessionId);
     setOptimisticStatuses({});
+
+    const cached = queryClient.getQueryData<Session>(['session', sessionId]);
+    if (cached?.conversation_history && cached.conversation_history.length > 0) {
+      setMessages(cached.conversation_history as ChatMessage[]);
+    }
+
     await queryClient.prefetchQuery({
       queryKey: ['session', sessionId],
       queryFn: async () => {
         const res = await fetchWithAuth(`/api/sessions/${sessionId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
+        const data = await res.json();
+        if (data.conversation_history && data.conversation_history.length > 0) {
+          setMessages(data.conversation_history as ChatMessage[]);
+        }
+        return data;
       },
-      staleTime: 30_000,
+      staleTime: 2_000,
     });
   }, [queryClient]);
 
@@ -496,6 +566,21 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     return '+1 (***) ***-****';
   }, [isBlindHiring]);
 
+  const exportPdfReport = useCallback(async (): Promise<string> => {
+    if (activeSessionId) {
+      return await downloadPdfReport(activeSessionId);
+    }
+    return await downloadPdfReport(undefined, {
+      jd: jd || undefined,
+      candidates: candidates,
+      shortlist: candidates.filter(c => candidateStatuses[c.candidate_id] === 'shortlisted'),
+      evaluations: evalNotes,
+      scheduled_interviews: scheduledInterviews,
+      is_blind_mode: isBlindHiring,
+      session_title: jd?.role ? `Hiring: ${jd.role}` : 'Executive Recruitment Assessment',
+    });
+  }, [activeSessionId, jd, candidates, candidateStatuses, evalNotes, scheduledInterviews, isBlindHiring]);
+
   const activeSession = sessions.find((s) => s.id === activeSessionId) || activeSessionData;
   const loading = sessionsQuery.isLoading || (!!activeSessionId && sessionDetailQuery.isLoading) || isMutating;
 
@@ -510,6 +595,8 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         candidateStatuses,
         scheduledInterviews,
         isBlindHiring,
+        messages,
+        setMessages,
         apiConnected,
         loading,
         evalNotes,
@@ -528,6 +615,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         maskName,
         maskEmail,
         maskPhone,
+        exportPdfReport,
       }}
     >
       {children}

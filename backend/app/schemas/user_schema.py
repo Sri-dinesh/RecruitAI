@@ -5,7 +5,7 @@ from datetime import datetime
 class UserPreferences(BaseModel):
     email_alerts: bool = True
     theme: str = "system"
-    blind_mode_default: bool = True
+    blind_mode_default: bool = False
     auto_rubric: bool = True
     match_threshold: int = 75
     default_export_format: str = "pdf"

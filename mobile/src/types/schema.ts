@@ -135,11 +135,13 @@ export interface RecruitContextType {
     status: CandidateStatus
   ) => Promise<void>;
   toggleBlindHiring: () => void;
+  setIsBlindHiring?: (val: boolean) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
   setJd: React.Dispatch<React.SetStateAction<JobDescription | null>>;
   setScheduledInterviews: React.Dispatch<React.SetStateAction<ScheduledInterview[]>>;
   bookInterview: (candidateName: string, slot: string, candidateId?: string) => Promise<void>;
   refreshActiveSession: () => Promise<void>;
+  syncActiveSession: () => Promise<void>;
   checkApiHealth: () => Promise<boolean>;
 }

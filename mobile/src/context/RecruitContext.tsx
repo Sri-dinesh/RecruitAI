@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { fetchWithAuth, testBackendConnection, getBackendUrl } from "@/lib/apiClient";
 import {
@@ -31,6 +32,8 @@ const DEFAULT_GREETING: ChatMessage = {
     "Hello! I am **RecruitAI**, your AI recruiting assistant. Start by loading a job description and candidate resumes, or select one of the quick start options below.",
 };
 
+const BLIND_HIRING_STORAGE_KEY = "recruitai_is_blind_hiring";
+
 const RecruitContext = createContext<RecruitContextType | undefined>(undefined);
 
 export function RecruitProvider({ children }: { children: React.ReactNode }) {
@@ -48,10 +51,25 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     ScheduledInterview[]
   >([]);
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_GREETING]);
+  // Default is strictly Standard Mode (false): candidate names visible
   const [isBlindHiring, setIsBlindHiring] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
+
+  // Hydrate persisted blind hiring mode preference on startup
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await SecureStore.getItemAsync(BLIND_HIRING_STORAGE_KEY);
+        if (saved !== null) {
+          setIsBlindHiring(saved === "true");
+        }
+      } catch (err) {
+        console.warn("[RecruitContext] Failed to load blind mode from SecureStore:", err);
+      }
+    })();
+  }, []);
 
   // Replay offline status mutations once network connectivity is restored
   const flushOfflineMutations = useCallback(async () => {
@@ -240,7 +258,16 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
               "recruitai_active_session_id"
             );
             if (savedSessionId && list.some((s) => s.id === savedSessionId)) {
-              targetSessionId = savedSessionId;
+              const saved = list.find((s) => s.id === savedSessionId);
+              const mostRecent = list[0];
+              const savedTime = saved?.updated_at ? new Date(saved.updated_at).getTime() : 0;
+              const recentTime = mostRecent?.updated_at ? new Date(mostRecent.updated_at).getTime() : 0;
+              // If user was active on another device (e.g. web) more recently, select the most recent session
+              if (mostRecent && recentTime > savedTime && recentTime - savedTime > 5000) {
+                targetSessionId = mostRecent.id;
+              } else {
+                targetSessionId = savedSessionId;
+              }
             }
           } catch {
             // fallback to first session
@@ -425,10 +452,44 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     [candidateStatuses, activeSessionId, jd]
   );
 
-  // Toggle Blind Hiring Mode
+  // Explicit setter for Blind Hiring Mode
+  const setBlindHiringExplicit = useCallback(async (val: boolean) => {
+    setIsBlindHiring(val);
+    try {
+      await SecureStore.setItemAsync(BLIND_HIRING_STORAGE_KEY, String(val));
+    } catch (err) {
+      console.warn("[RecruitContext] Failed to persist blind mode to SecureStore:", err);
+    }
+    fetchWithAuth("/api/users/me", {
+      method: "PATCH",
+      body: JSON.stringify({
+        preferences: {
+          blind_mode_default: val,
+        },
+      }),
+    }).catch(() => {});
+  }, []);
+
+  // Toggle Blind Hiring Mode (Standard Mode is default; option only changes when manually toggled)
   const toggleBlindHiring = useCallback(() => {
     selectionHaptic();
-    setIsBlindHiring((prev) => !prev);
+    setIsBlindHiring((prev) => {
+      const next = !prev;
+      SecureStore.setItemAsync(BLIND_HIRING_STORAGE_KEY, String(next)).catch((err) => {
+        console.warn("[RecruitContext] Failed to persist blind mode to SecureStore:", err);
+      });
+      fetchWithAuth("/api/users/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          preferences: {
+            blind_mode_default: next,
+          },
+        }),
+      }).catch((err) => {
+        console.warn("[RecruitContext] Failed to sync blind mode preference to backend:", err);
+      });
+      return next;
+    });
   }, []);
 
   // Book an interview slot
@@ -469,13 +530,157 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeSessionId, selectSession]);
 
+  // Quiet background sync for active session to keep conversation interconnected across devices
+  const syncActiveSession = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      const res = await fetchWithAuth(`/api/sessions/${activeSessionId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.conversation_history && Array.isArray(data.conversation_history)) {
+        const serverHistory = data.conversation_history as ChatMessage[];
+        setMessages((prev) => {
+          if (serverHistory.length === 0) return prev;
+
+          // If local is just default greeting and server has real messages, sync
+          if (prev.length === 1 && prev[0].content === DEFAULT_GREETING.content) {
+            return serverHistory;
+          }
+
+          const lastPrev = prev[prev.length - 1];
+          const lastServer = serverHistory[serverHistory.length - 1];
+
+          // If local has more messages than server and last message was sent by user,
+          // user is awaiting an in-flight AI response. Do not overwrite.
+          if (prev.length > serverHistory.length && lastPrev?.role === "user") {
+            return prev;
+          }
+
+          // If message count differs or last message content/role differs, update
+          if (
+            serverHistory.length !== prev.length ||
+            lastPrev?.content !== lastServer?.content ||
+            lastPrev?.role !== lastServer?.role
+          ) {
+            return serverHistory;
+          }
+
+          return prev;
+        });
+      }
+
+      // Quietly sync job description, candidates, and interviews if updated from another device
+      if (data.jd_structured) {
+        setJd((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(data.jd_structured)
+            ? data.jd_structured
+            : prev
+        );
+      }
+      if (data.resumes && Array.isArray(data.resumes)) {
+        setCandidates((prev) =>
+          prev.length !== data.resumes.length ? data.resumes : prev
+        );
+      }
+      if (data.last_shortlist) {
+        setLastShortlist((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(data.last_shortlist)
+            ? data.last_shortlist
+            : prev
+        );
+      }
+      if (data.scheduled_interviews) {
+        setScheduledInterviews((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(data.scheduled_interviews)
+            ? data.scheduled_interviews
+            : prev
+        );
+      }
+    } catch {
+      // Quiet background failure
+    }
+  }, [activeSessionId]);
+
+  // Quietly refresh sessions list in background so newly created campaigns from web appear
+  const quietRefreshSessions = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth("/api/sessions");
+      if (res.ok) {
+        const list: ChatSession[] = await res.json();
+        setSessions((prev) => {
+          if (list.length !== prev.length || JSON.stringify(list) !== JSON.stringify(prev)) {
+            return list;
+          }
+          return prev;
+        });
+      }
+    } catch {}
+  }, []);
+
   // Initial load when authenticated
   useEffect(() => {
     if (user) {
       loadSessions();
       checkApiHealth();
+
+      // Fetch recruiter preferences ONLY if user has not already chosen a setting on this device
+      (async () => {
+        try {
+          const localSaved = await SecureStore.getItemAsync(BLIND_HIRING_STORAGE_KEY);
+          if (localSaved !== null) {
+            // User's manual selection in SecureStore is authoritative; never overwrite it!
+            setIsBlindHiring(localSaved === "true");
+            return;
+          }
+          const res = await fetchWithAuth("/api/users/me");
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.preferences?.blind_mode_default !== undefined) {
+              const serverPref = data.preferences.blind_mode_default === true;
+              setIsBlindHiring(serverPref);
+              await SecureStore.setItemAsync(BLIND_HIRING_STORAGE_KEY, String(serverPref));
+            }
+          }
+        } catch {}
+      })();
     }
   }, [user, loadSessions, checkApiHealth]);
+
+  // AppState listener: immediately re-check connectivity, refresh sessions, and sync active session when app becomes active
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextAppState: AppStateStatus) => {
+        if (nextAppState === "active") {
+          checkApiHealth();
+          quietRefreshSessions();
+          syncActiveSession();
+        }
+      }
+    );
+    return () => {
+      subscription.remove();
+    };
+  }, [checkApiHealth, quietRefreshSessions, syncActiveSession]);
+
+  // Periodic real-time chat & session sync: polls every 4s while connected (matching web dashboard)
+  useEffect(() => {
+    if (!activeSessionId || !apiConnected) return;
+    const interval = setInterval(() => {
+      syncActiveSession();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeSessionId, apiConnected, syncActiveSession]);
+
+  // Periodic sessions list refresh: polls every 12s while connected
+  useEffect(() => {
+    if (!apiConnected) return;
+    const interval = setInterval(() => {
+      quietRefreshSessions();
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [apiConnected, quietRefreshSessions]);
 
   // Health poll check every 15s
   useEffect(() => {
@@ -508,12 +713,14 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       deleteCandidate,
       toggleCandidateStatus,
       toggleBlindHiring,
+      setIsBlindHiring: setBlindHiringExplicit,
       setMessages,
       setCandidates,
       setJd,
       setScheduledInterviews,
       bookInterview,
       refreshActiveSession,
+      syncActiveSession,
       checkApiHealth,
     }),
     [
@@ -538,8 +745,10 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       deleteCandidate,
       toggleCandidateStatus,
       toggleBlindHiring,
+      setBlindHiringExplicit,
       bookInterview,
       refreshActiveSession,
+      syncActiveSession,
       checkApiHealth,
     ]
   );

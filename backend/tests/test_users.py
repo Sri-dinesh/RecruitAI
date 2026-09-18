@@ -39,7 +39,7 @@ def test_update_user_profile():
         "preferences": {
             "email_alerts": False,
             "theme": "dark",
-            "blind_mode_default": True
+            "blind_mode_default": False
         }
     }
     response = client.patch("/api/users/me", json=update_payload, headers=headers)
@@ -47,3 +47,4 @@ def test_update_user_profile():
     data = response.json()
     assert data["full_name"] == "Senior Talent Partner"
     assert data["company_name"] == "Tech Corp Inc."
+    assert data["preferences"]["blind_mode_default"] is False

@@ -69,7 +69,7 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
       setAvatarUrl(profile?.avatar_url || user?.user_metadata?.avatar_url || '');
 
       const prefs: UserPreferences = profile?.preferences || {};
-      setBlindModeDefault(prefs.blind_mode_default !== false);
+      setBlindModeDefault(prefs.blind_mode_default === true);
       setAutoRubric(prefs.auto_rubric !== false);
       setMatchThreshold(Number(prefs.match_threshold) || 75);
       setDefaultExportFormat((prefs.default_export_format as any) || 'pdf');

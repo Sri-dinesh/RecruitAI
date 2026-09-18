@@ -47,7 +47,7 @@ create table public.users (
   preferences jsonb not null default '{
     "email_alerts": true,
     "theme": "system",
-    "blind_mode_default": true,
+    "blind_mode_default": false,
     "auto_rubric": true
   }'::jsonb,
   last_sign_in_at timestamptz,

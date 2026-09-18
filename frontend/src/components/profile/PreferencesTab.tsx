@@ -34,13 +34,21 @@ export const PreferencesTab: React.FC<PreferencesTabProps> = ({
       <div className="p-4 rounded-xl bg-white border border-slate-200 flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-900">Blind Mode by Default</span>
-            <span className="text-[10px] bg-amber-50 text-amber-800 font-semibold px-2 py-0.5 rounded-full border border-amber-200">
-              Anti-Bias
+            <span className="text-sm font-bold text-slate-900">
+              {blindModeDefault ? 'Blind Mode (Enabled)' : 'Standard Mode (Default)'}
+            </span>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+              blindModeDefault
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : 'bg-slate-50 text-slate-600 border-slate-200'
+            }`}>
+              {blindModeDefault ? 'Anti-Bias Masking' : 'Standard Default'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            Automatically redact candidate names, demographic indicators, photos, and graduation dates before generating semantic scores.
+            {blindModeDefault
+              ? 'Automatically redact candidate names and demographics before scoring.'
+              : 'Standard Mode displays full candidate profiles and contact details by default.'}
           </p>
         </div>
         <button

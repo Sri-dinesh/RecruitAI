@@ -81,10 +81,10 @@ export default function AppHeader({ onOpenMobileMenu, onOpenSettings }: AppHeade
               ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
               : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
           }`}
-          title="Toggle Blind Hiring (Redacts candidate demographic PII before scoring)"
+          title="Bias Mode: Standard Mode shows candidate details; Blind Mode redacts demographic PII"
         >
           {isBlindHiring ? <EyeOff className="w-3.5 h-3.5 text-amber-700" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
-          <span className="hidden xs:inline">{isBlindHiring ? 'Blind Mode: ON' : 'Blind Mode: OFF'}</span>
+          <span className="hidden xs:inline">{isBlindHiring ? 'Blind Mode' : 'Standard Mode'}</span>
           <span className="xs:hidden">{isBlindHiring ? 'Blind' : 'Standard'}</span>
         </button>
 

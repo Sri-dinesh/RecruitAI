@@ -89,6 +89,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
           <TouchableOpacity
             onPress={toggleBlindHiring}
             activeOpacity={0.7}
+            accessibilityLabel={
+              isBlindHiring
+                ? "Blind Mode active: PII masked during review"
+                : "Standard Mode active: candidate details visible"
+            }
             className={`flex-row items-center px-2 py-1.5 rounded-[6px] border mr-2.5 ${
               isBlindHiring
                 ? "bg-amber-50 border-amber-300"
@@ -106,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
               <>
                 <Eye size={13} color={COLORS.muted} />
                 <Text className="font-sans-medium text-[10px] text-muted ml-1">
-                  Public
+                  Standard
                 </Text>
               </>
             )}

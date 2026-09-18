@@ -9,14 +9,9 @@ import { CandidateStatus } from '@/context/RecruitmentContext';
 const ACTIVE_SESSION_KEY = 'recruitai_active_session';
 const EVAL_NOTES_KEY = 'recruitai_eval_notes';
 const CAND_STATUSES_PREFIX = 'recruitai_cand_statuses_';
-const INTERVIEWS_PREFIX = 'recruitai_interviews_';
+const BLIND_MODE_KEY = 'recruitai_blind_mode';
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-interface TTLWrapper<T> {
-  data: T;
-  cachedAt: number;
-}
 
 function safeGetItem(key: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -112,6 +107,20 @@ export function setStoredEvalNotes(
   notes: Record<string, { tech: number; comm: number; notes: string }>
 ): void {
   safeSetItem(EVAL_NOTES_KEY, JSON.stringify(notes));
+}
+
+/**
+ * Blind Hiring Mode Preference (ARCH-7)
+ * Standard Mode (false) is default. Persists recruiter's manual selection.
+ */
+export function getStoredBlindMode(): boolean | null {
+  const raw = safeGetItem(BLIND_MODE_KEY);
+  if (raw === null) return null;
+  return raw === 'true';
+}
+
+export function setStoredBlindMode(enabled: boolean): void {
+  safeSetItem(BLIND_MODE_KEY, String(enabled));
 }
 
 /**

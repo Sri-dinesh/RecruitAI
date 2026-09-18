@@ -97,7 +97,7 @@ class FallbackSupabaseClient:
                 company_name TEXT,
                 company_website TEXT,
                 role TEXT NOT NULL DEFAULT 'recruiter',
-                preferences TEXT DEFAULT '{"email_alerts":true,"theme":"system","blind_mode_default":true,"auto_rubric":true}',
+                preferences TEXT DEFAULT '{"email_alerts":true,"theme":"system","blind_mode_default":false,"auto_rubric":true}',
                 last_sign_in_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -107,6 +107,11 @@ class FallbackSupabaseClient:
         cursor.execute("""
             INSERT OR IGNORE INTO users (id, email, full_name, role)
             VALUES ('local_dev_user_123', 'recruiter@recruitai.local', 'Lead Recruiter', 'recruiter')
+        """)
+        # Ensure default preferences strictly default to blind_mode_default: false
+        cursor.execute("""
+            UPDATE users SET preferences = '{"email_alerts":true,"theme":"system","blind_mode_default":false,"auto_rubric":true}'
+            WHERE id = 'local_dev_user_123' AND (preferences LIKE '%"blind_mode_default": true%' OR preferences LIKE '%"blind_mode_default":true%')
         """)
 
         # ── 1. jobs table ───────────────────────────────────────────────────
@@ -382,6 +387,12 @@ class TableBuilder:
                 d['embedding'] = json.loads(d['embedding'])
             except Exception:
                 pass
+        elif self.table_name == 'users' and 'preferences' in d and d['preferences']:
+            try:
+                if isinstance(d['preferences'], str):
+                    d['preferences'] = json.loads(d['preferences'])
+            except Exception:
+                pass
         return d
 
     def _serialize_row(self, row_dict: dict) -> dict:
@@ -394,6 +405,7 @@ class TableBuilder:
             'chat_sessions': ['pending_confirmation'],
             'chat_messages': ['metadata'],
             'resume_chunks': ['embedding'],
+            'users': ['preferences'],
         }
         for field in json_fields.get(self.table_name, []):
             if field in d and (isinstance(d[field], (dict, list)) or d[field] is not None):
