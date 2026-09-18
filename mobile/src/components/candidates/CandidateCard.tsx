@@ -7,6 +7,7 @@ import {
   ChevronRight,
   EyeOff,
   Briefcase,
+  ShieldCheck,
 } from "lucide-react-native";
 import { COLORS } from "@/constants/theme";
 import { DecisionBar } from "./DecisionBar";
@@ -132,6 +133,15 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
                   ? `${candidate.experience_years} Years Experience`
                   : "Candidate Profile")}
             </Text>
+
+            {candidate.consent_version && (
+              <View className="flex-row items-center bg-blue-50 border border-blue-200/80 px-1.5 py-0.5 rounded-full mt-1.5 self-start">
+                <ShieldCheck size={9} color="#2563EB" />
+                <Text className="font-sans-bold text-[8px] text-blue-700 ml-1">
+                  Consent Verified
+                </Text>
+              </View>
+            )}
           </View>
 
           <View className="flex-row items-center gap-1.5">

@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -14,18 +15,33 @@ import {
   FileDown,
   FileText,
   Share2,
+  Globe,
 } from "lucide-react-native";
 import { CompareMatrix } from "@/components/workspace/CompareMatrix";
 import { SlotScheduler } from "@/components/workspace/SlotScheduler";
 import { EmailDrafter } from "@/components/workspace/EmailDrafter";
+import { LiveIntelligenceCard } from "@/components/workspace/LiveIntelligenceCard";
+import { useRecruit } from "@/context/RecruitContext";
 import { COLORS } from "@/constants/theme";
-import { selectionHaptic } from "@/lib/haptics";
+import { selectionHaptic, impactHaptic } from "@/lib/haptics";
 
-type WorkspaceTool = "compare" | "schedule" | "email";
+type WorkspaceTool = "compare" | "schedule" | "email" | "intel";
 
 export default function WorkspaceTab() {
   const router = useRouter();
+  const { refreshActiveSession } = useRecruit();
   const [activeTool, setActiveTool] = useState<WorkspaceTool>("compare");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    impactHaptic();
+    setRefreshing(true);
+    try {
+      await refreshActiveSession();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshActiveSession]);
 
   const handleSelectTool = (tool: WorkspaceTool) => {
     selectionHaptic();
@@ -77,8 +93,12 @@ export default function WorkspaceTab() {
           </View>
         </View>
 
-        {/* 3-Segment Tool Switcher Pills */}
-        <View className="flex-row gap-2">
+        {/* 4-Segment Tool Switcher Pills */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ flexDirection: "row", gap: 8 }}
+        >
           {[
             {
               key: "compare" as WorkspaceTool,
@@ -95,6 +115,11 @@ export default function WorkspaceTab() {
               label: "Email Drafter",
               icon: Mail,
             },
+            {
+              key: "intel" as WorkspaceTool,
+              label: "Live Intel",
+              icon: Globe,
+            },
           ].map((tool) => {
             const isActive = activeTool === tool.key;
             const Icon = tool.icon;
@@ -103,7 +128,7 @@ export default function WorkspaceTab() {
                 key={tool.key}
                 onPress={() => handleSelectTool(tool.key)}
                 activeOpacity={0.7}
-                className={`flex-1 flex-row items-center justify-center py-2 rounded-[6px] border ${
+                className={`px-3 py-2 rounded-[6px] flex-row items-center border ${
                   isActive
                     ? "bg-brand-primary border-brand-primary"
                     : "bg-white border-border"
@@ -124,7 +149,7 @@ export default function WorkspaceTab() {
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       </View>
 
       {/* Main Tool Content */}
@@ -133,10 +158,23 @@ export default function WorkspaceTab() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={COLORS.brandPrimary}
+            colors={[COLORS.brandPrimary]}
+          />
+        }
       >
         {activeTool === "compare" && <CompareMatrix />}
         {activeTool === "schedule" && <SlotScheduler />}
         {activeTool === "email" && <EmailDrafter />}
+        {activeTool === "intel" && (
+          <View className="p-4">
+            <LiveIntelligenceCard />
+          </View>
+        )}
       </ScrollView>
     </View>
   );

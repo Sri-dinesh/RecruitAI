@@ -9,6 +9,7 @@ export function useCandidateTriage(
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
   const [sortBy, setSortBy] = useState<"match" | "name">("match");
+  const [minScore, setMinScore] = useState<number>(0);
 
   const counts = useMemo(() => {
     let shortlisted = 0;
@@ -34,6 +35,12 @@ export function useCandidateTriage(
 
   const filteredCandidates = useMemo(() => {
     let result = candidates.filter((c) => {
+      // Min score filter
+      if (minScore > 0) {
+        const score = c.match_score ?? 0;
+        if (score < minScore) return false;
+      }
+
       // Status filter
       if (filter !== "all") {
         const status =
@@ -78,7 +85,7 @@ export function useCandidateTriage(
       }
       return (a.name || "").localeCompare(b.name || "");
     });
-  }, [candidates, candidateStatuses, filter, search, sortBy]);
+  }, [candidates, candidateStatuses, filter, search, sortBy, minScore]);
 
   return {
     search,
@@ -87,6 +94,8 @@ export function useCandidateTriage(
     setFilter,
     sortBy,
     setSortBy,
+    minScore,
+    setMinScore,
     counts,
     filteredCandidates,
   };

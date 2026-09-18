@@ -1,16 +1,48 @@
-import React, { useMemo } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useMemo, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import Markdown from "react-native-markdown-display";
-import { Bot, User } from "lucide-react-native";
+import { Bot, User, Copy, Check } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 import { COLORS } from "@/constants/theme";
 import type { ChatMessage } from "@/types/schema";
+import { AgentStepsAccordion } from "./AgentStepsAccordion";
+import { FollowupChips } from "./FollowupChips";
+import { selectionHaptic } from "@/lib/haptics";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onSelectFollowup?: (prompt: string) => void;
+  isLoading?: boolean;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  onSelectFollowup,
+  isLoading = false,
+}) => {
   const isAssistant = message.role === "assistant";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      selectionHaptic();
+      await Clipboard.setStringAsync(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.warn("[MessageBubble] Copy to clipboard failed:", err);
+    }
+  };
+
+  const formattedTime = useMemo(() => {
+    if (!message.created_at) return null;
+    try {
+      const d = new Date(message.created_at);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return null;
+    }
+  }, [message.created_at]);
 
   const markdownStyles = useMemo(
     () =>
@@ -63,27 +95,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           paddingVertical: 1,
         },
         code_block: {
-          backgroundColor: "#1E1E2E",
-          borderRadius: 6,
-          padding: 8,
+          backgroundColor: "#0F172A",
+          borderRadius: 8,
+          padding: 10,
           marginVertical: 6,
         },
         fence: {
-          backgroundColor: "#1E1E2E",
-          borderRadius: 6,
-          padding: 8,
+          backgroundColor: "#0F172A",
+          borderRadius: 8,
+          padding: 10,
           marginVertical: 6,
-          color: "#F8F8F2",
+          color: "#F8FAFC",
           fontSize: 12,
           fontFamily: "System",
         },
         link: {
-          color: "#1B2A4A",
+          color: "#4338CA",
           textDecorationLine: "underline",
         },
         blockquote: {
-          backgroundColor: "#F8F6F2",
-          borderLeftColor: "#1B2A4A",
+          backgroundColor: "#F8FAFC",
+          borderLeftColor: "#4338CA",
           borderLeftWidth: 3,
           paddingHorizontal: 8,
           paddingVertical: 4,
@@ -106,12 +138,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       )}
 
       <View
-        className={`max-w-[88%] rounded-[8px] p-3.5 ${
+        className={`max-w-[88%] rounded-2xl p-3.5 ${
           isAssistant
-            ? "bg-white border border-border shadow-xs"
-            : "bg-accent text-white"
+            ? "bg-white border border-slate-200/80 shadow-xs"
+            : "bg-indigo-600 shadow-xs"
         }`}
       >
+        {/* Agent Reasoning Steps Accordion */}
+        {isAssistant && message.agent_steps && message.agent_steps.length > 0 && (
+          <AgentStepsAccordion steps={message.agent_steps} isLoading={isLoading} />
+        )}
+
+        {/* Message Body */}
         {isAssistant ? (
           <Markdown style={markdownStyles}>{message.content}</Markdown>
         ) : (
@@ -119,6 +157,56 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             {message.content}
           </Text>
         )}
+
+        {/* Suggested Followups */}
+        {isAssistant &&
+          message.suggested_followups &&
+          message.suggested_followups.length > 0 &&
+          onSelectFollowup && (
+            <FollowupChips
+              followups={message.suggested_followups}
+              onSelectFollowup={onSelectFollowup}
+            />
+          )}
+
+        {/* Footer with Timestamp and Copy Action */}
+        <View className="flex-row items-center justify-between mt-2 pt-1 border-t border-slate-100/60">
+          {formattedTime ? (
+            <Text
+              className={`font-sans text-[10px] ${
+                isAssistant ? "text-slate-400" : "text-indigo-200"
+              }`}
+            >
+              {formattedTime}
+            </Text>
+          ) : (
+            <View />
+          )}
+
+          {isAssistant && (
+            <TouchableOpacity
+              onPress={handleCopy}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              className="flex-row items-center ml-2 py-0.5 px-1.5 rounded active:bg-slate-100"
+            >
+              {copied ? (
+                <>
+                  <Check size={11} color="#059669" />
+                  <Text className="font-sans text-[10px] text-emerald-700 ml-1">
+                    Copied
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Copy size={11} color="#94A3B8" />
+                  <Text className="font-sans text-[10px] text-slate-400 ml-1">
+                    Copy
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {!isAssistant && (

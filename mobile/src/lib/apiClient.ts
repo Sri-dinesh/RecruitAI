@@ -43,6 +43,18 @@ export const BACKEND_URL = getBackendUrl();
 export interface FetchWithAuthOptions extends RequestInit {
   retries?: number;
   retryDelayMs?: number;
+  timeoutMs?: number;
+  _isRetryAfterRefresh?: boolean;
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  session_id?: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress?: string;
+  steps?: string[];
+  result?: any;
+  error?: string;
 }
 
 /**
@@ -50,12 +62,19 @@ export interface FetchWithAuthOptions extends RequestInit {
  * Automatically retrieves and attaches the user's Supabase JWT Bearer token.
  * Correctly preserves multipart/form-data boundary headers for file and image uploads.
  * Implements exponential backoff retries for resilient mobile networking.
+ * Handles client-side request timeouts and automatic token refresh on 401.
  */
 export async function fetchWithAuth(
   path: string,
   options: FetchWithAuthOptions = {}
 ): Promise<Response> {
-  const { retries = 2, retryDelayMs = 400, ...fetchOptions } = options;
+  const {
+    retries = 2,
+    retryDelayMs = 400,
+    timeoutMs = 45000,
+    _isRetryAfterRefresh = false,
+    ...fetchOptions
+  } = options;
   const headers = new Headers(fetchOptions.headers || {});
 
   // Do NOT override Content-Type if uploading FormData (let fetch set boundary)
@@ -78,27 +97,81 @@ export async function fetchWithAuth(
 
   let lastError: any = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // Timeout controller linked with any caller-provided signal
+    const timeoutController = new AbortController();
+    let timeoutTriggered = false;
+    const timer = setTimeout(() => {
+      timeoutTriggered = true;
+      timeoutController.abort();
+    }, timeoutMs);
+
+    const callerSignal = fetchOptions.signal;
+    const abortHandler = () => timeoutController.abort();
+    if (callerSignal) {
+      callerSignal.addEventListener("abort", abortHandler);
+    }
+
     try {
       const res = await fetch(url, {
         ...fetchOptions,
         headers,
+        signal: timeoutController.signal,
       });
+
+      // Handle 401 Unauthorized by refreshing token and retrying once
+      if (res.status === 401 && !_isRetryAfterRefresh) {
+        clearTimeout(timer);
+        if (callerSignal) {
+          callerSignal.removeEventListener("abort", abortHandler);
+        }
+        try {
+          const { data: refreshData, error: refreshError } =
+            await supabase.auth.refreshSession();
+          if (!refreshError && refreshData.session?.access_token) {
+            return await fetchWithAuth(path, {
+              ...options,
+              _isRetryAfterRefresh: true,
+            });
+          }
+        } catch (refreshErr) {
+          console.warn("[apiClient] Token refresh failed:", refreshErr);
+        }
+      }
 
       // Retry on server temporary unavailable / gateway errors (502, 503, 504)
       if (res.status >= 502 && res.status <= 504 && attempt < retries) {
+        clearTimeout(timer);
+        if (callerSignal) {
+          callerSignal.removeEventListener("abort", abortHandler);
+        }
         const delay = retryDelayMs * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
 
+      clearTimeout(timer);
+      if (callerSignal) {
+        callerSignal.removeEventListener("abort", abortHandler);
+      }
       return res;
     } catch (err: any) {
-      lastError = err;
+      clearTimeout(timer);
+      if (callerSignal) {
+        callerSignal.removeEventListener("abort", abortHandler);
+      }
+
+      if (timeoutTriggered) {
+        lastError = new Error(`Request timed out after ${timeoutMs / 1000}s for ${path}`);
+      } else {
+        lastError = err;
+      }
+
       // If client aborted manually, do not retry
-      if (fetchOptions.signal?.aborted) {
+      if (callerSignal?.aborted) {
         throw err;
       }
-      if (attempt < retries) {
+
+      if (attempt < retries && !timeoutTriggered) {
         const delay = retryDelayMs * Math.pow(2, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -108,11 +181,51 @@ export async function fetchWithAuth(
   throw lastError || new Error(`Network request failed for ${path} at ${baseUrl}`);
 }
 
+/**
+ * Polls status of an asynchronous agent job until completion or timeout.
+ */
+export async function fetchJobStatus(jobId: string): Promise<JobStatusResponse> {
+  const res = await fetchWithAuth(`/api/chat/jobs/${jobId}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch job status: HTTP ${res.status}`);
+  }
+  return await res.json();
+}
+
+/**
+ * High-level polling engine for async jobs.
+ */
+export async function pollJobUntilDone(
+  jobId: string,
+  onProgress?: (status: JobStatusResponse) => void,
+  maxWaitMs = 90000
+): Promise<any> {
+  const startTime = Date.now();
+  const pollIntervalMs = 1200;
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const job = await fetchJobStatus(jobId);
+    if (onProgress) {
+      onProgress(job);
+    }
+
+    if (job.status === "completed") {
+      return job.result;
+    }
+    if (job.status === "failed") {
+      throw new Error(job.error || "Async agent job failed.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+  throw new Error(`Job execution timed out after ${maxWaitMs / 1000}s`);
+}
+
 export interface UploadFileOptions {
   fieldName?: string;
   fileName?: string;
   mimeType?: string;
   headers?: Record<string, string>;
+  extraFields?: Record<string, string>;
 }
 
 /**
@@ -128,7 +241,13 @@ export async function uploadFileWithAuth<T = any>(
   fileUri: string,
   options: UploadFileOptions = {}
 ): Promise<T> {
-  const { fieldName = "file", fileName: customFileName, mimeType, headers = {} } = options;
+  const {
+    fieldName = "file",
+    fileName: customFileName,
+    mimeType,
+    headers = {},
+    extraFields = {},
+  } = options;
   const baseUrl = getBackendUrl();
   const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
 
@@ -197,6 +316,13 @@ export async function uploadFileWithAuth<T = any>(
     };
 
     const formData = new FormData();
+    if (extraFields) {
+      for (const [k, v] of Object.entries(extraFields)) {
+        if (v !== undefined && v !== null) {
+          formData.append(k, v);
+        }
+      }
+    }
     formData.append(fieldName, {
       uri: fileUri,
       name: fileName,

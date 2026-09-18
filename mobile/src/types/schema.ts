@@ -22,9 +22,15 @@ export interface Candidate {
   languages?: string[];
   // Local/Decision workflow state
   status?: "shortlisted" | "offered" | "rejected" | "new";
+  // Compliance & Consent (GDPR Art. 17/22)
+  consent_at?: string | null;
+  consent_version?: string | null;
+  source?: string | null;
+  rubric?: Record<string, any> | null;
 }
 
 export interface JobDescription {
+  id?: string;
   role: string;
   required_skills: string[];
   experience_years: number;
@@ -33,18 +39,25 @@ export interface JobDescription {
   raw_text?: string;
   location?: string;
   salary_range?: string;
+  company_name?: string;
 }
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   created_at?: string;
+  agent_steps?: string[];
+  suggested_followups?: string[];
   metadata?: Record<string, any>;
 }
 
 export interface ScheduledInterview {
+  id?: string;
+  candidate_id?: string;
   candidate_name: string;
   slot: string;
+  duration_minutes?: number;
+  mode?: string;
   booked_at?: string;
 }
 
@@ -67,9 +80,15 @@ export interface ChatSession {
 export interface CandidateEvaluation {
   candidate_id: string;
   user_id?: string;
+  session_id?: string;
+  job_id?: string;
   tech_score: number;
+  experience_score?: number;
+  domain_score?: number;
   comm_score: number;
+  problem_solving_score?: number;
   notes: string;
+  status?: string;
   updated_at?: string;
 }
 
@@ -82,6 +101,8 @@ export interface ChatApiResponse {
   last_intent?: string | null;
   conversation_history: ChatMessage[];
   router_logs?: string[];
+  agent_steps?: string[];
+  suggested_followups?: string[];
   scheduled_interviews?: ScheduledInterview[];
   session_id: string;
 }
@@ -107,6 +128,7 @@ export interface RecruitContextType {
   createSession: (title?: string) => Promise<ChatSession | null>;
   deleteSession: (sessionId: string) => Promise<boolean>;
   renameSession: (sessionId: string, newTitle: string) => Promise<void>;
+  deleteCandidate: (candidateId: string) => Promise<boolean>;
   toggleCandidateStatus: (
     candidateId: string,
     candidateName: string,
@@ -117,7 +139,7 @@ export interface RecruitContextType {
   setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
   setJd: React.Dispatch<React.SetStateAction<JobDescription | null>>;
   setScheduledInterviews: React.Dispatch<React.SetStateAction<ScheduledInterview[]>>;
-  bookInterview: (candidateName: string, slot: string) => Promise<void>;
+  bookInterview: (candidateName: string, slot: string, candidateId?: string) => Promise<void>;
   refreshActiveSession: () => Promise<void>;
   checkApiHealth: () => Promise<boolean>;
 }

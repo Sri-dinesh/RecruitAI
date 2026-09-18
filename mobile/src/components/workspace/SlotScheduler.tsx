@@ -120,7 +120,11 @@ export const SlotScheduler: React.FC = () => {
           onPress: async () => {
             setBookingSlot(slot.slot_number);
             try {
-              await bookInterview(selectedCandidate.name, slot.label);
+              await bookInterview(
+                selectedCandidate.name,
+                slot.label,
+                selectedCandidate.candidate_id
+              );
               showAppModal({
                 title: "Interview Confirmed",
                 message: `Interview successfully scheduled with ${selectedCandidate.name} for ${slot.label}.`,

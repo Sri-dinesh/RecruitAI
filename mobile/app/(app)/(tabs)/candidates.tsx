@@ -25,9 +25,11 @@ import { useCandidateTriage } from "@/hooks/useCandidateTriage";
 import { ActiveJdCard } from "@/components/candidates/ActiveJdCard";
 import { CandidateCard } from "@/components/candidates/CandidateCard";
 import { StatusFilter } from "@/components/candidates/StatusFilter";
+import { IngestionProgressModal } from "@/components/modals/IngestionProgressModal";
+import { useAppModal } from "@/context/ModalContext";
 import { COLORS } from "@/constants/theme";
-import { selectionHaptic } from "@/lib/haptics";
-import type { Candidate } from "@/types/schema";
+import { selectionHaptic, impactHaptic, warningHaptic } from "@/lib/haptics";
+import type { Candidate, CandidateStatus } from "@/types/schema";
 
 export default function CandidatesTab() {
   const router = useRouter();
@@ -40,14 +42,20 @@ export default function CandidatesTab() {
     loadingSession,
     statusSaving,
     refreshActiveSession,
+    activeSessionId,
   } = useRecruit();
 
   const {
     isUploadingResumes,
     isUploadingJd,
+    ingestionReports,
+    isReportModalVisible,
+    closeReportModal,
     ingestResumes,
     ingestJobDescription,
   } = useFileIngestion();
+
+  const { showModal } = useAppModal();
 
   const {
     search,
@@ -56,6 +64,8 @@ export default function CandidatesTab() {
     setFilter,
     sortBy,
     setSortBy,
+    minScore,
+    setMinScore,
     counts,
     filteredCandidates,
   } = useCandidateTriage(candidates, candidateStatuses);
@@ -106,9 +116,27 @@ export default function CandidatesTab() {
           onOffer={() =>
             toggleCandidateStatus(item.candidate_id, item.name, "offered")
           }
-          onReject={() =>
-            toggleCandidateStatus(item.candidate_id, item.name, "rejected")
-          }
+          onReject={() => {
+            impactHaptic();
+            // GDPR Art. 22 human confirmation
+            showModal({
+              title: "Confirm Rejection (GDPR Art. 22)",
+              message: `In compliance with hiring regulations and human-in-the-loop review, please confirm you wish to reject "${item.name}".`,
+              type: "confirm",
+              actions: [
+                {
+                  label: "Confirm Rejection",
+                  variant: "destructive",
+                  onPress: () =>
+                    toggleCandidateStatus(item.candidate_id, item.name, "rejected"),
+                },
+                {
+                  label: "Cancel",
+                  variant: "cancel",
+                },
+              ],
+            });
+          }}
         />
       );
     },
@@ -118,6 +146,7 @@ export default function CandidatesTab() {
       isBlindHiring,
       handleOpenInspector,
       toggleCandidateStatus,
+      showModal,
     ]
   );
 
@@ -133,7 +162,7 @@ export default function CandidatesTab() {
 
         {/* Search Bar */}
         <View className="px-4 mt-3">
-          <View className="flex-row items-center bg-white border border-border rounded-[6px] px-3 py-2 shadow-xs">
+          <View className="flex-row items-center bg-white border border-border rounded-xl px-3 py-2 shadow-xs">
             <Search size={15} color={COLORS.muted} />
             <TextInput
               value={search}
@@ -160,8 +189,44 @@ export default function CandidatesTab() {
           onSelectFilter={setFilter}
         />
 
+        {/* Score Threshold Quick Filters */}
+        <View className="flex-row items-center px-4 py-1.5 gap-1.5">
+          <Text className="font-sans-bold text-[10px] text-slate-500 uppercase mr-1">
+            Min Fit:
+          </Text>
+          {[
+            { label: "All", value: 0 },
+            { label: "≥50% Fit", value: 50 },
+            { label: "≥80% High Fit", value: 80 },
+          ].map((thresh) => {
+            const isSelected = minScore === thresh.value;
+            return (
+              <TouchableOpacity
+                key={thresh.value}
+                onPress={() => {
+                  selectionHaptic();
+                  setMinScore(thresh.value);
+                }}
+                className={`px-2.5 py-1 rounded-full border ${
+                  isSelected
+                    ? "bg-indigo-600 border-indigo-600"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <Text
+                  className={`font-sans-bold text-[10px] ${
+                    isSelected ? "text-white" : "text-slate-700"
+                  }`}
+                >
+                  {thresh.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         {/* Results Metadata & Sort Controls */}
-        <View className="flex-row items-center justify-between px-4 pb-2">
+        <View className="flex-row items-center justify-between px-4 pb-2 pt-1">
           <Text className="font-sans text-xs text-muted">
             Showing {filteredCandidates.length} of {candidates.length} Candidate
             {candidates.length === 1 ? "" : "s"}
@@ -170,7 +235,7 @@ export default function CandidatesTab() {
           <TouchableOpacity
             onPress={toggleSort}
             activeOpacity={0.7}
-            className="flex-row items-center bg-white border border-border px-2 py-1 rounded-[4px]"
+            className="flex-row items-center bg-white border border-slate-200 px-2.5 py-1 rounded-lg"
           >
             <ArrowUpDown size={11} color={COLORS.muted} />
             <Text className="font-sans-bold text-[10px] text-muted ml-1">
@@ -189,6 +254,8 @@ export default function CandidatesTab() {
     filter,
     counts,
     setFilter,
+    minScore,
+    setMinScore,
     filteredCandidates.length,
     candidates.length,
     toggleSort,
@@ -289,6 +356,12 @@ export default function CandidatesTab() {
           )}
         </TouchableOpacity>
       </View>
+
+      <IngestionProgressModal
+        visible={isReportModalVisible}
+        onClose={closeReportModal}
+        reports={ingestionReports}
+      />
     </View>
   );
 }

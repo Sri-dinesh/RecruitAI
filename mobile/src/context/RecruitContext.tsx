@@ -8,6 +8,11 @@ import React, {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { fetchWithAuth, testBackendConnection, getBackendUrl } from "@/lib/apiClient";
+import {
+  enqueueOfflineMutation,
+  getOfflineMutationsQueue,
+  clearOfflineMutationsQueue,
+} from "@/lib/offlineStorage";
 import { useAuth } from "@/context/AuthContext";
 import { selectionHaptic, successHaptic, warningHaptic } from "@/lib/haptics";
 import type {
@@ -48,6 +53,36 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
   const [loadingSession, setLoadingSession] = useState(false);
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
+  // Replay offline status mutations once network connectivity is restored
+  const flushOfflineMutations = useCallback(async () => {
+    try {
+      const queue = await getOfflineMutationsQueue();
+      if (!queue || queue.length === 0) return;
+      console.log(`[RecruitContext] Replaying ${queue.length} offline candidate mutations...`);
+      for (const item of queue) {
+        try {
+          await fetchWithAuth("/api/candidates/evaluate", {
+            method: "POST",
+            body: JSON.stringify({
+              candidate_id: item.candidateId,
+              session_id: item.sessionId,
+              job_id: item.jobId,
+              status: item.status,
+              tech_score: item.status === "offered" ? 5 : item.status === "shortlisted" ? 4 : 1,
+              comm_score: item.status === "offered" ? 5 : item.status === "shortlisted" ? 3 : 1,
+              notes: `Replayed offline status mutation (${item.timestamp})`,
+            }),
+          });
+        } catch {
+          return; // Server still unreachable, retry later
+        }
+      }
+      await clearOfflineMutationsQueue();
+    } catch (err) {
+      console.warn("[RecruitContext] Error flushing offline mutations:", err);
+    }
+  }, []);
+
   // Active session object
   const activeSession = useMemo(() => {
     if (!activeSessionId) return null;
@@ -61,6 +96,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       if (result.ok) {
         console.log(`[RecruitContext] Connected to backend at ${result.url}`);
         setApiConnected(true);
+        flushOfflineMutations();
         return true;
       } else {
         console.warn(`[RecruitContext] Backend disconnected (${result.url}):`, result.error);
@@ -72,7 +108,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       setApiConnected(false);
       return false;
     }
-  }, []);
+  }, [flushOfflineMutations]);
 
   // Select a campaign session by ID
   const selectSession = useCallback(
@@ -283,13 +319,47 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Toggle candidate status (shortlisted, offered, rejected)
+  // Delete candidate (GDPR Art. 17 right-to-erasure)
+  const deleteCandidate = useCallback(
+    async (candidateId: string): Promise<boolean> => {
+      try {
+        const res = await fetchWithAuth(`/api/privacy/candidates/${candidateId}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setCandidates((prev) => prev.filter((c) => c.candidate_id !== candidateId));
+          setCandidateStatuses((prev) => {
+            const next = { ...prev };
+            delete next[candidateId];
+            return next;
+          });
+          setLastShortlist((prev) =>
+            prev ? prev.filter((c) => c.candidate_id !== candidateId) : null
+          );
+          setScheduledInterviews((prev) =>
+            prev.filter(
+              (i) => i.candidate_id !== candidateId && i.candidate_name !== candidateId
+            )
+          );
+          warningHaptic();
+          return true;
+        }
+      } catch (err) {
+        console.error("[RecruitContext] Error deleting candidate:", err);
+      }
+      return false;
+    },
+    []
+  );
+
+  // Toggle candidate status (shortlisted, offered, rejected) with optimistic rollback & session linking
   const toggleCandidateStatus = useCallback(
     async (
       candidateId: string,
       candidateName: string,
       status: CandidateStatus
     ): Promise<void> => {
+      const prevStatuses = { ...candidateStatuses };
       const nextStatus =
         candidateStatuses[candidateId] === status ? undefined : status;
       const updated = { ...candidateStatuses };
@@ -300,6 +370,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
         delete updated[candidateId];
       }
 
+      // Optimistic update
       setCandidateStatuses(updated);
       selectionHaptic();
 
@@ -315,14 +386,16 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Sync to backend candidate evaluation endpoint (fire-and-forget non-blocking)
+      // Sync to backend candidate evaluation endpoint
       if (nextStatus) {
         setStatusSaving(candidateId);
         try {
-          await fetchWithAuth("/api/candidates/evaluate", {
+          const res = await fetchWithAuth("/api/candidates/evaluate", {
             method: "POST",
             body: JSON.stringify({
               candidate_id: candidateId,
+              session_id: activeSessionId || undefined,
+              job_id: jd?.id || undefined,
               status: nextStatus || "new",
               tech_score:
                 nextStatus === "offered" ? 5 : nextStatus === "shortlisted" ? 4 : 1,
@@ -331,14 +404,25 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
               notes: `Recruiter marked candidate as ${nextStatus || "new"} via mobile app.`,
             }),
           });
+          if (!res.ok) {
+            throw new Error(`Server returned ${res.status}`);
+          }
         } catch (err) {
-          console.warn("[RecruitContext] Non-blocking evaluate persist failed:", err);
+          console.warn("[RecruitContext] Evaluate persist failed, enqueuing offline mutation:", err);
+          await enqueueOfflineMutation({
+            candidateId,
+            sessionId: activeSessionId || undefined,
+            jobId: jd?.id || undefined,
+            status: nextStatus,
+            timestamp: new Date().toISOString(),
+          });
+          warningHaptic();
         } finally {
           setStatusSaving(null);
         }
       }
     },
-    [candidateStatuses, activeSessionId]
+    [candidateStatuses, activeSessionId, jd]
   );
 
   // Toggle Blind Hiring Mode
@@ -349,8 +433,9 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
 
   // Book an interview slot
   const bookInterview = useCallback(
-    async (candidateName: string, slot: string) => {
+    async (candidateName: string, slot: string, candidateId?: string) => {
       const newBooking: ScheduledInterview = {
+        candidate_id: candidateId,
         candidate_name: candidateName,
         slot,
         booked_at: new Date().toISOString(),
@@ -420,6 +505,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       createSession,
       deleteSession,
       renameSession,
+      deleteCandidate,
       toggleCandidateStatus,
       toggleBlindHiring,
       setMessages,
@@ -449,6 +535,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       createSession,
       deleteSession,
       renameSession,
+      deleteCandidate,
       toggleCandidateStatus,
       toggleBlindHiring,
       bookInterview,

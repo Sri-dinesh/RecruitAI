@@ -87,3 +87,35 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: "https://placeholder-recruitai.supabase.co"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder"
         run: npm test
+
+  mobile-quality-gate:
+    name: Mobile App TypeScript, Jest & Expo Integrity
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install Mobile Dependencies
+        run: npm ci
+
+      - name: TypeScript Static Type Check
+        run: npx tsc --noEmit
+
+      - name: Mobile Unit & Contract Tests
+        run: npm test
+
+      - name: Expo Config Validation
+        run: npx expo config --type public
+

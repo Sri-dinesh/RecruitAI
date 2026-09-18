@@ -117,16 +117,7 @@ export const EmailDrafter: React.FC = () => {
     setActiveTemplate(tmpl);
   };
 
-  const handleSendEmail = async () => {
-    if (!recipient.trim() || !body.trim()) {
-      showAppModal({
-        title: "Incomplete Email",
-        message: "Please provide a recipient email and message body.",
-        type: "warning",
-      });
-      return;
-    }
-
+  const doSendEmail = async (targetEmail: string, isTest: boolean = false) => {
     setIsSending(true);
     setSendSuccess(false);
 
@@ -135,7 +126,7 @@ export const EmailDrafter: React.FC = () => {
       const res = await fetchWithAuth("/api/email/send", {
         method: "POST",
         body: JSON.stringify({
-          recipient_email: recipient.trim(),
+          recipient_email: targetEmail.trim(),
           email_draft: fullDraft,
         }),
       });
@@ -153,13 +144,15 @@ export const EmailDrafter: React.FC = () => {
         ...prev,
         {
           role: "assistant",
-          content: `✉️ **Outreach Email Dispatched**: Successfully sent *"${subject}"* to \`${recipient}\`.`,
+          content: isTest
+            ? `🧪 **Test Email Dispatched**: Successfully sent preview of *"${subject}"* to \`${targetEmail}\`.`
+            : `✉️ **Outreach Email Dispatched**: Successfully sent *"${subject}"* to \`${targetEmail}\`.`,
         },
       ]);
 
       showAppModal({
-        title: "Email Sent",
-        message: `Successfully sent outreach to ${recipient}.`,
+        title: isTest ? "Test Email Sent" : "Email Sent",
+        message: `Successfully sent ${isTest ? "test preview" : "outreach"} to ${targetEmail}.`,
         type: "success",
       });
       setTimeout(() => setSendSuccess(false), 3000);
@@ -173,6 +166,38 @@ export const EmailDrafter: React.FC = () => {
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleSendEmail = (isTest: boolean = false) => {
+    const target = isTest ? "recruiter-preview@recruitai.com" : recipient.trim();
+    if (!target || !body.trim()) {
+      showAppModal({
+        title: "Incomplete Email",
+        message: "Please provide a valid recipient and message body.",
+        type: "warning",
+      });
+      return;
+    }
+
+    selectionHaptic();
+    showAppModal({
+      title: isTest ? "Send Test Email" : "Confirm Outreach Email",
+      message: isTest
+        ? `Send a test preview of "${subject}" to ${target}?`
+        : `Are you sure you want to dispatch this email to ${target}?`,
+      type: "confirm",
+      actions: [
+        {
+          label: isTest ? "Send Test Preview" : "Dispatch to Candidate",
+          variant: "primary",
+          onPress: () => doSendEmail(target, isTest),
+        },
+        {
+          label: "Cancel",
+          variant: "cancel",
+        },
+      ],
+    });
   };
 
   return (
@@ -352,32 +377,47 @@ export const EmailDrafter: React.FC = () => {
         </View>
 
         {/* Send Action */}
-        <TouchableOpacity
-          onPress={handleSendEmail}
-          disabled={isSending}
-          activeOpacity={0.8}
-          className={`flex-row items-center justify-center py-2.5 rounded-[6px] ${
-            sendSuccess ? "bg-emerald-600" : "bg-brand-primary"
-          }`}
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : sendSuccess ? (
-            <>
-              <Check size={16} color="#FFFFFF" />
-              <Text className="font-sans-bold text-xs text-white ml-2">
-                Outreach Sent!
-              </Text>
-            </>
-          ) : (
-            <>
-              <Send size={15} color="#FFFFFF" />
-              <Text className="font-sans-bold text-xs text-white ml-2">
-                Send Outreach Email
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        <View className="flex-row gap-2">
+          <TouchableOpacity
+            onPress={() => handleSendEmail(true)}
+            disabled={isSending}
+            activeOpacity={0.8}
+            className="flex-1 flex-row items-center justify-center py-2.5 rounded-[6px] border border-border bg-slate-50"
+          >
+            <Sparkles size={14} color={COLORS.brandPrimary} />
+            <Text className="font-sans-bold text-xs text-brand-primary ml-1.5">
+              Send Test
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => handleSendEmail(false)}
+            disabled={isSending}
+            activeOpacity={0.8}
+            className={`flex-2 flex-row items-center justify-center py-2.5 rounded-[6px] ${
+              sendSuccess ? "bg-emerald-600" : "bg-brand-primary"
+            }`}
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : sendSuccess ? (
+              <>
+                <Check size={16} color="#FFFFFF" />
+                <Text className="font-sans-bold text-xs text-white ml-2">
+                  Outreach Sent!
+                </Text>
+              </>
+            ) : (
+              <>
+                <Send size={15} color="#FFFFFF" />
+                <Text className="font-sans-bold text-xs text-white ml-2">
+                  Send Candidate Email
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );

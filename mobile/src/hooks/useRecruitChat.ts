@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import { useRecruit } from "@/context/RecruitContext";
-import { fetchWithAuth, uploadFileWithAuth } from "@/lib/apiClient";
+import { fetchWithAuth, uploadFileWithAuth, pollJobUntilDone } from "@/lib/apiClient";
 import { showAppModal } from "@/context/ModalContext";
 import { successHaptic, warningHaptic, impactHaptic } from "@/lib/haptics";
 import type { ChatMessage, ChatApiResponse, Candidate, JobDescription } from "@/types/schema";
@@ -22,18 +22,25 @@ export function useRecruitChat() {
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Send message to /api/chat
+  // Send message to /api/chat with dual-mode async job polling support
   const sendMessage = useCallback(
-    async (overrideText?: string) => {
-      const textToSend = (overrideText || input).trim();
-      if (!textToSend || isLoading) return;
+    async (overrideText?: string, mentionedCandidate?: Candidate) => {
+      const rawText = (overrideText || input).trim();
+      if (!rawText || isLoading) return;
+
+      let textToSend = rawText;
+      if (mentionedCandidate && !textToSend.includes(mentionedCandidate.name)) {
+        textToSend = `Regarding candidate ${mentionedCandidate.name}: ${textToSend}`;
+      }
 
       setInput("");
       setIsLoading(true);
+      setCurrentStep("Routing to LangGraph supervisor...");
 
       const userMessage: ChatMessage = {
         role: "user",
@@ -49,9 +56,10 @@ export function useRecruitChat() {
       abortControllerRef.current = controller;
 
       try {
+        // Strictly typed payload with standard 8-turn conversation memory window (ARCH-5)
         const payload = {
           message: textToSend,
-          conversation_history: updatedHistory.map((m) => ({
+          conversation_history: updatedHistory.slice(-8).map((m) => ({
             role: m.role,
             content: m.content,
           })),
@@ -59,26 +67,47 @@ export function useRecruitChat() {
           resumes: candidates,
           last_shortlist: lastShortlist,
           scheduled_interviews: scheduledInterviews,
-          session_id: activeSessionId,
+          session_id: activeSessionId || undefined,
+          async_mode: true,
         };
 
         const res = await fetchWithAuth("/api/chat", {
           method: "POST",
           body: JSON.stringify(payload),
           signal: controller.signal,
+          timeoutMs: 90000,
         });
 
-        if (!res.ok) {
+        let data: ChatApiResponse;
+
+        if (res.status === 202) {
+          // Asynchronous job execution (ARCH-4)
+          const accepted = await res.json();
+          setCurrentStep("Multi-agent reasoning in progress...");
+          data = await pollJobUntilDone(
+            accepted.job_id,
+            (jobStatus) => {
+              if (jobStatus.progress) {
+                setCurrentStep(jobStatus.progress);
+              } else if (jobStatus.steps && jobStatus.steps.length > 0) {
+                setCurrentStep(jobStatus.steps[jobStatus.steps.length - 1]);
+              }
+            },
+            90000
+          );
+        } else if (res.ok) {
+          data = await res.json();
+        } else {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || `Server error ${res.status}`);
         }
 
-        const data: ChatApiResponse = await res.json();
-
-        // Append assistant response
+        // Append assistant response with real agent reasoning steps and followups
         const assistantMessage: ChatMessage = {
           role: "assistant",
           content: data.response,
+          agent_steps: data.agent_steps,
+          suggested_followups: data.suggested_followups,
           created_at: new Date().toISOString(),
         };
         setMessages([...updatedHistory, assistantMessage]);
@@ -118,6 +147,7 @@ export function useRecruitChat() {
         }
       } finally {
         setIsLoading(false);
+        setCurrentStep(null);
         abortControllerRef.current = null;
       }
     },
@@ -142,6 +172,7 @@ export function useRecruitChat() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setIsLoading(false);
+      setCurrentStep(null);
       impactHaptic();
     }
   }, []);
@@ -298,6 +329,7 @@ export function useRecruitChat() {
     input,
     setInput,
     isLoading,
+    currentStep,
     isUploading,
     sendMessage,
     cancelRequest,

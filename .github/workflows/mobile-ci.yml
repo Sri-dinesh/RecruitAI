@@ -1,0 +1,45 @@
+name: RecruitAI Mobile CI Quality Gate
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-ci.yml"
+    branches: [ main ]
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-ci.yml"
+    branches: [ main ]
+
+jobs:
+  mobile-test-and-typecheck:
+    name: Mobile App TypeScript, Jest & Expo Integrity
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install Mobile Dependencies
+        run: npm ci
+
+      - name: TypeScript Static Type Check
+        run: npx tsc --noEmit
+
+      - name: Mobile Unit & Contract Tests
+        run: npm test
+
+      - name: Expo Config Validation
+        run: npx expo config --type public
