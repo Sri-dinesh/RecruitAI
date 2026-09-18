@@ -72,3 +72,74 @@ def test_session_report_api_endpoint():
     assert rep_res.headers["content-type"] == "application/pdf"
     assert "attachment; filename=" in rep_res.headers["content-disposition"]
     assert rep_res.content.startswith(b"%PDF-")
+
+
+def test_comprehensive_executive_dossier_pdf():
+    """Verifies that full executive dossier compiles with evaluations, interviews, and metrics."""
+    jd = {
+        "role": "Lead Architect",
+        "required_skills": ["Python", "FastAPI", "Distributed Systems", "PostgreSQL"],
+        "experience_years": 8,
+        "tone": "collaborative",
+        "summary": "Own core architecture and lead distributed engineering pods.",
+    }
+    candidates = [
+        {
+            "candidate_id": "cand-001",
+            "name": "Sarah Connor",
+            "match_score": 94,
+            "status": "shortlisted",
+            "skills": ["Python", "FastAPI", "PostgreSQL", "Docker", "Kubernetes"],
+            "matched_skills": ["Python", "FastAPI", "PostgreSQL"],
+            "gaps": ["Rust"],
+        },
+        {
+            "candidate_id": "cand-002",
+            "name": "John Doe",
+            "match_score": 62,
+            "status": "new",
+            "skills": ["Python", "Django"],
+            "matched_skills": ["Python"],
+            "gaps": ["FastAPI", "Distributed Systems"],
+        }
+    ]
+    evaluations = {
+        "cand-001": {
+            "tech_score": 5,
+            "comm_score": 4,
+            "notes": "Exceptional system design and clear technical communication.",
+        }
+    }
+    scheduled_interviews = [
+        {
+            "candidate_name": "Sarah Connor",
+            "slot": "2026-09-22 14:00 UTC",
+            "booked_at": "2026-09-18T12:00:00Z",
+        }
+    ]
+    questions = (
+        "### System Architecture\n"
+        "1. How do you design for zero-downtime database migrations with PostgreSQL?\n"
+        "2. Explain your approach to distributed rate limiting.\n\n"
+        "### Gap Probing\n"
+        "- How would you evaluate Rust vs Go for high-throughput microservices?"
+    )
+    salary = "Market 75th percentile for Lead Architect is $180,000 - $220,000 USD."
+
+    pdf_bytes = generate_recruitment_report(
+        jd=jd,
+        shortlist=candidates[:1],
+        interview_questions=questions,
+        salary_data=salary,
+        candidates=candidates,
+        evaluations=evaluations,
+        scheduled_interviews=scheduled_interviews,
+        is_blind_mode=False,
+        session_title="Hiring: Lead Architect Requisition",
+        recruiter_name="Chief People Officer",
+    )
+
+    assert pdf_bytes is not None
+    assert pdf_bytes.startswith(b"%PDF-")
+    # Comprehensive dossier must be substantial in length (>5KB)
+    assert len(pdf_bytes) > 5000

@@ -8,7 +8,9 @@ import {
   SlidersHorizontal, 
   Download, 
   RefreshCw, 
-  ChevronDown 
+  ChevronDown,
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { useRecruitment, Candidate } from '@/context/RecruitmentContext';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
@@ -21,7 +23,15 @@ import ConfirmationModal from '@/components/ui/ConfirmationModal';
 import { ChatMessage } from '@/types/chat';
 
 export default function CopilotPage() {
-  const { jd, candidates, activeSessionId, refreshData, activeSession } = useRecruitment();
+  const {
+    jd,
+    candidates,
+    activeSessionId,
+    refreshData,
+    activeSession,
+    messages: sharedMessages,
+    setMessages: sharedSetMessages,
+  } = useRecruitment();
 
   // Initial welcome message configured with current position and candidate pool
   const initialWelcome = useMemo<ChatMessage[]>(() => [
@@ -58,11 +68,14 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
     handleSend,
     handleCopy,
     handleClearHistory,
-    handleExportChat
+    handleExportChat,
+    isExportingPdf
   } = useCopilotChat({
     activeSessionId,
     jd,
     initialMessages: initialWelcome,
+    messages: sharedMessages,
+    setMessages: sharedSetMessages,
     onSessionUpdated: refreshData
   });
 
@@ -211,15 +224,21 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
             </span>
           </button>
 
-          {/* Export Conversation */}
+          {/* Export PDF Dossier */}
           <button
             onClick={handleExportChat}
-            disabled={messages.length <= 1}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
-            title="Export conversation as Markdown"
+            disabled={messages.length <= 1 || isExportingPdf}
+            className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100 hover:border-indigo-300 text-indigo-700 text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer shadow-2xs"
+            title="Download Professional PDF Recruitment Report"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export</span>
+            {isExportingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            )}
+            <span className="hidden sm:inline">
+              {isExportingPdf ? 'Compiling PDF...' : 'PDF Report'}
+            </span>
           </button>
 
           {/* Clear Session View */}

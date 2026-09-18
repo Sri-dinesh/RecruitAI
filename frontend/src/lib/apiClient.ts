@@ -69,3 +69,48 @@ export async function fetchWithAuth(
     }
   }
 }
+
+/**
+ * Triggers compilation and download of the recruitment PDF report from backend.
+ * Falls back gracefully if session is not yet created.
+ */
+export async function downloadPdfReport(
+  sessionId?: string,
+  payload?: Record<string, unknown>
+): Promise<string> {
+  let res: Response;
+  if (sessionId) {
+    res = await fetchWithAuth(`/api/reports/session/${sessionId}`);
+  } else if (payload) {
+    res = await fetchWithAuth('/api/reports/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } else {
+    throw new Error('Either sessionId or payload must be provided to download report.');
+  }
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.detail || `Server returned HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+
+  const contentDisp = res.headers.get('content-disposition');
+  let filename = `recruitment_report_${new Date().toISOString().slice(0, 10)}.pdf`;
+  if (contentDisp && contentDisp.includes('filename=')) {
+    const match = contentDisp.match(/filename=["']?([^"';]+)["']?/);
+    if (match && match[1]) filename = match[1];
+  }
+
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+  return filename;
+}

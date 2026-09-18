@@ -20,7 +20,8 @@ import {
   ChevronRight,
   TrendingUp,
   FileText,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import MarkdownText from '@/components/MarkdownText';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
@@ -37,10 +38,26 @@ export default function DashboardOverviewPage() {
     setInspectedCandidate,
     maskName,
     activeSessionId,
+    messages: sharedMessages,
+    setMessages: sharedSetMessages,
     uploadJd,
     uploadResumes,
-    refreshData
+    refreshData,
+    exportPdfReport
   } = useRecruitment();
+
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportDossier = async () => {
+    setIsExportingPdf(true);
+    try {
+      await exportPdfReport();
+    } catch (err: any) {
+      console.error('[DashboardOverviewPage] Failed to export PDF:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const initialWelcome = useMemo<ChatMessage[]>(() => [
     {
@@ -60,6 +77,8 @@ export default function DashboardOverviewPage() {
     activeSessionId,
     jd,
     initialMessages: initialWelcome,
+    messages: sharedMessages,
+    setMessages: sharedSetMessages,
     onSessionUpdated: refreshData
   });
 
@@ -147,6 +166,19 @@ export default function DashboardOverviewPage() {
               <Users className="w-4 h-4 text-indigo-300" />
               Candidate Pipeline
             </Link>
+            <button
+              onClick={handleExportDossier}
+              disabled={isExportingPdf}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-600 text-white text-xs font-bold transition border border-emerald-500/40 shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              title="Download Executive PDF Candidate Assessment Dossier"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 text-white animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4 text-white" />
+              )}
+              {isExportingPdf ? 'Compiling PDF...' : 'Export PDF Dossier'}
+            </button>
           </div>
         </div>
       </div>
