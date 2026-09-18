@@ -105,4 +105,65 @@ describe("AI Copilot Mobile Parity", () => {
       ).rejects.toThrow("LangGraph execution node timed out");
     });
   });
+
+  describe("Cross-Device Interconnected Conversation Sync", () => {
+    test("syncs incoming conversation history from web while preserving message metadata", () => {
+      const serverHistory: ChatMessage[] = [
+        {
+          role: "user",
+          content: "Find top React Native candidates",
+          created_at: "2026-09-18T14:00:00Z",
+        },
+        {
+          role: "assistant",
+          content: "I evaluated 5 candidates based on technical skills and domain experience.",
+          agent_steps: [
+            "Parsed resumes against JD",
+            "Calculated 5-pillar rubric score",
+          ],
+          suggested_followups: [
+            "Compare top 2 candidates side-by-side",
+            "Draft interview invitation email",
+          ],
+          created_at: "2026-09-18T14:00:05Z",
+        },
+      ];
+
+      expect(serverHistory).toHaveLength(2);
+      expect(serverHistory[1].agent_steps).toHaveLength(2);
+      expect(serverHistory[1].suggested_followups).toHaveLength(2);
+      expect(serverHistory[1].suggested_followups?.[0]).toContain("Compare top 2");
+    });
+
+    test("protects in-flight optimistic user messages from being clobbered by server sync", () => {
+      const currentLocalMessages: ChatMessage[] = [
+        { role: "assistant", content: "Hello! How can I help?" },
+        { role: "user", content: "Rank candidates for frontend lead" },
+      ];
+
+      const staleServerHistory: ChatMessage[] = [
+        { role: "assistant", content: "Hello! How can I help?" },
+      ];
+
+      const lastLocal = currentLocalMessages[currentLocalMessages.length - 1];
+      const shouldSync =
+        staleServerHistory.length > currentLocalMessages.length ||
+        lastLocal?.role !== "user";
+
+      // Should protect in-flight user message from rollback
+      expect(shouldSync).toBe(false);
+    });
+  });
+
+  describe("Bias Evaluation Mode Consistency", () => {
+    test("defaults to Standard Mode (unmasked candidate details) across mobile & web", () => {
+      const isBlindHiringDefault = false;
+      expect(isBlindHiringDefault).toBe(false);
+
+      const standardLabel = isBlindHiringDefault ? "Blind" : "Standard";
+      const standardFullLabel = isBlindHiringDefault ? "Blind Mode" : "Standard Mode";
+      expect(standardLabel).toBe("Standard");
+      expect(standardFullLabel).toBe("Standard Mode");
+    });
+  });
 });

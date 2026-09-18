@@ -18,6 +18,8 @@ export function useRecruitChat() {
     lastShortlist,
     scheduledInterviews,
     refreshActiveSession,
+    selectSession,
+    loadSessions,
   } = useRecruit();
 
   const [input, setInput] = useState("");
@@ -120,6 +122,13 @@ export function useRecruitChat() {
           setCandidates(data.resumes);
         }
 
+        // If backend session ID differs (or newly assigned), select it; otherwise refresh sessions list
+        if (data.session_id && (!activeSessionId || data.session_id !== activeSessionId)) {
+          selectSession(data.session_id).catch(() => {});
+        } else {
+          loadSessions().catch(() => {});
+        }
+
         successHaptic();
       } catch (err: any) {
         if (err.name === "AbortError" || controller.signal.aborted) {
@@ -163,6 +172,8 @@ export function useRecruitChat() {
       lastShortlist,
       scheduledInterviews,
       activeSessionId,
+      selectSession,
+      loadSessions,
     ]
   );
 

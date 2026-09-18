@@ -270,13 +270,22 @@ def execute_agent_turn(
             )
 
         # (d) Assistant message
+        assistant_meta = {
+            "router_logs": logs,
+            "agent_steps": result.get("agent_steps") or ["Supervisor: Synthesized agent response"],
+            "suggested_followups": result.get("suggested_followups") or [
+                "Compare our top candidates side-by-side",
+                "Generate a technical interview rubric for this role",
+                "Draft interview invitation email for the top candidate",
+            ],
+        }
         persist_chat_message(
             client=client,
             user_id=user_id,
             session_id=session_id,
             role="assistant",
             content=assistant_content,
-            metadata={"router_logs": logs},
+            metadata=assistant_meta,
         )
 
         # (e) Session metadata

@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchWithAuth } from '@/lib/apiClient';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchWithAuth, downloadPdfReport } from '@/lib/apiClient';
 import { ChatMessage, ChatRequestPayload, ChatResponsePayload } from '@/types/chat';
+import type { JobDescription } from '@/context/RecruitmentContext';
 
 interface UseCopilotChatOptions {
   activeSessionId?: string | null;
-  jd?: Record<string, any> | null;
+  jd?: JobDescription | Record<string, unknown> | null;
   initialMessages?: ChatMessage[];
+  messages?: ChatMessage[];
+  setMessages?: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   onSessionUpdated?: () => void;
 }
 
@@ -13,21 +16,27 @@ export function useCopilotChat({
   activeSessionId,
   jd,
   initialMessages,
+  messages: externalMessages,
+  setMessages: externalSetMessages,
   onSessionUpdated
 }: UseCopilotChatOptions = {}) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages || []);
+  const [internalMessages, setInternalMessages] = useState<ChatMessage[]>(initialMessages || []);
+  const messages = externalMessages !== undefined ? externalMessages : internalMessages;
+  const setMessages = externalSetMessages !== undefined ? externalSetMessages : setInternalMessages;
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({});
 
-  // Reset or update messages if initialMessages changes and messages is empty
+  // Populate initialMessages if messages is empty
   useEffect(() => {
     if (initialMessages && initialMessages.length > 0 && messages.length === 0) {
       setMessages(initialMessages);
     }
-  }, [initialMessages]);
+  }, [initialMessages, messages.length, setMessages]);
 
   const handleCopy = useCallback((text: string, idx: number) => {
     navigator.clipboard.writeText(text);
@@ -50,20 +59,40 @@ export function useCopilotChat({
         agentSteps: ['Supervisor: Reset session memory']
       }
     ]);
-  }, []);
+  }, [setMessages]);
 
-  const handleExportChat = useCallback(() => {
-    const text = messages
-      .map(m => `### ${m.role === 'user' ? 'Recruiter' : 'RecruitAI Copilot'}\n\n${m.content}\n\n---\n`)
-      .join('\n');
-    const blob = new Blob([text], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `recruitai-copilot-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [messages]);
+  const handleExportChat = useCallback(async () => {
+    setIsExportingPdf(true);
+    try {
+      if (activeSessionId) {
+        await downloadPdfReport(activeSessionId);
+      } else {
+        await downloadPdfReport(undefined, {
+          jd: jd || undefined,
+          interview_questions: messages
+            .filter((m) => m.role === 'assistant')
+            .map((m) => m.content)
+            .join('\n\n'),
+          session_title: typeof jd?.role === 'string' ? `Hiring: ${jd.role}` : 'Executive Candidate Assessment',
+        });
+      }
+    } catch (err: unknown) {
+      console.error('[useCopilotChat] Failed to generate PDF report:', err);
+      // Fallback to text markdown export if server is unreachable
+      const text = messages
+        .map(m => `### ${m.role === 'user' ? 'Recruiter' : 'RecruitAI Copilot'}\n\n${m.content}\n\n---\n`)
+        .join('\n');
+      const blob = new Blob([text], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recruitai-copilot-${new Date().toISOString().slice(0, 10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }, [activeSessionId, jd, messages]);
 
   const handleSend = useCallback(async (userPrompt?: string) => {
     const textToSend = (userPrompt || input).trim();
@@ -134,20 +163,21 @@ export function useCopilotChat({
       if (data.session_id && onSessionUpdated) {
         onSessionUpdated();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[useCopilotChat] Error communicating with AI Copilot:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Network error';
       setMessages([
         ...newMessages,
         {
           role: 'assistant',
-          content: `⚠️ **Error communicating with AI Copilot**: ${err.message || 'Network error'}. Please verify backend connectivity.`
+          content: `⚠️ **Error communicating with AI Copilot**: ${errorMessage}. Please verify backend connectivity.`
         }
       ]);
     } finally {
       setIsLoading(false);
       setCurrentStep(null);
     }
-  }, [input, isLoading, messages, activeSessionId, jd, onSessionUpdated]);
+  }, [input, isLoading, messages, activeSessionId, jd, onSessionUpdated, setMessages]);
 
   return {
     messages,
@@ -158,6 +188,7 @@ export function useCopilotChat({
     currentStep,
     copiedIdx,
     expandedSteps,
+    isExportingPdf,
     toggleSteps,
     handleSend,
     handleCopy,

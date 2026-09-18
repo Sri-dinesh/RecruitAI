@@ -7,6 +7,7 @@ applications, interview slots, chat messages, and session state.
 
 import uuid
 import logging
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from app.schemas.candidate_schema import Candidate
 from app.schemas.jd_schema import JobDescription
@@ -203,6 +204,7 @@ def update_session_metadata(
             "user_id": user_id,
             "last_intent": last_intent,
             "pending_confirmation": pending_confirmation,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         if title:
             update_data["title"] = title

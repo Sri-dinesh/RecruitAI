@@ -229,10 +229,21 @@ async def get_session_details_endpoint(
             .order("created_at", desc=False)
             .execute()
         )
-        history = [
-            {"role": m["role"], "content": m["content"]}
-            for m in (msgs_res.data or [])
-        ]
+        history = []
+        for m in (msgs_res.data or []):
+            item = {
+                "role": m["role"],
+                "content": m["content"],
+                "created_at": m.get("created_at"),
+                "timestamp": m.get("created_at"),
+            }
+            meta = m.get("metadata")
+            if isinstance(meta, dict):
+                if meta.get("agent_steps"):
+                    item["agent_steps"] = meta["agent_steps"]
+                if meta.get("suggested_followups"):
+                    item["suggested_followups"] = meta["suggested_followups"]
+            history.append(item)
 
         # 3. Fetch structured JD from `jobs` if linked
         jd_structured = None
