@@ -411,8 +411,8 @@ def generate_recruitment_report(
 
             status_val = str(cand.get("status") or "new").capitalize()
             # Extract recruiter evaluations if present
-            cid = cand.get("candidate_id") or cand.get("id")
-            cand_eval = evals_dict.get(cid) or {}
+            candidate_key = str(cand.get("candidate_id") or cand.get("id") or "")
+            cand_eval: Dict[str, Any] = evals_dict.get(candidate_key, {}) if candidate_key else {}
             tech_s = cand_eval.get("tech_score") or cand.get("tech_score")
             comm_s = cand_eval.get("comm_score") or cand.get("comm_score")
             rubric_str = ""
