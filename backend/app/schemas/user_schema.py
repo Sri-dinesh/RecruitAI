@@ -20,6 +20,7 @@ class UserProfileResponse(BaseModel):
     phone: Optional[str] = None
     company_name: Optional[str] = None
     company_website: Optional[str] = None
+    department: Optional[str] = None
     role: str = "recruiter"
     preferences: Dict[str, Any] = Field(default_factory=dict)
     last_sign_in_at: Optional[datetime] = None
@@ -32,5 +33,6 @@ class UserUpdateRequest(BaseModel):
     phone: Optional[str] = None
     company_name: Optional[str] = None
     company_website: Optional[str] = None
+    department: Optional[str] = None
     role: Optional[str] = None
     preferences: Optional[Dict[str, Any]] = None
