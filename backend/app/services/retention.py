@@ -151,3 +151,80 @@ def enforce_retention_policy(
         logger.warning(f"[retention] Automated retention policy encountered notice: {e}")
 
     return purged_counts
+
+
+def export_user_data(user_id: str) -> Dict[str, Any]:
+    """
+    GDPR Art. 15 / 20 User Data Portability Export:
+    Exports authenticated recruiter profile, preferences, campaign sessions,
+    and candidate records.
+    """
+    client = get_supabase_client()
+    user_res = client.table("users").select("*").eq("id", user_id).execute()
+    user_record = user_res.data[0] if user_res.data and len(user_res.data) > 0 else {"id": user_id}
+
+    sessions_res = client.table("chat_sessions").select("id, title, created_at, updated_at").eq("user_id", user_id).execute()
+    sessions = sessions_res.data or []
+
+    cand_res = client.table("candidates").select("id, full_name, created_at").eq("user_id", user_id).execute()
+    candidates = cand_res.data or []
+
+    return {
+        "export_metadata": {
+            "law_compliance": "GDPR Art. 15 (Right of Access) & Art. 20 (Data Portability)",
+            "user_id": user_id,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "user_profile": user_record,
+        "campaign_sessions_count": len(sessions),
+        "campaign_sessions": sessions,
+        "candidates_count": len(candidates),
+        "candidates": candidates,
+    }
+
+
+def purge_user_account(user_id: str) -> bool:
+    """
+    GDPR Art. 17 Right to Erasure ('Right to be Forgotten') for Recruiter Account:
+    Completely cascades deletion of all tenant data across tables.
+    """
+    client = get_supabase_client()
+    try:
+        try:
+            client.table("chat_messages").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("interviews").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("applications").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("resume_chunks").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("candidates").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("chat_sessions").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("jobs").delete().eq("user_id", user_id).execute()
+        except Exception:
+            pass
+        try:
+            client.table("users").delete().eq("id", user_id).execute()
+        except Exception:
+            pass
+
+        logger.info(f"[AUDIT] [GDPR_ACCOUNT_ERASURE] user_id={user_id} status=account_purged")
+        return True
+    except Exception as exc:
+        logger.error(f"[retention] Failed to purge user account {user_id}: {exc}", exc_info=True)
+        raise

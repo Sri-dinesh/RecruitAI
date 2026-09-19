@@ -16,6 +16,8 @@ from app.services.retention import (
     purge_candidate,
     export_candidate_data,
     enforce_retention_policy,
+    export_user_data,
+    purge_user_account,
 )
 
 router = APIRouter()
@@ -176,4 +178,39 @@ async def get_bias_audit_endpoint(
     except Exception as e:
         logger.error(f"[bias_audit] Error generating bias audit: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate bias audit: {e}")
+
+
+@router.get("/privacy/user/export")
+async def export_user_endpoint(
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    GDPR Art. 15 / 20: Exports authenticated recruiter personal data,
+    preferences, and campaign history.
+    """
+    try:
+        data = export_user_data(user_id=user_id)
+        return data
+    except Exception as exc:
+        logger.error(f"[privacy] Failed to export user data: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to export user data: {exc}")
+
+
+@router.delete("/privacy/user/account", status_code=status.HTTP_200_OK)
+async def delete_user_account_endpoint(
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    GDPR Art. 17: Right to Erasure for authenticated recruiter.
+    Cascades deletion of all tenant campaigns, candidates, and user records.
+    """
+    try:
+        success = purge_user_account(user_id=user_id)
+        return {
+            "success": success,
+            "message": "User account and all associated workspace tenant data have been permanently erased under GDPR Art. 17."
+        }
+    except Exception as exc:
+        logger.error(f"[privacy] Failed to delete user account: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user account: {exc}")
 

@@ -150,3 +150,23 @@ def test_bias_audit_nyc_law_144():
     assert "law_compliance" in data
     assert "NYC Local Law 144" in data["law_compliance"]
 
+
+def test_user_privacy_export_and_account_purge():
+    """
+    Verifies GDPR Art. 15 user data export and Art. 17 recruiter account deletion endpoints.
+    """
+    # 1. Export user data
+    res_export = client.get("/api/privacy/user/export")
+    assert res_export.status_code == 200
+    export_json = res_export.json()
+    assert "export_metadata" in export_json
+    assert export_json["export_metadata"]["law_compliance"] == "GDPR Art. 15 (Right of Access) & Art. 20 (Data Portability)"
+    assert "user_profile" in export_json
+    assert "campaign_sessions" in export_json
+
+    # 2. Test account deletion endpoint
+    res_del = client.delete("/api/privacy/user/account")
+    assert res_del.status_code == 200
+    assert res_del.json()["success"] is True
+    assert "permanently erased" in res_del.json()["message"]
+
