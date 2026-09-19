@@ -145,3 +145,42 @@ export async function downloadAndSharePdfReport(
 
   return downloadResult.uri;
 }
+
+/**
+ * Downloads authenticated recruiter's personal GDPR archive from backend and opens sharing sheet
+ */
+export async function downloadAndShareUserData(): Promise<string> {
+  const isSharingAvailable = await Sharing.isAvailableAsync();
+  if (!isSharingAvailable) {
+    throw new Error("Native file sharing is not supported on this platform.");
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const baseDir = FileSystem.cacheDirectory || "";
+  const filename = `recruitai_gdpr_export_${Date.now()}.json`;
+  const targetUri = `${baseDir}${filename}`;
+
+  const downloadUrl = `${getBackendUrl()}/api/privacy/user/export`;
+
+  const downloadResult = await FileSystem.downloadAsync(downloadUrl, targetUri, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (downloadResult.status !== 200) {
+    throw new Error(
+      `Failed to download user GDPR data from server (HTTP ${downloadResult.status}).`
+    );
+  }
+
+  await Sharing.shareAsync(downloadResult.uri, {
+    mimeType: "application/json",
+    dialogTitle: "RecruitAI GDPR Personal Data Archive",
+    UTI: "public.json",
+  });
+
+  return downloadResult.uri;
+}

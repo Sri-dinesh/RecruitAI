@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Image, ActivityIndicator } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Briefcase,
@@ -19,8 +20,9 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const {
     activeSession,
     isBlindHiring,
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
   };
 
   const userInitial = (
+    profile?.full_name?.[0] ||
     user?.user_metadata?.full_name?.[0] ||
     user?.email?.[0] ||
     "R"
@@ -121,9 +124,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSessionPicker }) => {
           <TouchableOpacity
             onPress={() => {
               selectionHaptic();
-              onOpenSessionPicker();
+              router.push("/(app)/modals/profile-settings");
             }}
             activeOpacity={0.8}
+            accessibilityLabel="Open Recruiter Profile and Settings"
+            accessibilityRole="button"
             className="relative"
           >
             <View className="w-8 h-8 rounded-full bg-[#1B2A4A] items-center justify-center border border-slate-700">
