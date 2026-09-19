@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
+  Briefcase,
   Sliders,
   Calendar,
   Mail,
@@ -17,6 +18,7 @@ import {
   Share2,
   Globe,
 } from "lucide-react-native";
+import { RequisitionSpec } from "@/components/workspace/RequisitionSpec";
 import { CompareMatrix } from "@/components/workspace/CompareMatrix";
 import { SlotScheduler } from "@/components/workspace/SlotScheduler";
 import { EmailDrafter } from "@/components/workspace/EmailDrafter";
@@ -25,7 +27,7 @@ import { useRecruit } from "@/context/RecruitContext";
 import { COLORS } from "@/constants/theme";
 import { selectionHaptic, impactHaptic } from "@/lib/haptics";
 
-type WorkspaceTool = "compare" | "schedule" | "email" | "intel";
+type WorkspaceTool = "job" | "compare" | "schedule" | "email" | "intel";
 
 export default function WorkspaceTab() {
   const router = useRouter();
@@ -101,6 +103,11 @@ export default function WorkspaceTab() {
         >
           {[
             {
+              key: "job" as WorkspaceTool,
+              label: "Requisition & Rubric",
+              icon: Briefcase,
+            },
+            {
               key: "compare" as WorkspaceTool,
               label: "Compare Matrix",
               icon: Sliders,
@@ -167,6 +174,7 @@ export default function WorkspaceTab() {
           />
         }
       >
+        {activeTool === "job" && <RequisitionSpec />}
         {activeTool === "compare" && <CompareMatrix />}
         {activeTool === "schedule" && <SlotScheduler />}
         {activeTool === "email" && <EmailDrafter />}
