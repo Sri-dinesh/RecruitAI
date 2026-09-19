@@ -40,6 +40,9 @@ export interface JobDescription {
   location?: string;
   salary_range?: string;
   company_name?: string;
+  department?: string;
+  employment_type?: string;
+  rubric_weights?: Record<string, number>;
 }
 
 export interface ChatMessage {
@@ -58,6 +61,8 @@ export interface ScheduledInterview {
   slot: string;
   duration_minutes?: number;
   mode?: string;
+  meeting_link?: string;
+  feedback?: string;
   booked_at?: string;
 }
 
@@ -139,8 +144,14 @@ export interface RecruitContextType {
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setCandidates: React.Dispatch<React.SetStateAction<Candidate[]>>;
   setJd: React.Dispatch<React.SetStateAction<JobDescription | null>>;
-  setScheduledInterviews: React.Dispatch<React.SetStateAction<ScheduledInterview[]>>;
-  bookInterview: (candidateName: string, slot: string, candidateId?: string) => Promise<void>;
+  bookInterview: (
+    candidateName: string,
+    slot: string,
+    candidateId?: string,
+    mode?: string,
+    meetingLink?: string
+  ) => Promise<void>;
+  cancelInterview?: (candidateName: string, slot: string) => Promise<void>;
   refreshActiveSession: () => Promise<void>;
   syncActiveSession: () => Promise<void>;
   checkApiHealth: () => Promise<boolean>;

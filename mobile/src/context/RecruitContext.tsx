@@ -494,11 +494,22 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
 
   // Book an interview slot
   const bookInterview = useCallback(
-    async (candidateName: string, slot: string, candidateId?: string) => {
+    async (
+      candidateName: string,
+      slot: string,
+      candidateId?: string,
+      mode?: string,
+      meetingLink?: string
+    ) => {
+      const generatedMeetingLink =
+        meetingLink ||
+        `https://meet.recruitai.internal/${Math.random().toString(36).substring(2, 9)}`;
       const newBooking: ScheduledInterview = {
         candidate_id: candidateId,
         candidate_name: candidateName,
         slot,
+        mode: mode || "Technical Round",
+        meeting_link: generatedMeetingLink,
         booked_at: new Date().toISOString(),
       };
       setScheduledInterviews((prev) => [...prev, newBooking]);
@@ -510,7 +521,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
           await fetchWithAuth("/api/chat", {
             method: "POST",
             body: JSON.stringify({
-              message: `Confirm booking interview with ${candidateName} for ${slot}`,
+              message: `Confirm booking interview with ${candidateName} for ${slot} (${newBooking.mode}) - Link: ${newBooking.meeting_link}`,
               session_id: activeSessionId,
               scheduled_interviews: [...scheduledInterviews, newBooking],
             }),
@@ -521,6 +532,30 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [activeSessionId, scheduledInterviews]
+  );
+
+  // Cancel an interview slot
+  const cancelInterview = useCallback(
+    async (candidateName: string, slot: string) => {
+      setScheduledInterviews((prev) =>
+        prev.filter((i) => !(i.candidate_name === candidateName && i.slot === slot))
+      );
+      warningHaptic();
+      if (activeSessionId) {
+        try {
+          await fetchWithAuth("/api/chat", {
+            method: "POST",
+            body: JSON.stringify({
+              message: `Cancelled scheduled interview with ${candidateName} for ${slot}`,
+              session_id: activeSessionId,
+            }),
+          });
+        } catch (err) {
+          console.warn("[RecruitContext] Non-blocking cancel interview sync failed:", err);
+        }
+      }
+    },
+    [activeSessionId]
   );
 
   // Refresh current active session
@@ -719,6 +754,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       setJd,
       setScheduledInterviews,
       bookInterview,
+      cancelInterview,
       refreshActiveSession,
       syncActiveSession,
       checkApiHealth,
@@ -747,6 +783,7 @@ export function RecruitProvider({ children }: { children: React.ReactNode }) {
       toggleBlindHiring,
       setBlindHiringExplicit,
       bookInterview,
+      cancelInterview,
       refreshActiveSession,
       syncActiveSession,
       checkApiHealth,
