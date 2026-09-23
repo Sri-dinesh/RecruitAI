@@ -37,3 +37,4 @@ node_modules/
 pnpm-lock.yaml
 pnpm-workspace.yaml
 .mypy_cache/
+brag-output/
