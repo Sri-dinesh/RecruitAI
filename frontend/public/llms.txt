@@ -13,16 +13,32 @@ RecruitAI is designed for modern hiring teams, technical recruiters, and talent 
 - **ATS Export & Full Interoperability**: Seamless 1-click JSON and CSV export formats tailored for Greenhouse, Lever, Workday, and Ashby.
 - **Enterprise-Grade Data Isolation**: Multi-tenant Row-Level Security (RLS) via Supabase ensures users can only access their own jobs, resumes, and evaluation runs.
 
-## Key Links & Resources
+## Key Links & Resources — Public, Crawlable, LLM-Indexable
 
-- [Home & Platform Overview](https://recruitaiofficial.vercel.app/): Product features, interactive workflow, and live recruitment demo.
-- [Recruiter Dashboard](https://recruitaiofficial.vercel.app/dashboard): Active candidate pipeline, multi-agent co-pilot, comparison matrix, and rubric scoring inspector.
-- [Hiring Analytics](https://recruitaiofficial.vercel.app/analytics): Funnel throughput, score distributions, ingestion velocity, and hiring team metrics.
-- [Privacy Policy](https://recruitaiofficial.vercel.app/privacy): Detailed disclosure of data collection, zero data resale policy, and GDPR/CCPA compliance.
-- [Terms & Conditions](https://recruitaiofficial.vercel.app/terms): Platform usage rules, customer rights, and service agreements.
-- [Data Deletion](https://recruitaiofficial.vercel.app/data-deletion): Self-service and automated data erasure procedures.
-- [Support & Contact](https://recruitaiofficial.vercel.app/support): Technical support channel and direct contact at santhisridinesh@gmail.com.
-- [Full LLM Specification](https://recruitaiofficial.vercel.app/llms-full.txt): Comprehensive architecture, schemas, API endpoints, and system prompt contexts.
+- [Home & Platform Overview](https://recruitaiofficial.vercel.app/): AI recruiting software overview, live workspace preview, and value metrics.
+- [Features Hub](https://recruitaiofficial.vercel.app/features): Full feature matrix — resume screening, candidate screening, blind hiring, ATS integration and recruitment automation.
+- [AI Resume Screening](https://recruitaiofficial.vercel.app/features/ai-resume-screening): Semantic resume parser with pgvector embeddings, 1.4s per PDF parsing.
+- [AI Candidate Screening](https://recruitaiofficial.vercel.app/features/ai-candidate-screening): Rubric-based candidate evaluation with side-by-side matrices and gap analysis.
+- [Blind Hiring & Unbiased Screening](https://recruitaiofficial.vercel.app/features/blind-hiring): Demographic redaction before LLM scoring, audit-logged compliance.
+- [ATS Integration](https://recruitaiofficial.vercel.app/features/ats-integration): Greenhouse, Lever, Workday, Ashby JSON/CSV export with validated schemas.
+- [Recruitment Automation](https://recruitaiofficial.vercel.app/features/recruitment-automation): LangGraph multi-agent orchestration with human-in-the-loop gates.
+- [Tech Hiring Solution](https://recruitaiofficial.vercel.app/solutions/tech-hiring): AI recruiting for engineering teams — Kubernetes, React, Python scoring depth.
+- [Solutions for Startups](https://recruitaiofficial.vercel.app/solutions/startups): Recruitment software for startups scaling the first 50 hires.
+- [Enterprise Platform](https://recruitaiofficial.vercel.app/solutions/enterprise): Enterprise-grade RLS isolation, audit logging and bias audits.
+- [HR Teams Solution](https://recruitaiofficial.vercel.app/solutions/hr-teams): Co-pilot for recruiters and hiring managers.
+- [Guides Hub](https://recruitaiofficial.vercel.app/guides): Playbooks for AI recruiting, resume screening, candidate screening and ATS integration.
+- [AI Recruiting Guide](https://recruitaiofficial.vercel.app/guides/ai-recruiting-guide): When to automate hiring and how to sell automation to legal.
+- [Resume Screening Guide](https://recruitaiofficial.vercel.app/guides/resume-screening-guide): PDF handling, semantic chunking and rubric calibration.
+- [Pricing](https://recruitaiofficial.vercel.app/pricing): Free 100 evaluations, transparent tiers.
+- [Download Android App](https://recruitaiofficial.vercel.app/download): Google Play store listing with deep links and App Links verification.
+- [FAQ](https://recruitaiofficial.vercel.app/faq): Structured FAQPage eligible for rich results.
+- [Recruiter Dashboard](https://recruitaiofficial.vercel.app/dashboard): Private, authenticated candidate pipeline — not indexed.
+- [Hiring Analytics](https://recruitaiofficial.vercel.app/analytics): Private pipeline metrics — not indexed.
+- [Privacy Policy](https://recruitaiofficial.vercel.app/privacy): Data collection, RLS security and GDPR/CCPA compliance.
+- [Terms & Conditions](https://recruitaiofficial.vercel.app/terms): Platform usage rules and service agreements.
+- [Data Deletion](https://recruitaiofficial.vercel.app/data-deletion): Self-service and verified deletion for GDPR Art. 17.
+- [Support & Contact](https://recruitaiofficial.vercel.app/support): Support channel at santhisridinesh@gmail.com.
+- [Full LLM Specification](https://recruitaiofficial.vercel.app/llms-full.txt): Architecture, schemas, API contracts and system prompts.
 
 ## Technical Architecture
 

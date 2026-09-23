@@ -64,15 +64,43 @@ To combat implicit bias in the hiring pipeline:
 4. **Data Deletion Compliance**:
    RecruitAI provides self-service campaign deletion and dedicated account deletion mechanisms complying with GDPR, CCPA, and Google Play Store Developer Policies (https://recruitaiofficial.vercel.app/data-deletion).
 
-## 5. Domain Information & Official Links
+## 5. SEO Architecture — Keyword-to-Page Map
+
+- Home (AI recruiting software): https://recruitaiofficial.vercel.app/
+- Features Hub: https://recruitaiofficial.vercel.app/features
+- AI Resume Screening: https://recruitaiofficial.vercel.app/features/ai-resume-screening
+- AI Candidate Screening: https://recruitaiofficial.vercel.app/features/ai-candidate-screening
+- Blind Hiring: https://recruitaiofficial.vercel.app/features/blind-hiring
+- ATS Integration: https://recruitaiofficial.vercel.app/features/ats-integration
+- Recruitment Automation: https://recruitaiofficial.vercel.app/features/recruitment-automation
+- Tech Hiring: https://recruitaiofficial.vercel.app/solutions/tech-hiring
+- For Startups: https://recruitaiofficial.vercel.app/solutions/startups
+- For Enterprise: https://recruitaiofficial.vercel.app/solutions/enterprise
+- For HR Teams: https://recruitaiofficial.vercel.app/solutions/hr-teams
+- Guides: https://recruitaiofficial.vercel.app/guides
+- AI Recruiting Guide: https://recruitaiofficial.vercel.app/guides/ai-recruiting-guide
+- Resume Screening Guide: https://recruitaiofficial.vercel.app/guides/resume-screening-guide
+- Candidate Screening Guide: https://recruitaiofficial.vercel.app/guides/candidate-screening-guide
+- ATS Guide: https://recruitaiofficial.vercel.app/guides/ats-guide
+- Greenhouse vs RecruitAI: https://recruitaiofficial.vercel.app/compare/greenhouse-vs-recruitai
+- Lever vs RecruitAI: https://recruitaiofficial.vercel.app/compare/lever-vs-recruitai
+- FAQ: https://recruitaiofficial.vercel.app/faq
+- Pricing: https://recruitaiofficial.vercel.app/pricing
+- Download Android App: https://recruitaiofficial.vercel.app/download
+
+## 6. Domain Information & Official Links
 
 - Base URL: https://recruitaiofficial.vercel.app
 - Home: https://recruitaiofficial.vercel.app/
-- Dashboard: https://recruitaiofficial.vercel.app/dashboard
-- Analytics: https://recruitaiofficial.vercel.app/analytics
+- Dashboard: https://recruitaiofficial.vercel.app/dashboard (private, noindex)
+- Analytics: https://recruitaiofficial.vercel.app/analytics (private, noindex)
 - Auth: https://recruitaiofficial.vercel.app/auth
 - Privacy Policy: https://recruitaiofficial.vercel.app/privacy
 - Terms & Conditions: https://recruitaiofficial.vercel.app/terms
 - Data Deletion: https://recruitaiofficial.vercel.app/data-deletion
 - Support: https://recruitaiofficial.vercel.app/support
 - Official Contact: santhisridinesh@gmail.com
+- Sitemap: https://recruitaiofficial.vercel.app/sitemap.xml
+- Robots: https://recruitaiofficial.vercel.app/robots.txt
+- App Links: https://recruitaiofficial.vercel.app/.well-known/assetlinks.json → com.recruitai.app
+- Google Play: https://play.google.com/store/apps/details?id=com.recruitai.app
