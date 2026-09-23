@@ -119,17 +119,57 @@ export default function PremiumLanding() {
 
   return (
     <div ref={containerRef} className="min-h-screen bg-background text-foreground font-sans selection:bg-accent selection:text-white">
-      {/* Navbar */}
+      {/* Sitelinks hint: Google parses this ItemList + nav to generate expanded site result */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            name: "RecruitAI — Top Sections",
+            itemListElement: [
+              {
+                "@type": "SiteNavigationElement",
+                position: 1,
+                name: "AI Resume Screening",
+                description: "Automated resume screening that parses PDFs in 1.4s and ranks candidates semantically.",
+                url: "https://recruitaiofficial.vercel.app/features/ai-resume-screening",
+              },
+              {
+                "@type": "SiteNavigationElement",
+                position: 2,
+                name: "Blind Hiring",
+                description: "Unbiased candidate evaluation with PII redacted before AI scoring.",
+                url: "https://recruitaiofficial.vercel.app/features/blind-hiring",
+              },
+              {
+                "@type": "SiteNavigationElement",
+                position: 3,
+                name: "ATS Integration",
+                description: "One-click Greenhouse, Lever and Workday export with validated schemas.",
+                url: "https://recruitaiofficial.vercel.app/features/ats-integration",
+              },
+              {
+                "@type": "SiteNavigationElement",
+                position: 4,
+                name: "Pricing & Download",
+                description: "Free 100 evaluations. Web + Android app on Google Play.",
+                url: "https://recruitaiofficial.vercel.app/pricing",
+              },
+            ],
+          }),
+        }}
+      />
+      {/* Navbar — crawlable primary navigation: these 4-6 anchors become Google sitelinks */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-[#F8F6F2]/85 border-b border-border/60">
         <div className="flex items-center justify-between px-6 md:px-8 py-4 max-w-7xl mx-auto">
           <Logo href="/" size="md" priority />
-          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium">
-            <a href="#how-it-works" className="text-muted hover:text-foreground transition-colors">How it works</a>
-            <a href="#features" className="text-muted hover:text-foreground transition-colors">Features</a>
-            <a href="#mobile" className="text-muted hover:text-foreground transition-colors">Mobile App</a>
-            <a href="#integrations" className="text-muted hover:text-foreground transition-colors">Integrations</a>
-            <a href="#security" className="text-muted hover:text-foreground transition-colors">Security</a>
-            <a href="#faq" className="text-muted hover:text-foreground transition-colors">FAQ</a>
+          <nav aria-label="Primary" className="hidden lg:flex items-center gap-5 text-sm font-medium">
+            <Link href="/features" className="text-muted hover:text-foreground transition-colors">Features</Link>
+            <Link href="/pricing" className="text-muted hover:text-foreground transition-colors">Pricing</Link>
+            <Link href="/download" className="text-muted hover:text-foreground transition-colors">Download</Link>
+            <Link href="/guides" className="text-muted hover:text-foreground transition-colors">Guides</Link>
+            <Link href="/faq" className="text-muted hover:text-foreground transition-colors">FAQ</Link>
             <Link href="/support" className="text-muted hover:text-foreground transition-colors">Support</Link>
           </nav>
           <div className="flex items-center gap-3">
@@ -409,6 +449,38 @@ export default function PremiumLanding() {
               <p className="text-sm text-muted leading-relaxed mt-3">In under two minutes. Sign up for a free account, paste your job description, and drop in candidate PDFs or DOCX files. The rubric generates automatically, and candidate scorecards are ready immediately.</p>
             </details>
           </div>
+        </section>
+
+        {/* Sitelinks target section — 4 crawlable cards Google can promote as sitelinks */}
+        <section aria-labelledby="explore-recruitai" className="scroll-section py-16 px-8 max-w-7xl mx-auto border-t border-border">
+          <div className="max-w-3xl mb-8">
+            <span className="text-[11px] font-semibold tracking-widest uppercase text-accent bg-accent/10 border border-accent/20 px-3 py-1 rounded-full">Explore RecruitAI</span>
+            <h2 id="explore-recruitai" className="font-serif text-3xl md:text-4xl text-foreground mt-4">Everything recruiters search for — four clicks from home.</h2>
+            <p className="text-muted leading-relaxed mt-3">These are the most-visited sections. Google uses this block and the top nav to generate the expanded site result with sub-pages shown directly under the main RecruitAI listing.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+            <Link href="/features/ai-resume-screening" className="group bg-white border border-border rounded-xl p-6 hover:border-accent/30 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors">AI Resume Screening — Automated & Semantic</h3>
+              <p className="text-sm text-muted leading-relaxed mt-1.5">Parse PDFs and DOCX in 1.4s, create pgvector embeddings and rank candidates without keyword stuffing.</p>
+              <span className="text-xs font-semibold text-accent mt-3 inline-flex items-center gap-1">recruitaiofficial.vercel.app/features/ai-resume-screening <span aria-hidden>→</span></span>
+            </Link>
+            <Link href="/features/blind-hiring" className="group bg-white border border-border rounded-xl p-6 hover:border-accent/30 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors">Blind Hiring — Unbiased Screening</h3>
+              <p className="text-sm text-muted leading-relaxed mt-1.5">Names, photos and locations redacted before scoring. Pure skill-driven evaluation.</p>
+              <span className="text-xs font-semibold text-accent mt-3 inline-flex items-center gap-1">recruitaiofficial.vercel.app/features/blind-hiring <span aria-hidden>→</span></span>
+            </Link>
+            <Link href="/features/ats-integration" className="group bg-white border border-border rounded-xl p-6 hover:border-accent/30 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors">ATS Integration — Greenhouse, Lever, Workday</h3>
+              <p className="text-sm text-muted leading-relaxed mt-1.5">Validated JSON/CSV exports with rubric scores, gaps and interview kits. One click.</p>
+              <span className="text-xs font-semibold text-accent mt-3 inline-flex items-center gap-1">recruitaiofficial.vercel.app/features/ats-integration <span aria-hidden>→</span></span>
+            </Link>
+            <Link href="/pricing" className="group bg-white border border-border rounded-xl p-6 hover:border-accent/30 hover:shadow-sm transition-all">
+              <h3 className="font-semibold text-foreground group-hover:text-accent transition-colors">Pricing & Download — Free 100 Evaluations</h3>
+              <p className="text-sm text-muted leading-relaxed mt-1.5">Start free on web and Android. See plans and get the Play Store app.</p>
+              <span className="text-xs font-semibold text-accent mt-3 inline-flex items-center gap-1">recruitaiofficial.vercel.app/pricing <span aria-hidden>→</span></span>
+            </Link>
+          </div>
+          <p className="text-xs text-muted mt-4">Also linked sitewide via header and footer: <Link href="/features" className="underline hover:text-foreground">All Features</Link> · <Link href="/guides" className="underline hover:text-foreground">Guides</Link> · <Link href="/faq" className="underline hover:text-foreground">FAQ</Link> · <Link href="/download" className="underline hover:text-foreground">Download</Link> · <Link href="/support" className="underline hover:text-foreground">Support</Link></p>
         </section>
 
         {/* Final Conversion CTA */}

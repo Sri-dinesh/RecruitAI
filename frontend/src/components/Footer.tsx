@@ -82,28 +82,43 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
             <p className="text-xs text-muted mt-4">© {currentYear} RecruitAI. All rights reserved.</p>
           </div>
 
-          {/* Platform Links */}
+          {/* Platform Links — SEO hub */}
           <div>
             <h4 className="font-semibold text-foreground text-sm mb-4">Platform</h4>
             <ul className="space-y-2.5 text-sm text-muted">
               <li>
-                <Link href="/#how-it-works" className="hover:text-foreground transition-colors">
-                  How it works
+                <Link href="/features" className="hover:text-foreground transition-colors">
+                  All Features
                 </Link>
               </li>
               <li>
-                <Link href="/#features" className="hover:text-foreground transition-colors">
-                  Feature Deep Dive
+                <Link href="/features/ai-resume-screening" className="hover:text-foreground transition-colors">
+                  AI Resume Screening
                 </Link>
               </li>
               <li>
-                <Link href="/#mobile" className="hover:text-foreground transition-colors">
-                  Android Mobile App
+                <Link href="/features/ai-candidate-screening" className="hover:text-foreground transition-colors">
+                  AI Candidate Screening
                 </Link>
               </li>
               <li>
-                <Link href="/#integrations" className="hover:text-foreground transition-colors">
-                  ATS Integrations
+                <Link href="/features/blind-hiring" className="hover:text-foreground transition-colors">
+                  Blind Hiring
+                </Link>
+              </li>
+              <li>
+                <Link href="/features/ats-integration" className="hover:text-foreground transition-colors">
+                  ATS Integration
+                </Link>
+              </li>
+              <li>
+                <Link href="/features/recruitment-automation" className="hover:text-foreground transition-colors">
+                  Recruitment Automation
+                </Link>
+              </li>
+              <li>
+                <Link href="/pricing" className="hover:text-foreground transition-colors">
+                  Pricing
                 </Link>
               </li>
               <li>
@@ -120,33 +135,48 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
             </ul>
           </div>
 
-          {/* Trust & Compliance Links */}
+          {/* Solutions + Trust — SEO internal linking */}
           <div>
-            <h4 className="font-semibold text-foreground text-sm mb-4">Trust & Compliance</h4>
+            <h4 className="font-semibold text-foreground text-sm mb-4">Solutions & Resources</h4>
             <ul className="space-y-2.5 text-sm text-muted">
               <li>
-                <Link href="/#security" className="hover:text-foreground transition-colors">
-                  Security & Privacy
+                <Link href="/solutions/tech-hiring" className="hover:text-foreground transition-colors">
+                  Tech Hiring
                 </Link>
               </li>
               <li>
-                <Link href="/privacy" className="hover:text-foreground transition-colors">
-                  Privacy Policy
+                <Link href="/solutions/startups" className="hover:text-foreground transition-colors">
+                  For Startups
                 </Link>
               </li>
               <li>
-                <Link href="/terms" className="hover:text-foreground transition-colors">
-                  Terms of Service
+                <Link href="/solutions/enterprise" className="hover:text-foreground transition-colors">
+                  For Enterprise
                 </Link>
               </li>
               <li>
-                <Link href="/data-deletion" className="hover:text-foreground transition-colors">
-                  Data Deletion Portal
+                <Link href="/solutions/hr-teams" className="hover:text-foreground transition-colors">
+                  For HR Teams
                 </Link>
               </li>
               <li>
-                <Link href="/support" className="hover:text-foreground transition-colors">
-                  Help Center & Support
+                <Link href="/guides" className="hover:text-foreground transition-colors">
+                  Guides
+                </Link>
+              </li>
+              <li>
+                <Link href="/compare/greenhouse-vs-recruitai" className="hover:text-foreground transition-colors">
+                  Greenhouse vs RecruitAI
+                </Link>
+              </li>
+              <li>
+                <Link href="/compare/lever-vs-recruitai" className="hover:text-foreground transition-colors">
+                  Lever vs RecruitAI
+                </Link>
+              </li>
+              <li>
+                <Link href="/faq" className="hover:text-foreground transition-colors">
+                  FAQ
                 </Link>
               </li>
             </ul>
@@ -201,23 +231,29 @@ export default function Footer({ variant = 'full', className = '' }: FooterProps
           </div>
         </div>
 
+        {/* Trust & Legal — compact */}
+        <div className="mt-8 pt-6 border-t border-border/60 flex flex-wrap gap-6 text-xs font-medium text-muted">
+          <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+          <Link href="/terms" className="hover:text-foreground">Terms</Link>
+          <Link href="/data-deletion" className="hover:text-foreground">Data Deletion</Link>
+          <Link href="/support" className="hover:text-foreground">Support</Link>
+          <Link href="/download" className="hover:text-foreground">Download App</Link>
+        </div>
+
         {/* Bottom Bar */}
-        <div className="mt-12 pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="mt-8 pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted text-center md:text-left leading-relaxed max-w-2xl">
-            RecruitAI is an enterprise hiring intelligence platform. Outputs assist human recruiters and hiring managers in conducting structured, unbiased evaluations.
+            RecruitAI is an enterprise hiring intelligence platform. Outputs assist human recruiters and hiring managers in conducting structured, unbiased evaluations. AI scores are audit-logged and require human confirmation before outreach or hiring decisions.
           </p>
           <div className="flex flex-wrap gap-6 text-xs font-medium text-muted">
+            <Link href="/faq" className="hover:text-foreground">
+              FAQ
+            </Link>
+            <Link href="/download" className="hover:text-foreground">
+              Download
+            </Link>
             <Link href="/privacy" className="hover:text-foreground">
               Privacy
-            </Link>
-            <Link href="/terms" className="hover:text-foreground">
-              Terms
-            </Link>
-            <Link href="/data-deletion" className="hover:text-foreground">
-              Data Deletion
-            </Link>
-            <Link href="/support" className="hover:text-foreground">
-              Support
             </Link>
             <Link href="/dashboard" className="hover:text-foreground">
               Dashboard
