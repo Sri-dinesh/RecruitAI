@@ -230,17 +230,21 @@ export default function CandidatesPage() {
               <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" /> Minimum Fit Score:
             </span>
             <div className="flex items-center gap-1.5">
-              {[0, 60, 75, 85].map((thresh) => (
+              {[
+                { label: 'All', value: 0 },
+                { label: '≥50% Fit', value: 50 },
+                { label: '≥80% High Fit', value: 80 },
+              ].map((thresh) => (
                 <button
-                  key={thresh}
-                  onClick={() => setMinScore(thresh)}
+                  key={thresh.value}
+                  onClick={() => setMinScore(thresh.value)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                    minScore === thresh 
-                      ? 'bg-indigo-600 text-white shadow-sm' 
+                    minScore === thresh.value
+                      ? 'bg-indigo-600 text-white shadow-sm'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  {thresh === 0 ? 'All Scores' : `≥ ${thresh}%`}
+                  {thresh.label}
                 </button>
               ))}
             </div>

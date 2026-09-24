@@ -26,6 +26,7 @@ export interface UserProfile {
   phone?: string | null;
   company_name?: string | null;
   company_website?: string | null;
+  department?: string | null;
   role: string;
   preferences: UserPreferences;
   created_at?: string;

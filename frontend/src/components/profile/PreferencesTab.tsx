@@ -106,13 +106,13 @@ export const PreferencesTab: React.FC<PreferencesTabProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 pt-1">
-          {[60, 70, 75, 80, 85, 90].map((val) => (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {[50, 60, 70, 75, 80, 85, 90, 95].map((val) => (
             <button
               key={val}
               type="button"
               onClick={() => setMatchThreshold(val)}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
                 matchThreshold === val
                   ? 'bg-brand-primary text-white border-brand-primary shadow-xs'
                   : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'

@@ -16,58 +16,73 @@ export interface FetchWithAuthOptions extends RequestInit {
  */
 export async function fetchWithAuth(
   path: string,
-  options: FetchWithAuthOptions = {}
+  options: FetchWithAuthOptions & { retries?: number; retryDelayMs?: number; _isRetryAfterRefresh?: boolean } = {}
 ): Promise<Response> {
-  const { timeoutMs = 60000, signal: externalSignal, ...fetchOptions } = options;
+  const { timeoutMs = 60000, retries = 2, retryDelayMs = 400, signal: externalSignal, _isRetryAfterRefresh, ...fetchOptions } = options as any;
   const headers = new Headers(fetchOptions.headers || {});
 
-  // Only force application/json if the body isn't FormData
-  if (!(fetchOptions.body instanceof FormData)) {
+  // Preserve multipart boundary — only set JSON if body isn't FormData and no explicit type
+  if (!(fetchOptions.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Get active session from Supabase
   const supabase = createSupabaseClient();
   const { data: { session } } = await supabase.auth.getSession();
-  
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }
 
-  // Resolve the full URL — prepend BACKEND_URL for relative paths
   const url = path.startsWith('http') ? path : `${BACKEND_URL}${path}`;
 
-  // Client-side timeout and AbortController integration
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => controller.abort(new DOMException(`Request timed out after ${timeoutMs}ms`, 'TimeoutError')), timeoutMs);
+    }
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort(externalSignal.reason);
+      else externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason), { once: true });
+    }
 
-  if (timeoutMs > 0) {
-    timer = setTimeout(() => {
-      controller.abort(new DOMException(`Request timed out after ${timeoutMs}ms`, 'TimeoutError'));
-    }, timeoutMs);
-  }
+    try {
+      const res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
+      if (timer) clearTimeout(timer);
 
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      controller.abort(externalSignal.reason);
-    } else {
-      externalSignal.addEventListener('abort', () => {
-        controller.abort(externalSignal.reason);
-      });
+      // 401 → refresh session once
+      if (res.status === 401 && !_isRetryAfterRefresh) {
+        try {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          if (refreshed.session?.access_token) {
+            return fetchWithAuth(path, { ...(options as any), _isRetryAfterRefresh: true } as any);
+          }
+        } catch {}
+      }
+
+      // Retry on 502-504 gateway errors
+      if ([502, 503, 504].includes(res.status) && attempt < retries) {
+        const delay = retryDelayMs * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      return res;
+    } catch (err: any) {
+      if (timer) clearTimeout(timer);
+      const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      if (isTimeout) throw err;
+      if (attempt < retries) {
+        const delay = retryDelayMs * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
-
-  try {
-    return await fetch(url, {
-      ...fetchOptions,
-      headers,
-      signal: controller.signal,
-    });
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
+  // Fallback — should not reach
+  throw new Error('fetchWithAuth exhausted retries');
 }
 
 /**

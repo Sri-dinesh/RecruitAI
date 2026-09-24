@@ -107,6 +107,7 @@ interface RecruitmentContextType {
   setActiveSessionId: (id: string) => Promise<void>;
   createSession: () => Promise<string | null>;
   deleteSession: (id: string) => Promise<void>;
+  renameSession: (sessionId: string, newTitle: string) => Promise<void>;
   uploadJd: (file?: File, text?: string) => Promise<{ success: boolean; jd?: JobDescription; error?: string }>;
   uploadResumes: (files: File[]) => Promise<{ success: boolean; count?: number; error?: string }>;
   handleSetStatus: (candidateId: string, statusOrName: CandidateStatus | string, maybeStatus?: CandidateStatus) => Promise<void>;
@@ -383,6 +384,25 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
     }
   }, [activeSessionId, sessions, selectActiveSession, createSession, queryClient]);
 
+  // Rename session (parity with mobile)
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) return;
+    try {
+      const res = await fetchWithAuth(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle.trim() }),
+      });
+      if (res.ok) {
+        queryClient.setQueryData<Session[]>(['sessions'], (old = []) =>
+          (old || []).map((s) => (s.id === sessionId ? { ...s, title: newTitle.trim() } : s))
+        );
+      }
+    } catch (err) {
+      console.warn('[RecruitmentContext] Error renaming session:', err);
+    }
+  }, [queryClient]);
+
   // Refresh active campaign data and sessions via TanStack Query invalidation
   const refreshData = useCallback(async () => {
     await Promise.all([
@@ -658,6 +678,7 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         setActiveSessionId: selectActiveSession,
         createSession,
         deleteSession,
+        renameSession,
         uploadJd,
         uploadResumes,
         handleSetStatus,
