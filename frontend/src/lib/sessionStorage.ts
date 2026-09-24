@@ -124,6 +124,48 @@ export function setStoredBlindMode(enabled: boolean): void {
 }
 
 /**
+ * Offline Mutation Queue — parity with mobile/secureStore (ARCH offline)
+ * Stores status toggles made while offline and replays on reconnect.
+ */
+const OFFLINE_MUTATIONS_KEY = 'recruitai_pending_mutations';
+
+export interface OfflineMutation {
+  candidateId: string;
+  sessionId?: string;
+  jobId?: string;
+  status?: CandidateStatus;
+  tech_score?: number;
+  comm_score?: number;
+  notes?: string;
+  timestamp: string;
+}
+
+export function getOfflineMutationsQueue(): OfflineMutation[] {
+  const raw = safeGetItem(OFFLINE_MUTATIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearOfflineMutationsQueue(): void {
+  safeRemoveItem(OFFLINE_MUTATIONS_KEY);
+}
+
+export function enqueueOfflineMutation(m: OfflineMutation): void {
+  try {
+    const queue = getOfflineMutationsQueue();
+    // Dedup by candidateId — keep latest
+    const filtered = queue.filter((x) => x.candidateId !== m.candidateId);
+    filtered.push(m);
+    safeSetItem(OFFLINE_MUTATIONS_KEY, JSON.stringify(filtered));
+  } catch {}
+}
+
+/**
  * Clear all RecruitAI related storage keys
  */
 export function clearAllRecruitAIStorage(): void {

@@ -13,7 +13,10 @@ import {
   setStoredEvalNotes,
   getStoredBlindMode,
   setStoredBlindMode,
-  clearAllRecruitAIStorage
+  clearAllRecruitAIStorage,
+  getOfflineMutationsQueue,
+  clearOfflineMutationsQueue,
+  enqueueOfflineMutation,
 } from '@/lib/sessionStorage';
 
 export type CandidateStatus = 'shortlisted' | 'rejected' | 'offered';
@@ -539,19 +542,62 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
         queryClient.invalidateQueries({ queryKey: ['session', activeSessionId] });
       }
     } catch (err) {
-      console.error('[RecruitmentContext] Failed to persist candidate status, rolling back:', err);
-      // Rollback optimistic state
-      setOptimisticStatuses((prev) => {
-        const rollback = { ...prev };
-        if (previousStatus) {
-          rollback[candidateId] = previousStatus;
-        } else {
-          delete rollback[candidateId];
-        }
-        return rollback;
+      console.error('[RecruitmentContext] Failed to persist candidate status, enqueuing offline mutation:', err);
+      // Keep optimistic UI + enqueue for offline replay (parity with mobile)
+      enqueueOfflineMutation({
+        candidateId,
+        sessionId: activeSessionId || undefined,
+        status: nextStatus,
+        tech_score: nextStatus === 'offered' ? 5 : nextStatus === 'shortlisted' ? 4 : 1,
+        comm_score: nextStatus === 'offered' ? 5 : nextStatus === 'shortlisted' ? 3 : 1,
+        notes: `Replayed offline status mutation via web (${new Date().toISOString()})`,
+        timestamp: new Date().toISOString(),
       });
+      // Do not rollback optimistic state — flush will replay when back online
     }
   }, [candidateStatuses, activeSessionId, queryClient]);
+
+  // Replay offline status mutations when back online (parity with mobile)
+  const flushOfflineMutations = useCallback(async () => {
+    try {
+      const queue = getOfflineMutationsQueue();
+      if (!queue || queue.length === 0) return;
+      for (const item of queue) {
+        try {
+          const res = await fetchWithAuth('/api/candidates/evaluate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              candidate_id: item.candidateId,
+              session_id: item.sessionId,
+              status: item.status || 'new',
+              tech_score: item.tech_score ?? (item.status === 'offered' ? 5 : item.status === 'shortlisted' ? 4 : 1),
+              comm_score: item.comm_score ?? (item.status === 'offered' ? 5 : item.status === 'shortlisted' ? 3 : 1),
+              notes: item.notes || `Replayed offline mutation (${item.timestamp})`,
+            }),
+          });
+          if (!res.ok) return; // still failing, retry later
+        } catch {
+          return;
+        }
+      }
+      clearOfflineMutationsQueue();
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (apiConnected) {
+      flushOfflineMutations();
+    }
+  }, [apiConnected, flushOfflineMutations]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (apiConnected) flushOfflineMutations();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [apiConnected, flushOfflineMutations]);
 
   // Masking helpers for Blind Mode
   const maskName = useCallback((name: string, candidateId?: string) => {
