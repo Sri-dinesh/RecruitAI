@@ -16,6 +16,26 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import AuthModal from '@/components/AuthModal';
 import { fetchWithAuth } from '@/lib/apiClient';
+import {
+  fetchAnalyticsSummary,
+  fetchPipelineData,
+  fetchCandidatesOverTime,
+  fetchMatchDistribution,
+  fetchTopSkills,
+  fetchHiringVelocity,
+  fetchJobsSummary,
+  fetchRecentActivity,
+} from '@/lib/analyticsApi';
+import type {
+  AnalyticsSummary,
+  PipelineStage,
+  TimeSeriesPoint,
+  MatchBucket,
+  SkillDemand,
+  HiringVelocity,
+  JobSummaryRow,
+  ActivityEvent,
+} from '@/lib/analyticsTypes';
 import Logo from '@/components/brand/Logo';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -302,105 +322,149 @@ export default function AnalyticsPage() {
   const buildAnalytics = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      // 1. Fetch all sessions list
-      const sessRes = await fetchWithAuth('/api/sessions');
-      if (!sessRes.ok) throw new Error('Failed to fetch sessions');
-      const sessions: SessionSummary[] = await sessRes.json();
+      // Primary: 8 backend analytics APIs (parity with mobile) — per-request error isolation
+      const [summary, pipelineRes, timeSeriesRes, matchDistRes, topSkillsRes, velocityRes, jobsRes, activityRes] =
+        await Promise.all([
+          fetchAnalyticsSummary().catch(() => null),
+          fetchPipelineData().catch(() => null),
+          fetchCandidatesOverTime(30).catch(() => null),
+          fetchMatchDistribution().catch(() => null),
+          fetchTopSkills(12).catch(() => null),
+          fetchHiringVelocity().catch(() => null),
+          fetchJobsSummary().catch(() => null),
+          fetchRecentActivity(20).catch(() => null),
+        ]);
 
-      // 2. Fetch detail for each session in parallel (cap at 20 most recent)
-      const recentSessions = sessions.slice(0, 20);
-      const details: SessionDetail[] = await Promise.all(
-        recentSessions.map(async (s) => {
-          try {
-            const r = await fetchWithAuth(`/api/sessions/${s.id}`);
-            if (!r.ok) return { id: s.id, title: s.title };
-            return await r.json();
-          } catch { return { id: s.id, title: s.title }; }
-        })
-      );
-
-      // 3. Aggregate across all sessions
-      const allCandidates: (Candidate & { sessionTitle: string })[] = [];
-      const allShortlisted: (Candidate & { sessionTitle: string })[] = [];
-      const allInterviews: (Interview & { sessionTitle: string })[] = [];
-      const skillMap: Record<string, number> = {};
-      const sessionActivity: Analytics['sessionActivity'] = [];
-
-      for (const detail of details) {
-        const cands = detail.resumes ?? [];
-        const shorts = detail.last_shortlist ?? [];
-        const ivs = detail.scheduled_interviews ?? [];
-        const title = detail.title || 'Campaign';
-
-        cands.forEach(c => allCandidates.push({ ...c, sessionTitle: title }));
-        shorts.forEach(c => allShortlisted.push({ ...c, sessionTitle: title }));
-        ivs.forEach(iv => allInterviews.push({ ...iv, sessionTitle: title }));
-
-        // Skills from JD
-        if (detail.jd_structured?.required_skills) {
-          for (const sk of detail.jd_structured.required_skills) {
-            skillMap[sk] = (skillMap[sk] ?? 0) + 1;
+      // If backend is unavailable (e.g., no Supabase creds in dev), fallback to client aggregation is handled by showing empty states; do not throw
+      if (!summary) {
+        // Fallback: keep existing client aggregation path — fetch sessions as before
+        const sessRes = await fetchWithAuth('/api/sessions');
+        if (!sessRes.ok) throw new Error('Failed to fetch sessions');
+        const sessions: SessionSummary[] = await sessRes.json();
+        const recentSessions = sessions.slice(0, 20);
+        const details: SessionDetail[] = await Promise.all(
+          recentSessions.map(async (s) => {
+            try {
+              const r = await fetchWithAuth(`/api/sessions/${s.id}`);
+              if (!r.ok) return { id: s.id, title: s.title };
+              return await r.json();
+            } catch {
+              return { id: s.id, title: s.title };
+            }
+          })
+        );
+        const allCandidates: (Candidate & { sessionTitle: string })[] = [];
+        const allShortlisted: (Candidate & { sessionTitle: string })[] = [];
+        const allInterviews: (Interview & { sessionTitle: string })[] = [];
+        const skillMap: Record<string, number> = {};
+        const sessionActivity: Analytics['sessionActivity'] = [];
+        for (const detail of details) {
+          const cands = detail.resumes ?? [];
+          const shorts = detail.last_shortlist ?? [];
+          const ivs = detail.scheduled_interviews ?? [];
+          const title = detail.title || 'Campaign';
+          cands.forEach((c) => allCandidates.push({ ...c, sessionTitle: title }));
+          shorts.forEach((c) => allShortlisted.push({ ...c, sessionTitle: title }));
+          ivs.forEach((iv) => allInterviews.push({ ...iv, sessionTitle: title }));
+          if (detail.jd_structured?.required_skills) {
+            for (const sk of detail.jd_structured.required_skills) {
+              skillMap[sk] = (skillMap[sk] ?? 0) + 1;
+            }
+          }
+          if (cands.length > 0 || shorts.length > 0) {
+            sessionActivity.push({ name: title, candidates: cands.length, shortlisted: shorts.length });
           }
         }
-
-        if (cands.length > 0 || shorts.length > 0) {
-          sessionActivity.push({ name: title, candidates: cands.length, shortlisted: shorts.length });
-        }
+        const totalCandidates = allCandidates.length;
+        const totalShortlisted = allShortlisted.length;
+        const totalInterviews = allInterviews.length;
+        const scoredCandidates = allShortlisted.filter((c) => c.match_score != null && c.match_score > 0);
+        const avgMatchScore =
+          scoredCandidates.length > 0
+            ? Math.round(scoredCandidates.reduce((sum, c) => sum + (c.match_score ?? 0), 0) / scoredCandidates.length * 10) / 10
+            : null;
+        const screeningRate = totalCandidates > 0 ? Math.round((totalShortlisted / totalCandidates) * 1000) / 10 : null;
+        const interviewRate = totalShortlisted > 0 ? Math.round((totalInterviews / totalShortlisted) * 1000) / 10 : null;
+        const skillDemand = Object.entries(skillMap)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 12)
+          .map(([skill, count]) => ({ skill, count }));
+        const pipeline = [
+          { stage: 'Ingested', count: totalCandidates },
+          { stage: 'Shortlisted', count: totalShortlisted },
+          { stage: 'Interviewed', count: totalInterviews },
+          { stage: 'Rejected', count: Math.max(0, totalCandidates - totalShortlisted) },
+        ];
+        const recentCandidates = allShortlisted
+          .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+          .slice(0, 8)
+          .map((c) => ({ name: c.name, score: c.match_score, session: c.sessionTitle }));
+        const upcomingInterviews = allInterviews
+          .sort((a, b) => new Date(a.slot).getTime() - new Date(b.slot).getTime())
+          .slice(0, 6)
+          .map((iv) => ({ candidate: iv.candidate_name, slot: iv.slot, session: iv.sessionTitle }));
+        setAnalytics({
+          totalCandidates,
+          totalJobs: details.filter((d) => d.jd_structured?.role).length,
+          totalShortlisted,
+          totalInterviews,
+          avgMatchScore,
+          screeningRate,
+          interviewRate,
+          totalSessions: sessions.length,
+          skillDemand,
+          pipeline,
+          sessionActivity,
+          recentCandidates,
+          upcomingInterviews,
+        });
+        setLastUpdated(new Date());
+        return;
       }
 
-      // 4. Compute KPIs
-      const totalCandidates = allCandidates.length;
-      const totalShortlisted = allShortlisted.length;
-      const totalInterviews = allInterviews.length;
+      // Backend success path — map snake_case to camelCase Analytics
+      const summaryTyped = summary as AnalyticsSummary;
+      const pipelineTyped = (pipelineRes as PipelineStage[] | null) || [];
+      const topSkillsTyped = (topSkillsRes as SkillDemand[] | null) || [];
+      const jobsTyped = (jobsRes as JobSummaryRow[] | null) || [];
+      const activityTyped = (activityRes as ActivityEvent[] | null) || [];
+      // TimeSeries and MatchDistribution are fetched for future charts (not yet wired to UI, but fetched for parity)
+      // const timeSeriesTyped = (timeSeriesRes as TimeSeriesPoint[] | null) || [];
+      // const matchDistTyped = (matchDistRes as MatchBucket[] | null) || [];
+      // const velocityTyped = velocityRes as HiringVelocity | null;
 
-      const scoredCandidates = allShortlisted.filter(c => c.match_score != null && c.match_score > 0);
-      const avgMatchScore = scoredCandidates.length > 0
-        ? Math.round(scoredCandidates.reduce((sum, c) => sum + (c.match_score ?? 0), 0) / scoredCandidates.length * 10) / 10
-        : null;
+      const totalCandidates = summaryTyped.total_candidates;
+      const totalShortlisted = summaryTyped.total_shortlisted;
+      const totalInterviews = summaryTyped.total_interviews;
 
-      const screeningRate = totalCandidates > 0
-        ? Math.round((totalShortlisted / totalCandidates) * 1000) / 10
-        : null;
-
-      const interviewRate = totalShortlisted > 0
-        ? Math.round((totalInterviews / totalShortlisted) * 1000) / 10
-        : null;
-
-      // 5. Skills
-      const skillDemand = Object.entries(skillMap)
-        .sort(([, a], [, b]) => b - a)
+      const skillDemand = topSkillsTyped
         .slice(0, 12)
-        .map(([skill, count]) => ({ skill, count }));
+        .map((s) => ({ skill: s.skill, count: s.demand_count }));
+      const pipeline = pipelineTyped.map((p) => ({ stage: p.stage, count: p.count }));
+      const sessionActivity = jobsTyped.slice(0, 8).map((j) => ({ name: j.title, candidates: j.total_applied, shortlisted: j.total_shortlisted }));
 
-      // 6. Pipeline
-      const pipeline = [
-        { stage: 'Ingested', count: totalCandidates },
-        { stage: 'Shortlisted', count: totalShortlisted },
-        { stage: 'Interviewed', count: totalInterviews },
-        { stage: 'Rejected', count: Math.max(0, totalCandidates - totalShortlisted) },
-      ];
-
-      // 7. Recent candidates (top 8 by score)
-      const recentCandidates = allShortlisted
-        .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+      // Derive recent candidates/upcoming from jobs + activity for now (Score-based)
+      const recentCandidates = jobsTyped
+        .filter((j) => j.avg_match_score != null)
+        .sort((a, b) => (b.avg_match_score ?? 0) - (a.avg_match_score ?? 0))
         .slice(0, 8)
-        .map(c => ({ name: c.name, score: c.match_score, session: c.sessionTitle }));
+        .map((j) => ({ name: j.title, score: j.avg_match_score ?? undefined, session: j.title }));
 
-      // 8. Upcoming interviews
-      const upcomingInterviews = allInterviews
-        .sort((a, b) => new Date(a.slot).getTime() - new Date(b.slot).getTime())
+      // Upcoming interviews from activity events of type Interview Scheduled
+      const upcomingInterviews = activityTyped
+        .filter((e) => e.event_type.toLowerCase().includes('interview'))
         .slice(0, 6)
-        .map(iv => ({ candidate: iv.candidate_name, slot: iv.slot, session: iv.sessionTitle }));
+        .map((e) => ({ candidate: e.description, slot: e.occurred_at, session: e.entity_id }));
 
       setAnalytics({
-        totalCandidates,
-        totalJobs: details.filter(d => d.jd_structured?.role).length,
-        totalShortlisted,
-        totalInterviews,
-        avgMatchScore,
-        screeningRate,
-        interviewRate,
-        totalSessions: sessions.length,
+        totalCandidates: summaryTyped.total_candidates,
+        totalJobs: summaryTyped.total_jobs,
+        totalShortlisted: summaryTyped.total_shortlisted,
+        totalInterviews: summaryTyped.total_interviews,
+        avgMatchScore: summaryTyped.avg_match_score,
+        screeningRate: summaryTyped.screening_rate,
+        interviewRate: summaryTyped.interview_rate,
+        totalSessions: summaryTyped.total_chat_sessions,
         skillDemand,
         pipeline,
         sessionActivity,
