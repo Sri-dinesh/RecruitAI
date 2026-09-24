@@ -5,6 +5,7 @@ import {
   HelpCircle, 
   Mail, 
   ShieldAlert,
+  Globe,
   LucideIcon 
 } from 'lucide-react';
 
@@ -169,6 +170,33 @@ export const PRESET_CATEGORIES: PresetCategory[] = [
         shortLabel: 'Red Flags',
         description: 'Highlight seniority deficits and mismatch concerns.',
         prompt: 'Scan our candidate records and highlight any notable red flags, severe experience deficits, or criteria mismatches for this requisition.'
+      }
+    ]
+  },
+  {
+    id: 'market',
+    label: 'Market & Salaries',
+    icon: Globe,
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+    description: 'Tavily-powered live market compensation benchmarks and requisition search.',
+    prompts: [
+      {
+        title: 'Market Salary Benchmark',
+        shortLabel: 'Salary Benchmark',
+        description: 'Real-time compensation range analysis for this role and market.',
+        prompt: 'Search the web using Tavily for current market salary benchmarks for this job title and location. Provide typical base pay, equity norms, and total compensation percentiles.'
+      },
+      {
+        title: 'Live Requisition Discovery',
+        shortLabel: 'Live Postings',
+        description: 'Search active job listings to calibrate competitive requirements.',
+        prompt: 'Search live web job postings for similar roles at top tech companies. What emerging skills and certifications are industry peers currently prioritizing?'
+      },
+      {
+        title: 'Competitor Requirements',
+        shortLabel: 'Competitor Intel',
+        description: 'Benchmark requisition specifications against hiring competitors.',
+        prompt: 'Benchmark our required tech stack against current industry hiring standards for this seniority level. Are our expectations calibrated to attract top tier talent?'
       }
     ]
   }
