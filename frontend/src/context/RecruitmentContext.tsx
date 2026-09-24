@@ -511,13 +511,20 @@ export function RecruitmentProvider({ children }: { children: React.ReactNode })
       setStoredCandidateStatuses(activeSessionId, currentMap);
     }
 
-    // 3. Persist to backend PostgreSQL API with rollback on failure
+    // 3. Persist to backend PostgreSQL API with rollback on failure — unified on /candidates/evaluate for parity with mobile
     try {
+      const tech_score = nextStatus === 'offered' ? 5 : nextStatus === 'shortlisted' ? 4 : nextStatus === 'rejected' ? 1 : 1;
+      const comm_score = nextStatus === 'offered' ? 5 : nextStatus === 'shortlisted' ? 3 : nextStatus === 'rejected' ? 1 : 1;
       const payload = {
-        status: nextStatus || 'new',
+        candidate_id: candidateId,
         session_id: activeSessionId || undefined,
+        // job_id derived server-side from session if not provided; keep undefined for now (backend fallback handles it)
+        status: nextStatus || 'new',
+        tech_score,
+        comm_score,
+        notes: `Recruiter marked candidate as ${nextStatus || 'new'} via web dashboard.`,
       };
-      const res = await fetchWithAuth(`/api/candidates/${candidateId}/status`, {
+      const res = await fetchWithAuth(`/api/candidates/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
