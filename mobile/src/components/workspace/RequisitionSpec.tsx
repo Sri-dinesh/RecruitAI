@@ -46,7 +46,7 @@ interface RubricPillar {
 
 export const RequisitionSpec: React.FC = () => {
   const { jd, activeSessionId, refreshActiveSession, setJd } = useRecruit();
-  const { ingestJobDescription, isUploadingJd } = useFileIngestion();
+  const { ingestJobDescription, ingestJobDescriptionFromText, isUploadingJd } = useFileIngestion();
 
   // Rubric weights state (default 5 pillars sum to 100%)
   const [rubric, setRubric] = useState<RubricPillar[]>([
@@ -169,6 +169,14 @@ export const RequisitionSpec: React.FC = () => {
     setIsSubmittingTextJd(true);
 
     try {
+      // Primary: direct ingestion via /api/ingest/upload-jd (parity with web) — deterministic
+      const parsed = await ingestJobDescriptionFromText(pastedJdText.trim());
+      if (parsed) {
+        setPasteModalVisible(false);
+        setPastedJdText("");
+        return;
+      }
+      // Fallback: LangGraph chat parsing if direct ingest unavailable
       const res = await fetchWithAuth("/api/chat", {
         method: "POST",
         body: JSON.stringify({
@@ -176,25 +184,14 @@ export const RequisitionSpec: React.FC = () => {
           session_id: activeSessionId,
         }),
       });
-
-      if (!res.ok) {
-        throw new Error("Failed to parse and store job description.");
-      }
-
+      if (!res.ok) throw new Error("Failed to parse and store job description.");
       const data = await res.json();
-      if (data.jd_structured) {
-        setJd(data.jd_structured);
-      }
-
+      if (data.jd_structured) setJd(data.jd_structured);
       await refreshActiveSession();
       setPasteModalVisible(false);
       setPastedJdText("");
       successHaptic();
-      showAppModal({
-        title: "Job Description Ingested",
-        message: "Successfully parsed role requirements, required skills, and responsibilities.",
-        type: "success",
-      });
+      showAppModal({ title: "Job Description Ingested", message: "Successfully parsed role requirements, required skills, and responsibilities.", type: "success" });
     } catch (err: any) {
       Alert.alert("Ingestion Error", err.message || "Failed to parse job description.");
     } finally {

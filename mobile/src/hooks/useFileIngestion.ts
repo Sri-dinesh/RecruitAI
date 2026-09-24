@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import * as DocumentPicker from "expo-document-picker";
-import { uploadFileWithAuth } from "@/lib/apiClient";
+import * as FileSystem from "expo-file-system/legacy";
+import { uploadFileWithAuth, fetchWithAuth } from "@/lib/apiClient";
 import { useRecruit } from "@/context/RecruitContext";
 import { showAppModal } from "@/context/ModalContext";
 import { successHaptic, warningHaptic } from "@/lib/haptics";
@@ -200,6 +201,53 @@ export function useFileIngestion() {
     }
   }, [setJd, activeSessionId, refreshActiveSession]);
 
+  // Text paste parity with web — direct /api/ingest/upload-jd via temp file (no LangGraph chat)
+  const ingestJobDescriptionFromText = useCallback(
+    async (text: string): Promise<JobDescription | null> => {
+      if (!text.trim()) return null;
+      if (!activeSessionId) {
+        showAppModal({ title: "No Active Campaign", message: "Please select a campaign session first.", type: "warning" });
+        return null;
+      }
+      setIsUploadingJd(true);
+      setUploadError(null);
+      try {
+        const cacheDir = FileSystem.cacheDirectory || "";
+        const tmpUri = `${cacheDir}jd_paste_${Date.now()}.txt`;
+        await FileSystem.writeAsStringAsync(tmpUri, text.trim(), { encoding: FileSystem.EncodingType.UTF8 });
+
+        const parsedJd = await uploadFileWithAuth<JobDescription>("/api/ingest/upload-jd", tmpUri, {
+          fieldName: "file",
+          fileName: "job_description.txt",
+          mimeType: "text/plain",
+          extraFields: activeSessionId ? { session_id: activeSessionId } : {},
+        });
+
+        // Cleanup temp file (best-effort)
+        FileSystem.deleteAsync(tmpUri, { idempotent: true }).catch(() => {});
+
+        setJd(parsedJd);
+        await refreshActiveSession();
+        successHaptic();
+        showAppModal({
+          title: "Job Description Ingested",
+          message: `Parsed role "${parsedJd.role || "Role"}" and ${parsedJd.required_skills?.length || 0} required skills.`,
+          type: "success",
+        });
+        return parsedJd;
+      } catch (err: any) {
+        console.error("[useFileIngestion] Error ingesting JD text:", err);
+        const message = err.message || "Failed to parse job description text.";
+        setUploadError(message);
+        showAppModal({ title: "JD Parse Failed", message, type: "error" });
+        return null;
+      } finally {
+        setIsUploadingJd(false);
+      }
+    },
+    [activeSessionId, refreshActiveSession, setJd]
+  );
+
   return {
     isUploadingResumes,
     isUploadingJd,
@@ -209,6 +257,7 @@ export function useFileIngestion() {
     closeReportModal,
     ingestResumes,
     ingestJobDescription,
+    ingestJobDescriptionFromText,
   };
 }
 
