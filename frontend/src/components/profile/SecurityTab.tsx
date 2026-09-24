@@ -9,8 +9,14 @@ import {
   RefreshCw, 
   Copy, 
   Check, 
-  LogOut 
+  LogOut,
+  Download,
+  Trash2,
+  Activity,
+  Wifi,
+  Shield
 } from 'lucide-react';
+import { fetchWithAuth } from '@/lib/apiClient';
 
 export interface SecurityTabProps {
   userId?: string;
@@ -32,12 +38,69 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
   const [passwordError, setPasswordError] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [pinging, setPinging] = useState(false);
+  const [latency, setLatency] = useState<number | null>(null);
 
   const handleCopyId = () => {
     if (userId) {
       navigator.clipboard.writeText(userId);
       setCopiedId(true);
       setTimeout(() => setCopiedId(false), 2000);
+    }
+  };
+
+  const handleExportGdpr = async () => {
+    setExporting(true);
+    try {
+      const res = await fetchWithAuth('/api/privacy/user/export');
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recruitai_gdpr_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(e.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('GDPR Art.17 — This will permanently purge all campaigns, candidates, evaluations and your account. Irreversible. Continue?')) return;
+    if (!confirm('Final confirmation: type OK to proceed — this cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      const res = await fetchWithAuth('/api/privacy/user/account', { method: 'DELETE' });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.detail || `Deletion failed (${res.status})`);
+      }
+      await onLogout();
+    } catch (e: any) {
+      alert(e.message || 'Deletion failed');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handlePing = async () => {
+    setPinging(true);
+    const start = Date.now();
+    try {
+      const res = await fetchWithAuth('/api/health');
+      if (!res.ok) throw new Error('Health check failed');
+      setLatency(Date.now() - start);
+    } catch {
+      setLatency(null);
+    } finally {
+      setPinging(false);
     }
   };
 
@@ -177,6 +240,55 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             <span className="text-slate-400 block">Row-Level Security</span>
             <span className="font-semibold text-emerald-600">Active (Tenant Isolated)</span>
           </div>
+        </div>
+      </div>
+
+      {/* GDPR Compliance — parity with mobile Security & GDPR tab */}
+      <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5" /> GDPR & Privacy Compliance
+        </h3>
+        <button
+          type="button"
+          onClick={handleExportGdpr}
+          disabled={exporting}
+          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-100 transition disabled:opacity-50"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700">
+            <Download className="w-4 h-4 text-indigo-600" /> Export Personal Data (Art.15/20)
+          </span>
+          {exporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" /> : <span className="text-xs text-slate-400">JSON</span>}
+        </button>
+        <button
+          type="button"
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          className="w-full p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between hover:bg-rose-100 transition disabled:opacity-50"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold text-rose-700">
+            <Trash2 className="w-4 h-4" /> Delete Account & Purge Data (Art.17)
+          </span>
+          {deleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" /> : <span className="text-[10px] text-rose-500">Irreversible</span>}
+        </button>
+      </div>
+
+      {/* Diagnostics — parity with mobile System tab */}
+      <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <Activity className="w-3.5 h-3.5" /> System Health & Diagnostics
+        </h3>
+        <div className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+          <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Wifi className="w-3.5 h-3.5 text-emerald-600" /> Backend</span>
+          <span className="font-mono text-[11px] text-slate-500 truncate max-w-[180px]">{process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500">Latency</span>
+          <span className="flex items-center gap-2">
+            {latency !== null && <span className="font-mono text-xs font-bold text-indigo-600">{latency} ms</span>}
+            <button type="button" onClick={handlePing} disabled={pinging} className="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 disabled:opacity-50">
+              {pinging ? 'Pinging...' : 'Ping Server'}
+            </button>
+          </span>
         </div>
       </div>
 
