@@ -22,9 +22,11 @@ import {
   MapPin,
   ChevronRight,
   Check,
-  AlertCircle
+  AlertCircle,
+  FileDown
 } from 'lucide-react';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
+import AtsExportModal from '@/components/export/AtsExportModal';
 
 export default function CandidatesPage() {
   const {
@@ -45,6 +47,7 @@ export default function CandidatesPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const [showAtsExport, setShowAtsExport] = useState(false);
 
   // Filter candidates
   const filteredCandidates = useMemo(() => {
@@ -127,6 +130,13 @@ export default function CandidatesPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAtsExport(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition shadow-sm"
+          >
+            <FileDown className="w-4 h-4 text-indigo-600" />
+            <span>ATS Export</span>
+          </button>
           <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm cursor-pointer disabled:opacity-50">
             <UploadCloud className="w-4 h-4" />
             <span>{isUploading ? 'Uploading...' : 'Ingest Resumes'}</span>
@@ -507,7 +517,8 @@ export default function CandidatesPage() {
             </table>
           </div>
         </div>
-      )}
+       )}
+      <AtsExportModal isOpen={showAtsExport} onClose={() => setShowAtsExport(false)} />
     </div>
   );
 }

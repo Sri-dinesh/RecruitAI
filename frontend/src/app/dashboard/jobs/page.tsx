@@ -19,9 +19,11 @@ import {
   DollarSign,
   GraduationCap,
   Award,
-  AlertCircle
+  AlertCircle,
+  FileDown
 } from 'lucide-react';
 import { useRecruitment } from '@/context/RecruitmentContext';
+import AtsExportModal from '@/components/export/AtsExportModal';
 
 export default function JobsPage() {
   const { jd, uploadJd, createSession, sessions, activeSessionId, setActiveSessionId } = useRecruitment();
@@ -30,6 +32,7 @@ export default function JobsPage() {
   const [jdText, setJdText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showAtsExport, setShowAtsExport] = useState(false);
 
   const handleUploadFile = async (file: File) => {
     setIsSubmitting(true);
@@ -93,13 +96,22 @@ export default function JobsPage() {
           </p>
         </div>
 
-        <button
-          onClick={handleNewPosition}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Requisition Campaign</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAtsExport(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition shadow-sm"
+          >
+            <FileDown className="w-4 h-4 text-indigo-600" />
+            <span>ATS Export</span>
+          </button>
+          <button
+            onClick={handleNewPosition}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Requisition Campaign</span>
+          </button>
+        </div>
       </div>
 
       {feedback && (
@@ -334,6 +346,8 @@ export default function JobsPage() {
         </div>
 
       </div>
+
+      <AtsExportModal isOpen={showAtsExport} onClose={() => setShowAtsExport(false)} />
     </div>
   );
 }
