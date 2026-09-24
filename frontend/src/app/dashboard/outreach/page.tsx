@@ -153,18 +153,38 @@ export default function OutreachPage() {
 
   const handleDispatch = async () => {
     if (!activeCandidate) return;
+    if (!activeCandidate.email) {
+      setDispatchStatus('Dispatch error: candidate has no email on file — add contact before sending.');
+      setTimeout(() => setDispatchStatus(null), 5000);
+      setShowConfirmModal(false);
+      return;
+    }
     setIsSending(true);
     setShowConfirmModal(false);
 
     try {
-      // Simulate real dispatcher / call API
-      const res = await fetchWithAuth('/api/chat', {
+      const email_draft = `Subject: ${subject}\n\n${body}`;
+      const res = await fetchWithAuth('/api/email/send', {
         method: 'POST',
         body: JSON.stringify({
-          message: `Candidate outreach message dispatched to ${activeCandidate.name} for role ${roleName}. Subject: "${subject}".`,
-          session_id: activeSessionId || 'default'
-        })
+          recipient_email: activeCandidate.email,
+          email_draft,
+        }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Email dispatch failed (${res.status})`);
+      }
+
+      // Keep chat-anchored history for audit parity with mobile (fire-and-forget)
+      fetchWithAuth('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: `Candidate outreach dispatched to ${activeCandidate.name} for role ${roleName}. Subject: "${subject}". Recipient: ${activeCandidate.email}`,
+          session_id: activeSessionId || 'default',
+        }),
+      }).catch(() => {});
 
       // Update candidate status accordingly
       if (selectedTemplateId === 'offer') {
@@ -175,10 +195,14 @@ export default function OutreachPage() {
         await handleSetStatus(activeCandidate.candidate_id, activeCandidate.name, 'rejected');
       }
 
-      setDispatchStatus(`Email dispatched successfully to ${activeCandidate.name} (${activeCandidate.email || 'candidate@domain.com'})!`);
-      setTimeout(() => setDispatchStatus(null), 5000);
+      const data = await res.json().catch(() => ({ status: 'sent' }));
+      const serverMsg: string = data.status || 'Email dispatched';
+      // Surface SMTP vs simulation transparently
+      setDispatchStatus(`${serverMsg} → ${activeCandidate.name} (${activeCandidate.email})`);
+      setTimeout(() => setDispatchStatus(null), 6000);
     } catch (err: any) {
       setDispatchStatus(`Dispatch error: ${err.message}`);
+      setTimeout(() => setDispatchStatus(null), 6000);
     } finally {
       setIsSending(false);
     }
