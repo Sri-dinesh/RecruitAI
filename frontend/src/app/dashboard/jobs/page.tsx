@@ -8,6 +8,7 @@ import {
   UploadCloud, 
   CheckCircle2, 
   Plus, 
+  Minus,
   Sliders, 
   Layers, 
   FileText, 
@@ -23,16 +24,56 @@ import {
   FileDown
 } from 'lucide-react';
 import { useRecruitment } from '@/context/RecruitmentContext';
+import { fetchWithAuth } from '@/lib/apiClient';
 import AtsExportModal from '@/components/export/AtsExportModal';
 
 export default function JobsPage() {
-  const { jd, uploadJd, createSession, sessions, activeSessionId, setActiveSessionId } = useRecruitment();
+  const { jd, uploadJd, createSession, sessions, activeSessionId, setActiveSessionId, refreshData } = useRecruitment();
 
   const [inputMode, setInputMode] = useState<'upload' | 'text'>('text');
   const [jdText, setJdText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showAtsExport, setShowAtsExport] = useState(false);
+
+  // Rubric calibration — parity with mobile RequisitionSpec:52 editable 5 pillars
+  const [rubric, setRubric] = useState([
+    { title: 'Technical Stack Proficiency', weight: 35, desc: 'Match percentage across required frameworks, languages, and technical dependencies.', color: 'text-brand-primary' },
+    { title: 'Experience & Seniority Alignment', weight: 25, desc: `Target threshold: ${jd?.experience_years || 5}+ years relevant domain history.`, color: 'text-purple-700' },
+    { title: 'System Architecture & Problem Solving', weight: 15, desc: 'Demonstrated capacity for scalable design, complexity, and tooling.', color: 'text-cyan-700' },
+    { title: 'Communication & Leadership Signals', weight: 15, desc: 'Cross-functional collaboration, mentorship, and articulate documentation.', color: 'text-emerald-700' },
+    { title: 'Domain Credentials & Education', weight: 10, desc: 'Degrees, professional certifications, and industry standards compliance.', color: 'text-amber-700' },
+  ]);
+  const totalWeight = rubric.reduce((acc, p) => acc + p.weight, 0);
+  const handleAdjustWeight = (idx: number, delta: number) => {
+    setRubric((prev) => prev.map((p, i) => (i === idx ? { ...p, weight: Math.max(5, Math.min(60, p.weight + delta)) } : p)));
+  };
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const handleApplyRubric = async () => {
+    if (totalWeight !== 100) {
+      setFeedback({ type: 'error', message: `Total must be 100% (currently ${totalWeight}%)` });
+      return;
+    }
+    if (!activeSessionId) {
+      setFeedback({ type: 'error', message: 'No active campaign — create a session first.' });
+      return;
+    }
+    setIsCalibrating(true);
+    try {
+      const summary = rubric.map((r) => `${r.title}: ${r.weight}%`).join(', ');
+      const res = await fetchWithAuth('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message: `Calibrate evaluation rubric with the following pillar weights: ${summary}. Re-score all candidates against this calibrated rubric.`, session_id: activeSessionId }),
+      });
+      if (!res.ok) throw new Error('Failed to calibrate rubric');
+      await refreshData();
+      setFeedback({ type: 'success', message: `Rubric calibrated to ${totalWeight}% — candidates re-scored.` });
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: e.message || 'Calibration failed' });
+    } finally {
+      setIsCalibrating(false);
+    }
+  };
 
   const handleUploadFile = async (file: File) => {
     setIsSubmitting(true);
@@ -199,42 +240,61 @@ export default function JobsPage() {
                 )}
               </div>
 
-              {/* 5-Pillar Candidate Scoring Rubric Framework */}
+              {/* 5-Pillar Candidate Scoring Rubric Framework — editable calibrator (parity with mobile) */}
               <div className="p-5 rounded-2xl bg-indigo-50/40 border border-indigo-100 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-extrabold text-xs uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-indigo-600" />
                     Autonomous 5-Pillar Scoring Rubric
                   </h3>
-                  <span className="text-[10px] font-bold text-indigo-600 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
-                    Active Algorithm
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${totalWeight === 100 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                    Total: {totalWeight}%
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Every ingested candidate resume is automatically parsed, cross-referenced with vector embeddings, and scored against these 5 weighted dimensions:
+                  Every ingested candidate is scored against these 5 weighted pillars. Adjust ±5% and apply to re-score — parity with mobile rubric calibrator.
                 </p>
 
                 <div className="space-y-2.5 pt-1">
-                  {[
-                    { title: 'Technical Stack Proficiency', weight: '35%', desc: 'Match percentage across required frameworks, languages, and technical dependencies.' },
-                    { title: 'Experience & Seniority Alignment', weight: '25%', desc: `Target threshold: ${jd.experience_years}+ years relevant domain history.` },
-                    { title: 'System Architecture & Problem Solving', weight: '15%', desc: 'Demonstrated capacity for scalable design, complexity, and tooling.' },
-                    { title: 'Communication & Leadership Signals', weight: '15%', desc: 'Cross-functional collaboration, mentorship, and articulate documentation.' },
-                    { title: 'Domain Credentials & Education', weight: '10%', desc: 'Degrees, professional certifications, and industry standards compliance.' },
-                  ].map((pillar, idx) => (
-                    <div key={idx} className="p-3 bg-white rounded-xl border border-indigo-100/80 flex items-start justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-900">{pillar.title}</span>
+                  {rubric.map((pillar, idx) => (
+                    <div key={idx} className="p-3 bg-white rounded-xl border border-indigo-100/80 flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-bold text-slate-900 block">{pillar.title}</span>
+                        <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{pillar.desc}</p>
+                        <div className="h-1 bg-slate-200 rounded-full mt-2 overflow-hidden">
+                          <div style={{ width: `${pillar.weight * 1.5}%` }} className="h-full bg-indigo-600 rounded-full" />
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{pillar.desc}</p>
                       </div>
-                      <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg shrink-0">
-                        {pillar.weight}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button type="button" onClick={() => handleAdjustWeight(idx, -5)} className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-50">
+                          <Minus className="w-3 h-3 text-indigo-600" />
+                        </button>
+                        <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg w-10 text-center">{pillar.weight}%</span>
+                        <button type="button" onClick={() => handleAdjustWeight(idx, 5)} className="w-6 h-6 rounded bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-50">
+                          <Plus className="w-3 h-3 text-indigo-600" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={handleApplyRubric}
+                  disabled={isCalibrating || totalWeight !== 100}
+                  className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition ${totalWeight === 100 ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
+                >
+                  {isCalibrating ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Calibrating...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Apply & Re-Score Candidates
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           ) : (
