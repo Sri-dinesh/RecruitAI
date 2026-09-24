@@ -18,6 +18,7 @@ import {
   FileText
 } from 'lucide-react';
 import { useRecruitment, ScheduledInterview } from '@/context/RecruitmentContext';
+import { fetchWithAuth } from '@/lib/apiClient';
 
 export default function InterviewsPage() {
   const {
@@ -65,23 +66,37 @@ export default function InterviewsPage() {
 
     try {
       const slotString = `${interviewDate} at ${interviewTime} UTC`;
+      const meetingLink = meetingUrl || `https://meet.recruitai.internal/${Math.random().toString(36).substring(2, 9)}`;
       const newInterview: ScheduledInterview = {
         candidate_name: cand.name,
         slot: slotString,
         mode: interviewMode,
-        meeting_link: meetingUrl || 'https://meet.google.com/rec-ruit-ai',
+        meeting_link: meetingLink,
         feedback: prepNotes,
         booked_at: new Date().toISOString()
-      };
+      } as any;
 
-      // Update local storage / context state or call session patch
-      const existing = scheduledInterviews || [];
-      const updated = [...existing, newInterview];
-      
-      // Save locally to localStorage fallback for immediate responsiveness
-      try {
-        localStorage.setItem(`recruitai_interviews_${activeSessionId || 'default'}`, JSON.stringify(updated));
-      } catch {}
+      // Persist via backend chat sync for cross-device parity (like mobile bookInterview)
+      if (activeSessionId) {
+        try {
+          const existing = scheduledInterviews || [];
+          await fetchWithAuth('/api/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+              message: `Confirm booking interview with ${cand.name} for ${slotString} (${interviewMode}) - Link: ${meetingLink}`,
+              session_id: activeSessionId,
+              scheduled_interviews: [...existing, newInterview],
+            }),
+          });
+        } catch (syncErr) {
+          console.warn('[Interviews] non-blocking sync failed', syncErr);
+        }
+      } else {
+        // Fallback localStorage for immediate responsiveness when no session
+        try {
+          localStorage.setItem(`recruitai_interviews_${activeSessionId || 'default'}`, JSON.stringify([...(scheduledInterviews || []), newInterview]));
+        } catch {}
+      }
 
       setFeedback(`Successfully scheduled interview with ${maskName(cand.name, cand.candidate_id)}!`);
       setIsModalOpen(false);
