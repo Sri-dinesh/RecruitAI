@@ -7,11 +7,24 @@ interface ActivityFeedProps {
   events: ActivityEvent[];
 }
 
+function normalizeEventType(raw: string): string {
+  const key = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  // Backend aliases — routes_analytics.py:538,549,559
+  if (key === 'candidate_ingested') return 'candidate_added';
+  if (key === 'interview_scheduled') return 'interview_scheduled';
+  if (key === 'status_changed') return 'application_updated';
+  return raw;
+}
+
 const EVENT_CONFIG: Record<string, { icon: React.ElementType; color: string; label: string }> = {
   candidate_added:       { icon: UserPlus,      color: '#6366f1', label: 'New Resume'         },
   application_updated:   { icon: RefreshCw,     color: '#8b5cf6', label: 'Status Update'      },
   interview_scheduled:   { icon: Calendar,      color: '#06b6d4', label: 'Interview Scheduled' },
   offer_made:            { icon: CheckCircle,   color: '#10b981', label: 'Offer Extended'      },
+  // Backend display-string aliases (direct match, no normalize needed)
+  'Candidate Ingested':  { icon: UserPlus,      color: '#6366f1', label: 'New Resume'         },
+  'Interview Scheduled': { icon: Calendar,      color: '#06b6d4', label: 'Interview Scheduled' },
+  'Status Changed':      { icon: RefreshCw,     color: '#8b5cf6', label: 'Status Update'      },
 };
 
 function timeAgo(dateStr: string): string {
@@ -39,7 +52,7 @@ export default function ActivityFeed({ events }: ActivityFeedProps) {
       style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
       <AnimatePresence>
         {events.map((event, i) => {
-          const cfg = EVENT_CONFIG[event.event_type] ?? EVENT_CONFIG.candidate_added;
+          const cfg = EVENT_CONFIG[event.event_type] ?? EVENT_CONFIG[normalizeEventType(event.event_type)] ?? EVENT_CONFIG.candidate_added;
           const Icon = cfg.icon;
           return (
             <motion.div

@@ -21,6 +21,18 @@ export const QualityHistogram: React.FC<QualityHistogramProps> = ({
     "60-74%": "#475569",
     "40-59%": "#D97706",
     "<40%": "#E11D48",
+    // Backend aliases — routes_analytics.py:328-332 (production parity)
+    "Top Tier (90-100%)": "#059669",
+    "Strong Fit (75-89%)": "#2563EB",
+    "Good Fit (60-74%)": "#475569",
+    "Fair Fit (40-59%)": "#D97706",
+    "Low Fit (<40%)": "#E11D48",
+    // Web aliases — MatchDistribution.tsx
+    "Excellent (90-100)": "#059669",
+    "Strong (75-89)": "#2563EB",
+    "Good (60-74)": "#475569",
+    "Fair (40-59)": "#D97706",
+    "Poor (0-39)": "#E11D48",
   };
 
   const defaultBuckets = [

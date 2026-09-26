@@ -10,6 +10,12 @@ const BUCKET_COLORS: Record<string, string> = {
   'Good (60-74)':       '#f59e0b',
   'Fair (40-59)':       '#f97316',
   'Poor (0-39)':        '#f43f5e',
+  // Backend aliases — routes_analytics.py:328-332 (production parity)
+  'Top Tier (90-100%)': '#10b981',
+  'Strong Fit (75-89%)': '#34d399',
+  'Good Fit (60-74%)':   '#f59e0b',
+  'Fair Fit (40-59%)':   '#f97316',
+  'Low Fit (<40%)':      '#f43f5e',
 };
 
 interface MatchDistributionProps {
