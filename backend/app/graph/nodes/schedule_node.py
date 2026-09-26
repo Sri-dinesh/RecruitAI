@@ -48,12 +48,20 @@ def _generate_slots(n: int = 5) -> List[dict]:
     return slots
 
 
-from app.graph.router_node import resolve_candidate_reference
+from app.graph.router_node import resolve_candidate_with_memory
 
 def _extract_candidate_info(query: str, state: RecruitState) -> Tuple[Optional[str], Optional[str]]:
-    """Extracts candidate (candidate_id, candidate_name) from query using resolve_candidate_reference."""
-    cid = resolve_candidate_reference(query, state)
+    """Extracts candidate (candidate_id, candidate_name) using conversational memory."""
     resumes = state.get("resumes", []) or state.get("last_shortlist") or []
+
+    # Supervisor-resolved memory wins (covers pronouns + bare follow-ups).
+    active_id = state.get("active_candidate_id")
+    if active_id:
+        c = next((cand for cand in resumes if cand.candidate_id == active_id), None)
+        if c:
+            return c.candidate_id, c.name
+
+    cid = resolve_candidate_with_memory(query, state, intent="schedule")
     if cid:
         c = next((cand for cand in resumes if cand.candidate_id == cid), None)
         if c:

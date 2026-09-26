@@ -1,7 +1,7 @@
 import re
 import json
 import time
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional
 from app.graph.state import RecruitState
 from app.core.llm_router import call_llm
 from app.core.logging import log_event, increment_turn
@@ -73,8 +73,8 @@ def rule_based_classify(query: str) -> Optional[Tuple[str, float]]:
     if re.search(r"\b(compare|side.by.side|vs|versus)\b", q):
         return "compare", 1.0
 
-    # 6. email/outreach check
-    if re.search(r"\b(email|draft|send email|write email|outreach)\b", q):
+    # 6. email/outreach check ("mail" covers "send mail", "mail them", "mail Alex")
+    if re.search(r"\b(e-?mail|draft|send e-?mail|send mail|write e-?mail|outreach)\b", q):
         return "email", 1.0
 
     # 7. skill trend check
@@ -232,6 +232,154 @@ def resolve_candidate_reference(query: str, state: RecruitState) -> Optional[str
         return all_resumes[0].candidate_id
 
     return None
+
+# Intents that operate on a candidate entity. Bare follow-ups for these intents
+# (e.g. "send mail", "schedule it") inherit conversational memory instead of
+# asking back. Role-level intents (salary, trend, ...) must NOT inherit.
+ENTITY_INTENTS = frozenset({
+    "email", "schedule", "interview_questions", "redflags", "compare", "query_candidate",
+})
+
+_PRONOUN_RE = re.compile(
+    r"\b(him|her|them|they|he|she|it|this person|that person|that candidate"
+    r"|those two|those candidates|both of them|the person|the candidate)\b"
+)
+
+_PLURAL_RE = re.compile(
+    r"\b(them|they|those two|those candidates|both of them|all of them|everyone"
+    r"|everybody|all candidates|both|all|them all)\b"
+)
+
+
+def _candidate_ids_in_text(text: str, resumes) -> List[str]:
+    """All candidate ids referenced in text, in mention order (deduped)."""
+    if not text or not resumes:
+        return []
+    q = text.lower()
+    ordered: List[str] = []
+    for candidate in resumes:
+        c_name_lower = candidate.name.lower()
+        matched = False
+        if c_name_lower in q:
+            matched = True
+        else:
+            name_parts = [part.strip() for part in re.split(r"[\s,\.\-_]+", c_name_lower) if len(part.strip()) > 2]
+            for part in name_parts:
+                if re.search(rf"\b{re.escape(part)}\b", q):
+                    matched = True
+                    break
+        if matched and candidate.candidate_id not in ordered:
+            ordered.append(candidate.candidate_id)
+    return ordered
+
+
+def _most_recent_mentioned_ids(history: List[dict], resumes, limit: int = 2) -> List[str]:
+    """
+    Walks conversation history newest-first (skipping the current user message
+    at the end) and returns recently mentioned candidate ids, most-recent first.
+    """
+    if not history or not resumes:
+        return []
+    seen: List[str] = []
+    # history[-1] is the current user message; explicit refs there are handled
+    # by resolve_candidate_reference, so scan everything before it.
+    for msg in reversed(history[:-1]):
+        content = msg.get("content", "") if isinstance(msg, dict) else ""
+        for cid in _candidate_ids_in_text(content, resumes):
+            if cid not in seen:
+                seen.append(cid)
+                if len(seen) >= limit:
+                    return seen
+    return seen
+
+
+def resolve_candidate_with_memory(
+    query: str,
+    state: RecruitState,
+    intent: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Memory-aware single-candidate resolution. Priority:
+    1. Explicit reference in the current message (name/token/ordinal).
+    2. Pronoun/anaphora in the message -> most recent history mention,
+       then focused_candidate_id, then active_candidate_id.
+    3. Bare follow-up for an entity intent -> focused_candidate_id,
+       then history mention, then active_candidate_id.
+    4. Legacy single-candidate fallback (kept for compat).
+    Returns candidate_id or None.
+    """
+    resumes = state.get("resumes", []) or []
+    history = state.get("conversation_history", []) or []
+
+    # 1. Explicit reference wins and is authoritative.
+    explicit = resolve_candidate_reference(query, state)
+    if explicit:
+        return explicit
+
+    focused = state.get("focused_candidate_id")
+    active = state.get("active_candidate_id")
+    q = (query or "").lower().strip()
+    has_pronoun = bool(_PRONOUN_RE.search(q))
+    needs_entity = intent in ENTITY_INTENTS if intent else True
+
+    # 2. Pronoun/anaphora -> history first (most recent discussion), then focus.
+    if has_pronoun:
+        recent = _most_recent_mentioned_ids(history, resumes, limit=1)
+        if recent:
+            return recent[0]
+        if focused and any(c.candidate_id == focused for c in resumes):
+            return focused
+        if active and any(c.candidate_id == active for c in resumes):
+            return active
+
+    # 3. Bare follow-up for entity intents inherits memory silently.
+    if needs_entity:
+        if focused and any(c.candidate_id == focused for c in resumes):
+            return focused
+        recent = _most_recent_mentioned_ids(history, resumes, limit=1)
+        if recent:
+            return recent[0]
+        if active and any(c.candidate_id == active for c in resumes):
+            return active
+
+    # 4. Legacy fallback: single loaded candidate + very short query.
+    if len(resumes) == 1 and len(q.split()) <= 4:
+        return resumes[0].candidate_id
+
+    return None
+
+
+def resolve_candidates_with_memory(query: str, state: RecruitState) -> List[str]:
+    """
+    Memory-aware multi-candidate resolution (compare flows, "mail them").
+    Returns ordered candidate ids (possibly empty).
+    """
+    resumes = state.get("resumes", []) or []
+    history = state.get("conversation_history", []) or []
+    if not resumes:
+        return []
+
+    # 1. All explicit mentions in the current message.
+    explicit = _candidate_ids_in_text(query, state.get("resumes", []) or [])
+    if explicit:
+        return explicit
+
+    q = (query or "").lower().strip()
+
+    # 2. Plural reference -> recent discussion set, then active set.
+    if _PLURAL_RE.search(q):
+        recent = _most_recent_mentioned_ids(history, resumes, limit=4)
+        if recent:
+            return recent
+        active_ids = [cid for cid in (state.get("active_candidate_ids") or [])
+                      if any(c.candidate_id == cid for c in resumes)]
+        if active_ids:
+            return active_ids
+
+    # 3. Fall back to single memory.
+    single = resolve_candidate_with_memory(query, state)
+    return [single] if single else []
+
 
 def route_and_log(query: str, state: RecruitState) -> Tuple[str, float, Optional[str]]:
     """

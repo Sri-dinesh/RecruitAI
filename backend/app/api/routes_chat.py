@@ -42,6 +42,7 @@ class ChatRequest(BaseModel):
     scheduled_interviews: Optional[List[Dict[str, Any]]] = None
     session_id: Optional[str] = None
     async_mode: Optional[bool] = False
+    focused_candidate_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -96,6 +97,7 @@ async def chat_endpoint(
             pending_confirmation=req.pending_confirmation,
             last_intent=req.last_intent,
             scheduled_interviews=req.scheduled_interviews,
+            focused_candidate_id=req.focused_candidate_id,
         )
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED,
@@ -120,6 +122,7 @@ async def chat_endpoint(
             pending_confirmation=req.pending_confirmation,
             last_intent=req.last_intent,
             scheduled_interviews=req.scheduled_interviews,
+            focused_candidate_id=req.focused_candidate_id,
         )
         return ChatResponse(**result)
     except Exception as exc:

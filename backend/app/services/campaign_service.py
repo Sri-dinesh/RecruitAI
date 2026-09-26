@@ -162,6 +162,7 @@ def execute_agent_turn(
     pending_confirmation: Optional[Dict[str, Any]],
     last_intent: Optional[str],
     scheduled_interviews: Optional[List[Dict[str, Any]]],
+    focused_candidate_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Executes a single agent turn:
@@ -204,6 +205,7 @@ def execute_agent_turn(
             last_intent=last_intent,
             scheduled_interviews=scheduled_interviews,
             user_id=user_id,
+            focused_candidate_id=focused_candidate_id,
         )
 
         # 3. Execute LangGraph agent

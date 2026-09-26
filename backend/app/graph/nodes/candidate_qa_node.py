@@ -20,15 +20,26 @@ def candidate_qa_node(state: RecruitState) -> dict:
     
     sanitizer = PiiSanitizer()
 
-    # 1. Identify target candidate
+    # 1. Identify target candidate (supervisor memory first for pronouns/follow-ups)
+    from app.graph.router_node import resolve_candidate_with_memory
+
     target_candidate: Optional[Candidate] = None
     query_lower = user_query.lower()
-    
-    for candidate in resumes:
-        name_parts = [p.lower() for p in candidate.name.split()]
-        if any(part in query_lower for part in name_parts if len(part) > 2) or candidate.candidate_id in query_lower:
-            target_candidate = candidate
-            break
+
+    memory_id = state.get("active_candidate_id") or resolve_candidate_with_memory(
+        user_query, state, intent="query_candidate"
+    )
+    if memory_id:
+        target_candidate = next(
+            (c for c in resumes if c.candidate_id == memory_id), None
+        )
+
+    if target_candidate is None:
+        for candidate in resumes:
+            name_parts = [p.lower() for p in candidate.name.split()]
+            if any(part in query_lower for part in name_parts if len(part) > 2) or candidate.candidate_id in query_lower:
+                target_candidate = candidate
+                break
             
     # 2. Retrieve candidate context
     context_text = ""
@@ -109,5 +120,7 @@ def candidate_qa_node(state: RecruitState) -> dict:
             "role": "assistant",
             "content": answer
         }],
-        "last_intent": "query_candidate"
+        "last_intent": "query_candidate",
+        # Keep the discussed candidate in focus for follow-ups ("send him...").
+        "active_candidate_id": target_candidate.candidate_id if target_candidate else state.get("active_candidate_id"),
     }

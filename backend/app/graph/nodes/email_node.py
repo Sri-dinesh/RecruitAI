@@ -9,19 +9,29 @@ from app.graph.state import RecruitState
 from app.tools.email_tool import draft_recruiter_email
 
 
-from app.graph.router_node import resolve_candidate_reference
-
 def _extract_candidate_name(query: str, state: RecruitState) -> Optional[str]:
     """
-    Tries to extract a candidate name from the query using resolve_candidate_reference.
+    Resolves the candidate name using conversational memory:
+    explicit reference -> supervisor-resolved active_candidate_id ->
+    legacy regex fallback.
     """
-    cid = resolve_candidate_reference(query, state)
+    from app.graph.router_node import resolve_candidate_with_memory
+
     resumes = state.get("resumes", []) or state.get("last_shortlist") or []
+
+    # Supervisor already memory-resolved this turn; trust it first.
+    active_id = state.get("active_candidate_id")
+    if active_id:
+        c = next((cand for cand in resumes if cand.candidate_id == active_id), None)
+        if c:
+            return c.name
+
+    cid = resolve_candidate_with_memory(query, state, intent="email")
     if cid:
         c = next((cand for cand in resumes if cand.candidate_id == cid), None)
         if c:
             return c.name
-            
+
     # Attempt regex extraction of any capitalized name pattern
     match = re.search(r"\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", query)
     if match:

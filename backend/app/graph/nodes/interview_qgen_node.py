@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 from app.graph.state import RecruitState
 from app.schemas.candidate_schema import Candidate
 from app.core.llm_router import call_llm
-from app.graph.router_node import resolve_candidate_reference
+from app.graph.router_node import resolve_candidate_with_memory
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import query_top_k
 
@@ -49,7 +49,7 @@ def interview_qgen_node(state: RecruitState) -> dict:
         }
 
     # 3. Check if user asked for JD/role-level interview questions
-    is_jd_level = bool(re.search(r"\b(job description|jd|for the role|role|general|position)\b", cleaned_msg)) and not resolve_candidate_reference(user_msg, state)
+    is_jd_level = bool(re.search(r"\b(job description|jd|for the role|role|general|position)\b", cleaned_msg)) and not resolve_candidate_with_memory(user_msg, state, intent="interview_questions")
 
     if is_jd_level:
         questions = _generate_jd_role_questions(jd)
@@ -60,10 +60,12 @@ def interview_qgen_node(state: RecruitState) -> dict:
             }]
         }
 
-    # 4. Resolve specific candidate ID
-    candidate_id = resolve_candidate_reference(user_msg, state)
+    # 4. Resolve specific candidate ID (supervisor memory first for pronouns/follow-ups)
+    candidate_id = state.get("active_candidate_id") or resolve_candidate_with_memory(
+        user_msg, state, intent="interview_questions"
+    )
     candidate: Optional[Candidate] = None
-    
+
     # If not resolved and resumes exist, check if there's only 1 candidate or ask
     if not candidate_id:
         if len(resumes) == 1:

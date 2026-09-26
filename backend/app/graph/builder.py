@@ -1,7 +1,12 @@
 import re
 from langgraph.graph import StateGraph, END
 from app.graph.state import RecruitState
-from app.graph.router_node import route_and_log
+from app.graph.router_node import (
+    route_and_log,
+    resolve_candidate_with_memory,
+    resolve_candidates_with_memory,
+    ENTITY_INTENTS,
+)
 
 # Import handler logic
 from app.graph.nodes.parse_jd_node import parse_jd_node
@@ -35,26 +40,44 @@ def supervisor_agent_node(state: RecruitState) -> dict:
     
     # 1. Pre-classify the user query to see if it's a new task
     intent, confidence, resolved_candidate = route_and_log(user_msg, state)
-    
-    # 2. Conversational Context & Follow-Up prompt resolution
+
+    # 2. Conversational entity memory: resolve who this turn is about.
+    #    Explicit references win; otherwise pronouns / bare follow-ups for
+    #    entity intents inherit focused candidate -> recent history -> prior turn.
+    memory_candidate = resolve_candidate_with_memory(user_msg, state, intent)
+    memory_candidates = resolve_candidates_with_memory(user_msg, state)
+    # Keep any previously resolved ids when the current turn adds nothing new.
+    if not memory_candidates:
+        prev_ids = state.get("active_candidate_ids") or []
+        prev_single = state.get("active_candidate_id")
+        if prev_single and prev_single not in prev_ids:
+            prev_ids = [prev_single] + prev_ids
+        memory_candidates = prev_ids
+    if not memory_candidate:
+        memory_candidate = state.get("active_candidate_id")
+
+    # 2b. Generic follow-up continuation: a bare follow-up for an entity
+    # intent with no explicit entity continues the memorized candidate instead
+    # of falling through to ask-backs. (Legacy hardcoded assistant-string
+    # checks below are kept as a safety net.)
     if len(history) >= 2:
         last_assistant_msg = history[-2]["content"].lower() if history[-2]["role"] == "assistant" else ""
-        
+
         # Follow-up on interview questions
         if "which candidate would you like to generate interview questions for" in last_assistant_msg or \
            "interview questions" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone|everybody|both|jd|job description|role)\b", cleaned_msg):
+            if resolved_candidate or memory_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone|everybody|both|jd|job description|role)\b", cleaned_msg):
                 intent = "interview_questions"
-                
+
         # Follow-up on email drafting
         elif "couldn't identify a candidate to draft the email for" in last_assistant_msg or \
              "draft the email" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
+            if resolved_candidate or memory_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
                 intent = "email"
-                
+
         # Follow-up on red flag checks
         elif "which candidate would you like to check red flags for" in last_assistant_msg:
-            if resolved_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
+            if resolved_candidate or memory_candidate or re.search(r"\b(for|with|about|candidate|top|all|everyone)\b", cleaned_msg):
                 intent = "redflags"
 
     pending = state.get("pending_confirmation")
@@ -76,7 +99,9 @@ def supervisor_agent_node(state: RecruitState) -> dict:
             
     return {
         "last_intent": intent,
-        "pending_confirmation": pending
+        "pending_confirmation": pending,
+        "active_candidate_id": memory_candidate,
+        "active_candidate_ids": memory_candidates,
     }
 
 def jd_agent_node(state: RecruitState) -> dict:
