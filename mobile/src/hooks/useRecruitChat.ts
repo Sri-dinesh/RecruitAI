@@ -31,7 +31,7 @@ export function useRecruitChat() {
 
   // Send message to /api/chat with dual-mode async job polling support
   const sendMessage = useCallback(
-    async (overrideText?: string, mentionedCandidate?: Candidate) => {
+    async (overrideText?: string, mentionedCandidate?: Candidate, focusedCandidateId?: string) => {
       const rawText = (overrideText || input).trim();
       if (!rawText || isLoading) return;
 
@@ -39,6 +39,9 @@ export function useRecruitChat() {
       if (mentionedCandidate && !textToSend.includes(mentionedCandidate.name)) {
         textToSend = `Regarding candidate ${mentionedCandidate.name}: ${textToSend}`;
       }
+      // Explicitly focused candidate (e.g. @-mention chip). Backend memory
+      // prefers in-message references first, so this never overrides names.
+      const focusedId = focusedCandidateId || mentionedCandidate?.candidate_id || undefined;
 
       setInput("");
       setIsLoading(true);
@@ -71,6 +74,7 @@ export function useRecruitChat() {
           scheduled_interviews: scheduledInterviews,
           session_id: activeSessionId || undefined,
           async_mode: true,
+          ...(focusedId ? { focused_candidate_id: focusedId } : {}),
         };
 
         const res = await fetchWithAuth("/api/chat", {

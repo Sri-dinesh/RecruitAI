@@ -89,7 +89,11 @@ export default function CopilotTab() {
   };
 
   const handleSendWithContext = (overrideText?: string) => {
-    sendMessage(overrideText, mentionedCandidate || undefined);
+    sendMessage(
+      overrideText,
+      mentionedCandidate || undefined,
+      mentionedCandidate?.candidate_id
+    );
     setMentionedCandidate(null);
   };
 
