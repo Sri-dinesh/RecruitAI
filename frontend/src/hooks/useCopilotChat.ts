@@ -10,6 +10,7 @@ interface UseCopilotChatOptions {
   messages?: ChatMessage[];
   setMessages?: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   onSessionUpdated?: () => void;
+  focusedCandidateId?: string | null;
 }
 
 export function useCopilotChat({
@@ -18,7 +19,8 @@ export function useCopilotChat({
   initialMessages,
   messages: externalMessages,
   setMessages: externalSetMessages,
-  onSessionUpdated
+  onSessionUpdated,
+  focusedCandidateId
 }: UseCopilotChatOptions = {}) {
   const [internalMessages, setInternalMessages] = useState<ChatMessage[]>(initialMessages || []);
   const messages = externalMessages !== undefined ? externalMessages : internalMessages;
@@ -119,6 +121,12 @@ export function useCopilotChat({
         client_timestamp: new Date().toISOString()
       };
 
+      // Focused candidate (e.g. open inspector) — backend memory prefers
+      // explicit references first, so this never overrides a named candidate.
+      if (focusedCandidateId) {
+        payload.focused_candidate_id = focusedCandidateId;
+      }
+
       if (jd) {
         payload.jd_structured = jd;
       }
@@ -177,7 +185,7 @@ export function useCopilotChat({
       setIsLoading(false);
       setCurrentStep(null);
     }
-  }, [input, isLoading, messages, activeSessionId, jd, onSessionUpdated, setMessages]);
+  }, [input, isLoading, messages, activeSessionId, jd, onSessionUpdated, setMessages, focusedCandidateId]);
 
   return {
     messages,

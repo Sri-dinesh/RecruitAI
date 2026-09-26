@@ -24,6 +24,7 @@ export interface ChatRequestPayload {
   session_id: string;
   jd_structured?: Record<string, any>;
   client_timestamp?: string;
+  focused_candidate_id?: string;
 }
 
 export interface ChatResponsePayload {

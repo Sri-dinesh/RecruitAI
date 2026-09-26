@@ -31,6 +31,7 @@ export default function CopilotPage() {
     activeSession,
     messages: sharedMessages,
     setMessages: sharedSetMessages,
+    inspectedCandidate,
   } = useRecruitment();
 
   // Initial welcome message configured with current position and candidate pool
@@ -76,7 +77,8 @@ Click any starter prompt below, use the **Presets Deck**, or type your own quest
     initialMessages: initialWelcome,
     messages: sharedMessages,
     setMessages: sharedSetMessages,
-    onSessionUpdated: refreshData
+    onSessionUpdated: refreshData,
+    focusedCandidateId: inspectedCandidate?.candidate_id ?? null
   });
 
   // UI Drawer and Popover state
