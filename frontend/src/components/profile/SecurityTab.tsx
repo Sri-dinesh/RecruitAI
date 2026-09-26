@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  AlertCircle, 
-  CheckCircle2, 
-  RefreshCw, 
-  Copy, 
-  Check, 
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
+  RefreshCw,
+  Copy,
+  Check,
   LogOut,
   Download,
   Trash2,
   Activity,
   Wifi,
-  Shield
+  Shield,
+  Scale,
+  Database
 } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/apiClient';
 
@@ -42,6 +44,11 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
   const [deleting, setDeleting] = useState(false);
   const [pinging, setPinging] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState<any | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [retentionLoading, setRetentionLoading] = useState(false);
+  const [retentionResult, setRetentionResult] = useState<any | null>(null);
 
   const handleCopyId = () => {
     if (userId) {
@@ -101,6 +108,44 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
       setLatency(null);
     } finally {
       setPinging(false);
+    }
+  };
+
+  const handleBiasAudit = async () => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const res = await fetchWithAuth('/api/privacy/bias-audit');
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as any).detail || `Audit failed (${res.status})`);
+      }
+      setAuditResult(await res.json());
+    } catch (e: any) {
+      setAuditError(e.message || 'Bias audit failed');
+      setAuditResult(null);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleRetentionRun = async () => {
+    if (!confirm('Run retention policy? Stale resumes (90d) and chats (365d) will be pruned per tenant. Continue?')) return;
+    setRetentionLoading(true);
+    try {
+      const res = await fetchWithAuth('/api/privacy/retention/run', {
+        method: 'POST',
+        body: JSON.stringify({ raw_resume_ttl_days: 90, chat_ttl_days: 365 }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as any).detail || `Retention failed (${res.status})`);
+      }
+      setRetentionResult(await res.json());
+    } catch (e: any) {
+      alert(e.message || 'Retention run failed');
+    } finally {
+      setRetentionLoading(false);
     }
   };
 
@@ -290,6 +335,68 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             </button>
           </span>
         </div>
+      </div>
+
+      {/* Compliance Audits — wires backend bias-audit + retention (parity) */}
+      <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <Scale className="w-3.5 h-3.5" /> Fairness & Retention Audits
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleBiasAudit}
+            disabled={auditLoading}
+            className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-100 transition disabled:opacity-50"
+          >
+            <span className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <Scale className="w-4 h-4 text-indigo-600" /> Run Bias Audit (LL144)
+            </span>
+            {auditLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />}
+          </button>
+          <button
+            type="button"
+            onClick={handleRetentionRun}
+            disabled={retentionLoading}
+            className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-100 transition disabled:opacity-50"
+          >
+            <span className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <Database className="w-4 h-4 text-indigo-600" /> Run Retention (90/365d)
+            </span>
+            {retentionLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />}
+          </button>
+        </div>
+        {auditError && (
+          <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {auditError}
+          </div>
+        )}
+        {auditResult && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-700">Sample: {auditResult.sample_size ?? '—'}</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${(auditResult.metrics?.adverse_impact_flagged ?? auditResult.status === 'insufficient_data') ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                {(auditResult.metrics?.adverse_impact_flagged) ? 'Review flagged' : (auditResult.status === 'insufficient_data' ? 'Insufficient data' : 'Pass 4/5ths')}
+              </span>
+            </div>
+            {auditResult.metrics && (
+              <div className="grid grid-cols-2 gap-2 font-mono text-[11px] text-slate-600">
+                <span>mean {auditResult.metrics.mean_score}</span>
+                <span>median {auditResult.metrics.median_score}</span>
+                <span>p20 {auditResult.metrics.p20_score}</span>
+                <span>p80 {auditResult.metrics.p80_score}</span>
+                <span>selection {auditResult.metrics.selection_rate}</span>
+                <span>impact {auditResult.metrics.impact_ratio}</span>
+              </div>
+            )}
+            {auditResult.message && <p className="text-[11px] text-slate-500">{auditResult.message}</p>}
+          </div>
+        )}
+        {retentionResult && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800">
+            Retention complete — {(retentionResult.summary && JSON.stringify(retentionResult.summary)) || 'pruned per 90/365d TTL'}.
+          </div>
+        )}
       </div>
 
       {/* Danger Zone: Sign Out */}
