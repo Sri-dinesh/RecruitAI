@@ -116,6 +116,7 @@ export default function OutreachPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState('interview');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -145,6 +146,13 @@ export default function OutreachPage() {
     }
   }, [selectedCandidateId, selectedTemplateId, activeCandidate, roleName, companyName]);
 
+  // Sync editable To field when switching candidates (preserve manual edits across template changes)
+  useEffect(() => {
+    if (activeCandidate) {
+      setRecipientEmail(activeCandidate.email || '');
+    }
+  }, [selectedCandidateId]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(`${subject}\n\n${body}`);
     setIsCopied(true);
@@ -153,8 +161,9 @@ export default function OutreachPage() {
 
   const handleDispatch = async () => {
     if (!activeCandidate) return;
-    if (!activeCandidate.email) {
-      setDispatchStatus('Dispatch error: candidate has no email on file — add contact before sending.');
+    const trimmedEmail = recipientEmail.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setDispatchStatus('Dispatch error: enter a valid recipient email before sending.');
       setTimeout(() => setDispatchStatus(null), 5000);
       setShowConfirmModal(false);
       return;
@@ -167,7 +176,7 @@ export default function OutreachPage() {
       const res = await fetchWithAuth('/api/email/send', {
         method: 'POST',
         body: JSON.stringify({
-          recipient_email: activeCandidate.email,
+          recipient_email: trimmedEmail,
           email_draft,
         }),
       });
@@ -181,7 +190,7 @@ export default function OutreachPage() {
       fetchWithAuth('/api/chat', {
         method: 'POST',
         body: JSON.stringify({
-          message: `Candidate outreach dispatched to ${activeCandidate.name} for role ${roleName}. Subject: "${subject}". Recipient: ${activeCandidate.email}`,
+          message: `Candidate outreach dispatched to ${activeCandidate.name} for role ${roleName}. Subject: "${subject}". Recipient: ${trimmedEmail}`,
           session_id: activeSessionId || 'default',
         }),
       }).catch(() => {});
@@ -198,7 +207,7 @@ export default function OutreachPage() {
       const data = await res.json().catch(() => ({ status: 'sent' }));
       const serverMsg: string = data.status || 'Email dispatched';
       // Surface SMTP vs simulation transparently
-      setDispatchStatus(`${serverMsg} → ${activeCandidate.name} (${activeCandidate.email})`);
+      setDispatchStatus(`${serverMsg} → ${activeCandidate.name} (${trimmedEmail})`);
       setTimeout(() => setDispatchStatus(null), 6000);
     } catch (err: any) {
       setDispatchStatus(`Dispatch error: ${err.message}`);
@@ -330,10 +339,22 @@ export default function OutreachPage() {
             {/* Recipient & Subject Fields */}
             <div className="space-y-3 text-xs">
               <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                <span className="font-bold text-slate-400 uppercase w-16">To:</span>
-                <span className="font-bold text-slate-800 truncate">
-                  {activeCandidate ? `${activeCandidate.name} <${activeCandidate.email || 'candidate@example.com'}>` : 'Select a candidate'}
-                </span>
+                <span className="font-bold text-slate-400 uppercase w-16 shrink-0">To:</span>
+                {activeCandidate ? (
+                  <span className="flex-1 flex items-center gap-2 min-w-0">
+                    <span className="font-bold text-slate-800 truncate shrink-0 max-w-[40%]">{activeCandidate.name}</span>
+                    <input
+                      type="email"
+                      value={recipientEmail}
+                      onChange={(e) => setRecipientEmail(e.target.value)}
+                      placeholder="candidate@example.com"
+                      aria-label="Recipient email"
+                      className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                  </span>
+                ) : (
+                  <span className="font-bold text-slate-400">Select a candidate</span>
+                )}
               </div>
 
               <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
@@ -367,7 +388,7 @@ export default function OutreachPage() {
 
               <button
                 type="button"
-                disabled={!activeCandidate || isSending}
+                disabled={!activeCandidate || !recipientEmail.trim() || isSending}
                 onClick={() => setShowConfirmModal(true)}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-2 shadow-sm"
               >
@@ -397,7 +418,7 @@ export default function OutreachPage() {
             <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
               <div>
                 <span className="text-slate-400 font-bold block text-[10px] uppercase">Recipient:</span>
-                <span className="font-bold text-slate-800">{activeCandidate?.name} &lt;{activeCandidate?.email || 'candidate@example.com'}&gt;</span>
+                <span className="font-bold text-slate-800">{activeCandidate?.name} &lt;{recipientEmail.trim() || 'candidate@example.com'}&gt;</span>
               </div>
               <div>
                 <span className="text-slate-400 font-bold block text-[10px] uppercase">Subject:</span>
