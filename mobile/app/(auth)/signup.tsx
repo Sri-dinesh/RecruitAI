@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { goBackOrReplace } from "@/lib/navigation";
 import * as WebBrowser from "expo-web-browser";
 import Animated, {
   useSharedValue,
@@ -130,7 +131,7 @@ export default function SignupScreen() {
             <TouchableOpacity
               onPress={() => {
                 selectionHaptic();
-                router.back();
+                goBackOrReplace(router, "/(auth)/welcome");
               }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               className="w-9 h-9 rounded-full bg-white border border-border items-center justify-center"

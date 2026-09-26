@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { goBackOrReplace } from "@/lib/navigation";
 import { Mail, ArrowRight, ChevronLeft, KeyRound, CheckCircle2, AlertCircle } from "lucide-react-native";
 import { useAuth } from "@/context/AuthContext";
 import { COLORS } from "@/constants/theme";
@@ -78,7 +79,7 @@ export default function ForgotPasswordScreen() {
           {/* Header Navigation */}
           <View className="flex-row items-center justify-between mb-4">
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => goBackOrReplace(router, "/(auth)/login")}
               className="flex-row items-center py-1 -ml-1"
             >
               <ChevronLeft size={20} color={COLORS.muted} />

@@ -12,6 +12,7 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { goBackOrReplace } from "@/lib/navigation";
 import * as Clipboard from "expo-clipboard";
 import {
   X,
@@ -132,7 +133,7 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
     if (onClose) {
       onClose();
     } else {
-      router.back();
+      goBackOrReplace(router, "/(app)/(tabs)");
     }
   };
 

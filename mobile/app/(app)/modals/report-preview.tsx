@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { goBackOrReplace } from "@/lib/navigation";
 import {
   X,
   FileText,
@@ -76,7 +77,7 @@ export default function ReportPreviewModal() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => goBackOrReplace(router, "/(app)/(tabs)/workspace")}
           className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
           activeOpacity={0.7}
         >

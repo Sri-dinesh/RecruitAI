@@ -10,6 +10,7 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { goBackOrReplace } from "@/lib/navigation";
 import {
   X,
   Star,
@@ -194,7 +195,7 @@ export default function CandidateInspectorModal() {
             const ok = await deleteCandidate(candidate.candidate_id);
             setIsDeleting(false);
             if (ok) {
-              router.back();
+              goBackOrReplace(router, "/(app)/(tabs)/candidates");
             } else {
               showModal({
                 title: "Erasure Error",
@@ -222,7 +223,7 @@ export default function CandidateInspectorModal() {
           The requested candidate record could not be located in this campaign session.
         </Text>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => goBackOrReplace(router, "/(app)/(tabs)/candidates")}
           className="bg-brand-primary px-4 py-2 rounded-[6px]"
         >
           <Text className="font-sans-bold text-xs text-white">Go Back</Text>
@@ -316,7 +317,7 @@ export default function CandidateInspectorModal() {
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => goBackOrReplace(router, "/(app)/(tabs)/candidates")}
           className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center"
           activeOpacity={0.7}
         >

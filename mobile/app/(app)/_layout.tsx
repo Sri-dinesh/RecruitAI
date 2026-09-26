@@ -63,6 +63,14 @@ export default function AppLayout() {
               animation: "slide_from_bottom",
             }}
           />
+          <Stack.Screen
+            name="modals/profile-settings"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
         </Stack>
       </BottomSheetModalProvider>
     </RecruitProvider>
