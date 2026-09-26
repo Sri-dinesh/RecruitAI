@@ -97,6 +97,17 @@ export default function CandidatesTab() {
     setSortBy(sortBy === "match" ? "name" : "match");
   }, [sortBy, setSortBy]);
 
+  const handleOpenEmail = useCallback(
+    (candidate: Candidate) => {
+      selectionHaptic();
+      router.push({
+        pathname: "/(app)/(tabs)/workspace",
+        params: { tool: "email", candidateId: candidate.candidate_id },
+      });
+    },
+    [router]
+  );
+
   const renderCandidateItem = useCallback(
     ({ item, index }: { item: Candidate; index: number }) => {
       const status = candidateStatuses[item.candidate_id];
@@ -110,6 +121,7 @@ export default function CandidatesTab() {
           isBlindHiring={isBlindHiring}
           isSaving={isSaving}
           onPress={() => handleOpenInspector(item)}
+          onEmail={() => handleOpenEmail(item)}
           onShortlist={() =>
             toggleCandidateStatus(item.candidate_id, item.name, "shortlisted")
           }
@@ -145,6 +157,7 @@ export default function CandidatesTab() {
       statusSaving,
       isBlindHiring,
       handleOpenInspector,
+      handleOpenEmail,
       toggleCandidateStatus,
       showModal,
     ]

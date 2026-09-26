@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   Platform,
   RefreshControl,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   Briefcase,
   Sliders,
@@ -29,11 +29,22 @@ import { selectionHaptic, impactHaptic } from "@/lib/haptics";
 
 type WorkspaceTool = "job" | "compare" | "schedule" | "email" | "intel";
 
+const TOOL_KEYS: WorkspaceTool[] = ["job", "compare", "schedule", "email", "intel"];
+
 export default function WorkspaceTab() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tool?: string; candidateId?: string }>();
   const { refreshActiveSession } = useRecruit();
   const [activeTool, setActiveTool] = useState<WorkspaceTool>("compare");
   const [refreshing, setRefreshing] = useState(false);
+
+  // Deep link support: e.g. router.push({ pathname: "/(app)/(tabs)/workspace",
+  // params: { tool: "email", candidateId } }) opens the Email Drafter preselected.
+  useEffect(() => {
+    if (params.tool && (TOOL_KEYS as string[]).includes(params.tool)) {
+      setActiveTool(params.tool as WorkspaceTool);
+    }
+  }, [params.tool, params.candidateId]);
 
   const handleRefresh = useCallback(async () => {
     impactHaptic();
@@ -177,7 +188,12 @@ export default function WorkspaceTab() {
         {activeTool === "job" && <RequisitionSpec />}
         {activeTool === "compare" && <CompareMatrix />}
         {activeTool === "schedule" && <SlotScheduler />}
-        {activeTool === "email" && <EmailDrafter />}
+        {activeTool === "email" && (
+          <EmailDrafter
+            key={params.candidateId || "default"}
+            initialCandidateId={params.candidateId}
+          />
+        )}
         {activeTool === "intel" && (
           <View className="p-4">
             <LiveIntelligenceCard />

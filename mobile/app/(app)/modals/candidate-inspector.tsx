@@ -473,6 +473,26 @@ export default function CandidateInspectorModal() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Email Candidate — opens Workspace Email Drafter preselected */}
+          <TouchableOpacity
+            onPress={() => {
+              selectionHaptic();
+              router.push({
+                pathname: "/(app)/(tabs)/workspace",
+                params: { tool: "email", candidateId: candidate.candidate_id },
+              });
+            }}
+            activeOpacity={0.7}
+            accessibilityLabel="Email candidate"
+            accessibilityRole="button"
+            className="mt-2.5 flex-row items-center justify-center py-2.5 rounded-xl bg-brand-primary"
+          >
+            <Mail size={14} color="#FFFFFF" />
+            <Text className="font-sans-bold text-xs text-white ml-2">
+              Email {isBlindHiring ? "Candidate" : candidate.name.split(" ")[0]}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* 5-Pillar Recruiter Rubric Scoring Section */}

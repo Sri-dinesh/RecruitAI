@@ -25,7 +25,11 @@ import { selectionHaptic, successHaptic, warningHaptic } from "@/lib/haptics";
 type Tone = "Professional" | "Casual" | "Direct";
 type TemplateType = "invite" | "offer" | "followup" | "reject";
 
-export const EmailDrafter: React.FC = () => {
+interface EmailDrafterProps {
+  initialCandidateId?: string;
+}
+
+export const EmailDrafter: React.FC<EmailDrafterProps> = ({ initialCandidateId }) => {
   const { candidates, jd, setMessages, isBlindHiring } = useRecruit();
 
   const [recipient, setRecipient] = useState("");
@@ -36,8 +40,18 @@ export const EmailDrafter: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
 
-  // Selected candidate to auto-populate
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
+  // Selected candidate to auto-populate (deep-linkable via initialCandidateId)
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>(initialCandidateId || "");
+
+  // Honor deep-linked candidate (e.g. from candidate card / inspector)
+  useEffect(() => {
+    if (
+      initialCandidateId &&
+      candidates.some((c) => c.candidate_id === initialCandidateId)
+    ) {
+      setSelectedCandidateId(initialCandidateId);
+    }
+  }, [initialCandidateId, candidates]);
 
   const populateTemplate = (
     tmpl: TemplateType,
@@ -395,7 +409,7 @@ export const EmailDrafter: React.FC = () => {
             onPress={() => handleSendEmail(false)}
             disabled={isSending}
             activeOpacity={0.8}
-            className={`flex-2 flex-row items-center justify-center py-2.5 rounded-[6px] ${
+            className={`flex-[2] flex-row items-center justify-center py-2.5 rounded-[6px] ${
               sendSuccess ? "bg-emerald-600" : "bg-brand-primary"
             }`}
           >

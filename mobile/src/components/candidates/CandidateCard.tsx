@@ -23,6 +23,7 @@ interface CandidateCardProps {
   onShortlist: () => void;
   onOffer: () => void;
   onReject: () => void;
+  onEmail?: () => void;
 }
 
 export const CandidateCard: React.FC<CandidateCardProps> = ({
@@ -35,6 +36,7 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
   onShortlist,
   onOffer,
   onReject,
+  onEmail,
 }) => {
   // Blind hiring masking
   const getInitials = (name?: string) => {
@@ -155,6 +157,17 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
                   {scoreBadge.label}
                 </Text>
               </View>
+            )}
+            {onEmail && (
+              <TouchableOpacity
+                onPress={onEmail}
+                activeOpacity={0.7}
+                accessibilityLabel="Email candidate"
+                accessibilityRole="button"
+                className="w-7 h-7 rounded-full bg-indigo-50 border border-indigo-200 items-center justify-center"
+              >
+                <Mail size={13} color={COLORS.brandPrimary} />
+              </TouchableOpacity>
             )}
             <ChevronRight size={15} color={COLORS.muted} />
           </View>
