@@ -273,6 +273,34 @@ export default function CandidateDrawer({ candidate: propCandidate, onClose: pro
             </div>
           </div>
 
+          {/* Red Flags + Consent — parity with mobile */}
+          <div className="grid grid-cols-1 gap-3">
+            {activeCandidate.red_flags && activeCandidate.red_flags.length > 0 ? (
+              <div className="p-4 border border-rose-200 rounded-2xl bg-rose-50/60 space-y-2">
+                <span className="text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  Red Flags & Risk Signals
+                </span>
+                {activeCandidate.red_flags.map((flag, idx) => (
+                  <div key={idx} className="flex items-start gap-2 bg-white border border-rose-200 px-3 py-2 rounded-xl">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                    <span className="text-xs text-rose-800 font-medium leading-relaxed">{flag}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-4 py-2.5 border border-emerald-200 rounded-xl bg-emerald-50/60 text-xs text-emerald-700 font-medium">
+                ✓ No red flags detected
+              </div>
+            )}
+            {(activeCandidate as any).consent_version && (
+              <div className="flex items-center gap-2 px-4 py-2.5 border border-blue-200 rounded-xl bg-blue-50/60 text-xs text-blue-700 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                Consent Verified — v{(activeCandidate as any).consent_version}
+              </div>
+            )}
+          </div>
+
           {/* Work Experience / Resume Snippet */}
           {activeCandidate.raw_text && (
             <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/70 space-y-2">

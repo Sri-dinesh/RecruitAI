@@ -23,7 +23,9 @@ import {
   ChevronRight,
   Check,
   AlertCircle,
-  FileDown
+  FileDown,
+  ShieldCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
 import AtsExportModal from '@/components/export/AtsExportModal';
@@ -309,6 +311,11 @@ export default function CandidatesPage() {
                         <p className="text-xs text-slate-400 truncate">
                           {cand.headline || 'Candidate Profile'}
                         </p>
+                        {(cand as any).consent_version && (
+                          <span className="inline-flex items-center gap-1 mt-1 bg-blue-50 border border-blue-200/80 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                            <ShieldCheck className="w-2.5 h-2.5" /> Consent Verified
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -363,6 +370,16 @@ export default function CandidatesPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Red Flags Alert — parity with mobile CandidateCard */}
+                  {cand.red_flags && cand.red_flags.length > 0 && (
+                    <div className="mt-2.5 flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span className="text-[11px] text-rose-800 font-medium truncate">
+                        Flag: {cand.red_flags[0]}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Action Buttons */}
@@ -451,6 +468,18 @@ export default function CandidatesPage() {
                             </span>
                             <span className="text-[11px] text-slate-400 block truncate max-w-xs">
                               {cand.headline || cand.location || 'Profile'}
+                            </span>
+                            <span className="flex items-center gap-1 mt-1">
+                              {(cand as any).consent_version && (
+                                <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200/80 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                  <ShieldCheck className="w-2.5 h-2.5" /> Consent
+                                </span>
+                              )}
+                              {cand.red_flags && cand.red_flags.length > 0 && (
+                                <span className="inline-flex items-center gap-1 bg-rose-50 border border-rose-200 text-rose-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                  <AlertTriangle className="w-2.5 h-2.5" /> Flag
+                                </span>
+                              )}
                             </span>
                           </div>
                         </div>

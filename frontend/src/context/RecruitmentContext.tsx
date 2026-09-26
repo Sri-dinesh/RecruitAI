@@ -41,6 +41,10 @@ export interface Candidate {
   certifications?: string[];
   links?: string[];
   languages?: string[];
+  consent_at?: string | null;
+  consent_version?: string | null;
+  source?: string | null;
+  status?: CandidateStatus | 'new';
 }
 
 export interface JobDescription {

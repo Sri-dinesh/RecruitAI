@@ -17,7 +17,9 @@ import {
   Briefcase, 
   ChevronRight,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  ShieldCheck
 } from 'lucide-react';
 import { useRecruitment, Candidate, CandidateStatus } from '@/context/RecruitmentContext';
 
@@ -290,6 +292,42 @@ export default function ComparePage() {
                       <span className="text-xs text-emerald-600 font-medium">✓ No identified skill gaps</span>
                     )}
                   </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Matrix Section: Red Flags — parity with mobile CompareMatrix */}
+            <div className="p-4 bg-rose-50/60 border-b border-rose-100 text-xs font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> Red Flags & Risk Signals
+            </div>
+            <div className={`grid grid-cols-${selectedCandidates.length} divide-x divide-slate-100 border-b border-slate-200`}>
+              {selectedCandidates.map((cand) => (
+                <div key={cand.candidate_id} className="p-6 space-y-2">
+                  {cand.red_flags && cand.red_flags.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {cand.red_flags.slice(0, 3).map((flag, idx) => (
+                        <div key={idx} className="flex items-start gap-1.5 bg-rose-50 border border-rose-200 px-2.5 py-1.5 rounded-lg">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                          <span className="text-xs text-rose-800 font-medium leading-relaxed">{flag}</span>
+                        </div>
+                      ))}
+                      {(cand as any).consent_version && (
+                        <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 px-2.5 py-1 rounded-lg">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="text-[11px] text-blue-700 font-bold">Consent Verified</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-emerald-600 font-medium">✓ No red flags detected</span>
+                      {(cand as any).consent_version && (
+                        <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200/80 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          <ShieldCheck className="w-3 h-3" /> Consent
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
