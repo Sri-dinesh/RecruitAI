@@ -71,6 +71,8 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
   const [fullName, setFullName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [companyWebsite, setCompanyWebsite] = useState("");
+  const [department, setDepartment] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("recruiter");
 
@@ -96,6 +98,10 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [pingingApi, setPingingApi] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState<any | null>(null);
+  const [retentionLoading, setRetentionLoading] = useState(false);
+  const [retentionResult, setRetentionResult] = useState<any | null>(null);
 
   // Hydrate fields from profile
   useEffect(() => {
@@ -103,6 +109,8 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
       setFullName(profile.full_name || user?.user_metadata?.full_name || "");
       setCompanyName(profile.company_name || "");
       setCompanyWebsite(profile.company_website || "");
+      setDepartment((profile as any).department || "");
+      setAvatarUrl(profile.avatar_url || (user?.user_metadata as any)?.avatar_url || "");
       setPhone(profile.phone || "");
       setRole(profile.role || "recruiter");
 
@@ -137,9 +145,11 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
         full_name: fullName.trim(),
         company_name: companyName.trim(),
         company_website: companyWebsite.trim(),
+        department: department.trim() || null,
+        avatar_url: avatarUrl.trim() || null,
         phone: phone.trim(),
         role: role as any,
-      });
+      } as any);
       if (error) throw error;
       successHaptic();
       showModal({
@@ -338,6 +348,44 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
       setLatencyMs(null);
     } finally {
       setPingingApi(false);
+    }
+  };
+
+  const handleBiasAudit = async () => {
+    selectionHaptic();
+    setAuditLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/privacy/bias-audit");
+      if (!res.ok) throw new Error(`Audit failed (${res.status})`);
+      const data = await res.json();
+      setAuditResult(data);
+      successHaptic();
+    } catch (err: any) {
+      warningHaptic();
+      showModal({ type: "error", title: "Bias Audit Failed", message: err.message || "Could not run audit." });
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleRetentionRun = async () => {
+    selectionHaptic();
+    setRetentionLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/privacy/retention/run", {
+        method: "POST",
+        body: JSON.stringify({ raw_resume_ttl_days: 90, chat_ttl_days: 365 }),
+      });
+      if (!res.ok) throw new Error(`Retention failed (${res.status})`);
+      const data = await res.json();
+      setRetentionResult(data);
+      successHaptic();
+      showModal({ type: "success", title: "Retention Complete", message: "Stale resumes (90d) and chats (365d) pruned per tenant." });
+    } catch (err: any) {
+      warningHaptic();
+      showModal({ type: "error", title: "Retention Failed", message: err.message || "Could not run retention." });
+    } finally {
+      setRetentionLoading(false);
     }
   };
 
@@ -579,6 +627,38 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
                     onChangeText={setPhone}
                     placeholder="+1 (555) 019-2834"
                     keyboardType="phone-pad"
+                    className="flex-1 font-sans text-xs text-foreground ml-2 p-0"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              {/* Department — parity with web/backend user_schema */}
+              <View>
+                <Text className="font-sans-medium text-xs text-foreground mb-1">Department</Text>
+                <View className="flex-row items-center bg-[#F8F6F2] border border-border rounded-[6px] px-3 py-2">
+                  <Building size={14} color={COLORS.muted} />
+                  <TextInput
+                    value={department}
+                    onChangeText={setDepartment}
+                    placeholder="e.g., Engineering, Talent Acquisition"
+                    className="flex-1 font-sans text-xs text-foreground ml-2 p-0"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              {/* Avatar URL — parity with web ProfileTab */}
+              <View>
+                <Text className="font-sans-medium text-xs text-foreground mb-1">Avatar Image URL</Text>
+                <View className="flex-row items-center bg-[#F8F6F2] border border-border rounded-[6px] px-3 py-2">
+                  <User size={14} color={COLORS.muted} />
+                  <TextInput
+                    value={avatarUrl}
+                    onChangeText={setAvatarUrl}
+                    placeholder="https://example.com/avatar.png"
+                    autoCapitalize="none"
+                    keyboardType="url"
                     className="flex-1 font-sans text-xs text-foreground ml-2 p-0"
                     placeholderTextColor="#94A3B8"
                   />
@@ -1130,6 +1210,45 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
               <View className="flex-row items-center justify-between p-2.5 bg-[#F8F6F2] rounded border border-border">
                 <Text className="font-sans-medium text-xs text-foreground">AI Orchestration</Text>
                 <Text className="font-sans-bold text-xs text-brand-primary">LangGraph Multi-Agent</Text>
+              </View>
+
+              {/* Fairness & Retention Audits — parity with web */}
+              <View className="bg-white border border-border rounded-[6px] p-4 shadow-xs gap-3">
+                <Text className="font-sans-bold text-xs text-muted uppercase tracking-wider">
+                  Fairness & Retention Audits
+                </Text>
+                <TouchableOpacity
+                  onPress={handleBiasAudit}
+                  disabled={auditLoading}
+                  activeOpacity={0.7}
+                  className="p-3 bg-[#F8F6F2] border border-border rounded-[6px] flex-row items-center justify-between"
+                >
+                  <Text className="font-sans-bold text-xs text-foreground">Run Bias Audit (LL144)</Text>
+                  {auditLoading ? <ActivityIndicator size="small" color={COLORS.brandPrimary} /> : <ChevronRight size={14} color={COLORS.muted} />}
+                </TouchableOpacity>
+                {auditResult && (
+                  <View className="p-2.5 bg-[#F8F6F2] rounded border border-border">
+                    <Text className="font-sans-bold text-xs text-foreground">Sample: {auditResult.sample_size ?? '—'}</Text>
+                    {auditResult.metrics && (
+                      <Text className="font-mono text-[11px] text-muted mt-1">
+                        mean {auditResult.metrics.mean_score} • median {auditResult.metrics.median_score} • impact {auditResult.metrics.impact_ratio}
+                      </Text>
+                    )}
+                    {auditResult.message && <Text className="font-sans text-[11px] text-muted mt-1">{auditResult.message}</Text>}
+                  </View>
+                )}
+                <TouchableOpacity
+                  onPress={handleRetentionRun}
+                  disabled={retentionLoading}
+                  activeOpacity={0.7}
+                  className="p-3 bg-[#F8F6F2] border border-border rounded-[6px] flex-row items-center justify-between"
+                >
+                  <Text className="font-sans-bold text-xs text-foreground">Run Retention (90/365d)</Text>
+                  {retentionLoading ? <ActivityIndicator size="small" color={COLORS.brandPrimary} /> : <ChevronRight size={14} color={COLORS.muted} />}
+                </TouchableOpacity>
+                {retentionResult && (
+                  <Text className="font-sans text-[11px] text-emerald-700">Retention complete — pruned per 90/365d TTL.</Text>
+                )}
               </View>
             </View>
           </View>

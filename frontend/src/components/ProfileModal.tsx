@@ -40,6 +40,7 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
   const [role, setRole] = useState('recruiter');
   const [companyName, setCompanyName] = useState('');
   const [companyWebsite, setCompanyWebsite] = useState('');
+  const [department, setDepartment] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
 
   // Preferences state
@@ -66,6 +67,7 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
       setRole(profile?.role || 'recruiter');
       setCompanyName(profile?.company_name || '');
       setCompanyWebsite(profile?.company_website || '');
+      setDepartment((profile as any)?.department || '');
       setAvatarUrl(profile?.avatar_url || user?.user_metadata?.avatar_url || '');
 
       const prefs: UserPreferences = profile?.preferences || {};
@@ -115,9 +117,10 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
       role,
       company_name: companyName.trim() || null,
       company_website: companyWebsite.trim() || null,
+      department: department.trim() || null,
       avatar_url: avatarUrl.trim() || null,
       preferences: updatedPreferences,
-    };
+    } as any;
 
     const { error } = await updateProfile(updates);
 
@@ -237,6 +240,8 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
                   setCompanyName={setCompanyName}
                   companyWebsite={companyWebsite}
                   setCompanyWebsite={setCompanyWebsite}
+                  department={department}
+                  setDepartment={setDepartment}
                   avatarUrl={avatarUrl}
                   setAvatarUrl={setAvatarUrl}
                   userEmail={user?.email}

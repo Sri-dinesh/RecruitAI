@@ -34,6 +34,8 @@ export interface ProfileTabProps {
   setCompanyName: (val: string) => void;
   companyWebsite: string;
   setCompanyWebsite: (val: string) => void;
+  department: string;
+  setDepartment: (val: string) => void;
   avatarUrl: string;
   setAvatarUrl: (val: string) => void;
   userEmail?: string;
@@ -51,6 +53,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   setCompanyName,
   companyWebsite,
   setCompanyWebsite,
+  department,
+  setDepartment,
   avatarUrl,
   setAvatarUrl,
   userEmail,
@@ -60,6 +64,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
   const phoneId = useId();
   const companyId = useId();
   const websiteId = useId();
+  const departmentId = useId();
   const avatarId = useId();
 
   return (
@@ -220,6 +225,20 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({
               />
             </div>
           </div>
+        </div>
+
+        <div>
+          <label htmlFor={departmentId} className="block text-xs font-semibold text-slate-700 mb-1">
+            Department
+          </label>
+          <input
+            id={departmentId}
+            type="text"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            placeholder="e.g., Engineering, Talent Acquisition"
+            className="w-full px-3 py-2 text-sm text-slate-800 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-brand-primary"
+          />
         </div>
 
         <div>
