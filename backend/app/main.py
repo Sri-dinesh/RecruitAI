@@ -16,6 +16,7 @@ from app.api.routes_evaluate import router as evaluate_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_users import router as users_router
 from app.api.routes_privacy import router as privacy_router
+from app.api.routes_payments import router as payments_router
 from app.core.config import verify_provider_compliance, IS_PRODUCTION, ALLOWED_ORIGINS
 from app.core.auth import get_current_user_id
 
@@ -69,6 +70,7 @@ app.include_router(ingest_router, prefix="/api")
 app.include_router(evaluate_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(users_router)
+app.include_router(payments_router)
 
 
 @app.get("/")
