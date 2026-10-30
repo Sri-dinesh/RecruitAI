@@ -4,9 +4,8 @@
     "slug": "recruitai",
     "scheme": "recruitai",
     "version": "1.1.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
     "primaryColor": "#1B2A4A",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -24,8 +23,8 @@
       }
     },
     "android": {
-      "versionCode": 4,
-      "softwareKeyboardLayoutMode": "pan",
+      "versionCode": 5,
+      "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": false,
       "adaptiveIcon": {
         "backgroundColor": "#F8F6F2",
@@ -35,7 +34,7 @@
       },
       "package": "com.recruitai.app",
       "playStoreUrl": "https://play.google.com/store/apps/details?id=com.recruitai.app",
-      "predictiveBackGestureEnabled": false,
+      "predictiveBackGestureEnabled": true,
       "permissions": [],
       "intentFilters": [
         {
@@ -85,7 +84,10 @@
           "android": {
             "minSdkVersion": 24,
             "compileSdkVersion": 36,
-            "targetSdkVersion": 36
+            "targetSdkVersion": 36,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.facebook.react.** { *; }\n-keep class com.swmansion.reanimated.** { *; }\n-keep class com.gorhom.bottomsheet.** { *; }\n-keep class com.horcrux.svg.** { *; }\n-dontwarn com.facebook.react.**\n-dontwarn okhttp3.**"
           }
         }
       ]

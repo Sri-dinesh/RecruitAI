@@ -224,7 +224,6 @@ export const ModalProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           transparent
           visible={visible}
           animationType="none"
-          statusBarTranslucent
           onRequestClose={() => {
             if (options.dismissable !== false) {
               hideModal();

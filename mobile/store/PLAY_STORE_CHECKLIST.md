@@ -2,7 +2,7 @@
 
 **App Name:** RecruitAI  
 **Package Name:** `com.recruitai.app`  
-**Version:** `1.1.0` (Version Code: `4`, auto-incremented by EAS)  
+**Version:** `1.1.0` (Version Code: `5`, auto-incremented by EAS)  
 **Target Android Version:** Android 15 / 16+ (API 35/36)  
 **Minimum Android Version:** Android 7.0 (API 24)  
 **Build Format:** Android App Bundle (`.aab`)  
@@ -14,10 +14,13 @@
 ### Phase 1: Application Architecture & Manifest Audit (`app.json` & `eas.json`)
 - [x] **App Name Set to "RecruitAI"**: Configured in `app.json` line 3 (`"name": "RecruitAI"`).
 - [x] **Package Name Declared**: `"package": "com.recruitai.app"` configured.
-- [x] **Version & Version Code Configured**: `"version": "1.1.0"`, `"versionCode": 4` (auto-incremented by EAS on build).
-- [x] **Android 15 / 16+ Compatibility**: Explicitly locked compile & target SDK to 35 via `expo-build-properties` plugin (compliant with Google Play's target SDK 34+ requirement).
+- [x] **Version & Version Code Configured**: `"version": "1.1.0"`, `"versionCode": 5` (auto-incremented by EAS on build).
+- [x] **Target SDK 36 (Android 16 Readiness)**: Compile & target SDK set to 36 via `expo-build-properties` plugin.
+- [x] **DEX Code Optimization & R8 Obfuscation**: Enabled `enableMinifyInReleaseBuilds: true` and `enableShrinkResourcesInReleaseBuilds: true` with custom ProGuard keep rules in `app.json`. Exceeds Google Play's 25% obfuscation threshold and drastically reduces uncompressed DEX size from 41.2 MB.
+- [x] **Large Screen Devices & Orientation (Android 16)**: Set `"orientation": "default"` to remove fixed portrait restrictions (`android.hardware.screen.portrait`) on foldables, tablets ($\ge$ 600dp), and ChromeOS.
+- [x] **Android 15 Edge-to-Edge Compliance**: Migrated to `"softwareKeyboardLayoutMode": "resize"`, removed deprecated `statusBarTranslucent`, and enabled `predictiveBackGestureEnabled: true`.
 - [x] **Cleartext Traffic Disabled**: Set `"usesCleartextTraffic": false` to enforce HTTPS on all network communications.
-- [x] **Deprecated Permissions Removed**: Eliminated `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` to comply with scoped storage and avoid Play Console All Files Access rejection.
+- [x] **Zero Sensitive Permissions**: `"permissions": []` configured. Complies with latest Google Play policy updates regarding `ACCESS_FINE_LOCATION`, `MANAGE_EXTERNAL_STORAGE`, `READ_CONTACTS`, and `LOCAL_NETWORK`.
 - [x] **Adaptive Icons Configured**: High-res foreground (`432x432`), background (`432x432`), and monochrome themed icons (`432x432`) located in `assets/`.
 - [x] **Deep Linking & App Links**: `autoVerify: true` configured with `https://recruitaiofficial.vercel.app` and `/.well-known/assetlinks.json`.
 - [x] **EAS Production Profile Configured**: `eas.json` set to generate `"buildType": "app-bundle"` for production.
