@@ -14,14 +14,16 @@ import {
   Save, 
   RefreshCw, 
   CheckCircle2, 
-  AlertCircle 
+  AlertCircle,
+  CreditCard 
 } from 'lucide-react';
 import { ProfileTab } from './profile/ProfileTab';
 import { PreferencesTab } from './profile/PreferencesTab';
 import { NotificationsTab } from './profile/NotificationsTab';
 import { SecurityTab } from './profile/SecurityTab';
+import { BillingTab } from './profile/BillingTab';
 
-export type ProfileTabType = 'profile' | 'preferences' | 'notifications' | 'security';
+export type ProfileTabType = 'profile' | 'preferences' | 'billing' | 'notifications' | 'security';
 
 export interface ProfileModalProps {
   isOpen: boolean;
@@ -188,6 +190,7 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
             {[
               { id: 'profile', label: 'Profile & Info', icon: User },
               { id: 'preferences', label: 'AI & Screening', icon: Sliders },
+              { id: 'billing', label: 'Billing & Quota', icon: CreditCard },
               { id: 'notifications', label: 'Notifications', icon: Bell },
               { id: 'security', label: 'Security & Auth', icon: Lock },
             ].map((tab) => {
@@ -263,6 +266,10 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
                 />
               )}
 
+              {activeTab === 'billing' && (
+                <BillingTab />
+              )}
+
               {activeTab === 'notifications' && (
                 <NotificationsTab
                   emailAlerts={emailAlerts}
@@ -288,7 +295,7 @@ export default function ProfileModal({ isOpen, onClose, initialTab = 'profile' }
         </div>
 
         {/* Modal Footer (Save & Feedback) */}
-        {activeTab !== 'security' && (
+        {activeTab !== 'security' && activeTab !== 'billing' && (
           <div className="px-6 py-4 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <AnimatePresence>
