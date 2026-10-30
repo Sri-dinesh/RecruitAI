@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 
+import app.core.config as config
 from app.schemas.payment_schema import PricingPlan, CreateOrderResponse
 from app.rag.vector_store import get_supabase_client
 
@@ -64,9 +65,9 @@ DEFAULT_FREE_CREDITS = 10
 
 class PaymentService:
     def __init__(self):
-        self.key_id = os.getenv("RAZORPAY_KEY_ID", "")
-        self.key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
-        self.webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+        self.key_id = getattr(config, "RAZORPAY_KEY_ID", "") or os.getenv("RAZORPAY_KEY_ID", "")
+        self.key_secret = getattr(config, "RAZORPAY_KEY_SECRET", "") or os.getenv("RAZORPAY_KEY_SECRET", "")
+        self.webhook_secret = getattr(config, "RAZORPAY_WEBHOOK_SECRET", "") or os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 
     def get_plans(self) -> List[PricingPlan]:
         return list(AVAILABLE_PLANS.values())
