@@ -10,11 +10,12 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user_id
 from app.rag.vector_store import get_supabase_client
+from app.services.payment_service import payment_service
 
 router = APIRouter()
 
@@ -58,6 +59,18 @@ def save_candidate_evaluation(
     client = get_supabase_client()
     norm_cand_id = _to_uuid_str(req.candidate_id)
     norm_user_id = _to_uuid_str(user_id)
+
+    # Check candidate evaluation quota
+    current_credits = payment_service.get_user_credits(user_id)
+    if current_credits <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "INSUFFICIENT_CREDITS",
+                "message": "Candidate evaluation quota reached. Please upgrade to continue.",
+                "upgrade_url": "/pricing",
+            },
+        )
 
     eval_payload = {
         "candidate_id": req.candidate_id,
@@ -168,6 +181,16 @@ def save_candidate_evaluation(
     except Exception as e:
         logging.error(f"[routes_evaluate] DB sync error for candidate rubric: {e}")
         raise HTTPException(status_code=500, detail=f"Database error saving evaluation: {e}")
+
+    # Deduct 1 analysis credit
+    try:
+        payment_service.consume_credits(
+            user_id=user_id,
+            amount=1,
+            reason=f"Candidate rubric evaluation: {req.candidate_id}",
+        )
+    except Exception as e:
+        logging.warning(f"Failed to deduct credit during candidate evaluation: {e}")
 
     return {
         "status": "success",

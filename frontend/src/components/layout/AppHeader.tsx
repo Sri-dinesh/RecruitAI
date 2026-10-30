@@ -96,6 +96,18 @@ export default function AppHeader({ onOpenMobileMenu, onOpenSettings }: AppHeade
           </span>
         </div>
 
+        {/* Upgrade / Billing Quota CTA */}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="text-[11px] font-semibold px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          title="Manage Subscription & Candidate Analysis Credits"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="hidden sm:inline">Upgrade & Credits</span>
+          <span className="sm:hidden">Quota</span>
+        </button>
+
         {/* Settings button */}
         <button
           type="button"
