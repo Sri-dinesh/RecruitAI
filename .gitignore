@@ -1,4 +1,5 @@
 plans/
+!plans/monetization-razorpay-roadmap.md
 # Environment variables
 .env
 .env.*

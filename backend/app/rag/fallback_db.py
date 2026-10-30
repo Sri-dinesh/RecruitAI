@@ -227,6 +227,37 @@ class FallbackSupabaseClient:
             )
         """)
 
+        # ── 9. subscriptions table (MONETIZATION) ───────────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                plan_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                razorpay_order_id TEXT,
+                razorpay_payment_id TEXT,
+                razorpay_subscription_id TEXT,
+                current_period_start TIMESTAMP,
+                current_period_end TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)")
+
+        # ── 10. credit_transactions table (MONETIZATION) ────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS credit_transactions (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_id ON credit_transactions(user_id)")
+
 
         # Ensure any missing columns from previous schemas are automatically migrated
         def _ensure_col(tbl: str, col: str, col_type: str):
@@ -248,6 +279,11 @@ class FallbackSupabaseClient:
         _ensure_col("chat_sessions", "user_id", "TEXT NOT NULL DEFAULT 'local_dev_user_123'")
         _ensure_col("chat_sessions", "job_id", "TEXT")
         _ensure_col("chat_sessions", "updated_at", "TIMESTAMP")
+        _ensure_col("users", "credits_balance", "INTEGER NOT NULL DEFAULT 10")
+        try:
+            cursor.execute("UPDATE users SET credits_balance = 10 WHERE credits_balance IS NULL")
+        except Exception:
+            pass
 
         # Migrate interviews.scheduled_at if legacy SQLite file had NOT NULL (BUG-4)
         try:
@@ -580,6 +616,11 @@ class TableBuilder:
                             cursor.execute("INSERT OR IGNORE INTO session_candidates (session_id, candidate_id) VALUES (?, ?)", (d['session_id'], d['candidate_id']))
                             upserted_rows.append({"session_id": d['session_id'], "candidate_id": d['candidate_id']})
                             continue
+                    elif self.table_name == 'subscriptions' and 'user_id' in d:
+                        cursor.execute("SELECT id FROM subscriptions WHERE user_id = ?", (d['user_id'],))
+                        found = cursor.fetchone()
+                        if found:
+                            existing_id = found['id']
                     elif 'id' in d and d['id']:
                         cursor.execute(f"SELECT id FROM {self.table_name} WHERE id = ?", (d['id'],))
                         found = cursor.fetchone()

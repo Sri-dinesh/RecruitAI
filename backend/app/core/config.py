@@ -57,6 +57,11 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_SENDER = os.getenv("SMTP_SENDER", SMTP_USERNAME)
 
+# Razorpay Monetization Configuration
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
+
 # AI Security & Privacy Compliance (AI-SEC-1)
 # Production Gate: Defaults to 'zero_retention_verified' for enterprise privacy compliance
 LLM_DATA_USE_MODE = os.getenv("LLM_DATA_USE_MODE", "zero_retention_verified")
