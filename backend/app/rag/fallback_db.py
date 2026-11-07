@@ -596,36 +596,38 @@ class TableBuilder:
                 for row_data in rows_to_upsert:
                     d = self._serialize_row(row_data)
                     existing_id = None
-                    if self.table_name == 'applications' and 'job_id' in d and 'candidate_id' in d:
-                        cursor.execute("SELECT id FROM applications WHERE job_id = ? AND candidate_id = ?", (d['job_id'], d['candidate_id']))
-                        found = cursor.fetchone()
-                        if found:
-                            existing_id = found['id']
-                    elif self.table_name == 'users' and 'email' in d:
-                        cursor.execute("SELECT id FROM users WHERE email = ?", (d['email'],))
-                        found = cursor.fetchone()
-                        if found:
-                            existing_id = found['id']
-                    elif self.table_name == 'session_candidates' and 'session_id' in d and 'candidate_id' in d:
-                        cursor.execute("SELECT session_id, candidate_id FROM session_candidates WHERE session_id = ? AND candidate_id = ?", (d['session_id'], d['candidate_id']))
-                        found = cursor.fetchone()
-                        if found:
-                            upserted_rows.append(self._deserialize_row(found))
-                            continue
-                        else:
-                            cursor.execute("INSERT OR IGNORE INTO session_candidates (session_id, candidate_id) VALUES (?, ?)", (d['session_id'], d['candidate_id']))
-                            upserted_rows.append({"session_id": d['session_id'], "candidate_id": d['candidate_id']})
-                            continue
-                    elif self.table_name == 'subscriptions' and 'user_id' in d:
-                        cursor.execute("SELECT id FROM subscriptions WHERE user_id = ?", (d['user_id'],))
-                        found = cursor.fetchone()
-                        if found:
-                            existing_id = found['id']
-                    elif 'id' in d and d['id']:
+                    if 'id' in d and d['id']:
                         cursor.execute(f"SELECT id FROM {self.table_name} WHERE id = ?", (d['id'],))
                         found = cursor.fetchone()
                         if found:
                             existing_id = found['id']
+
+                    if not existing_id:
+                        if self.table_name == 'applications' and 'job_id' in d and 'candidate_id' in d:
+                            cursor.execute("SELECT id FROM applications WHERE job_id = ? AND candidate_id = ?", (d['job_id'], d['candidate_id']))
+                            found = cursor.fetchone()
+                            if found:
+                                existing_id = found['id']
+                        elif self.table_name == 'users' and 'email' in d:
+                            cursor.execute("SELECT id FROM users WHERE email = ?", (d['email'],))
+                            found = cursor.fetchone()
+                            if found:
+                                existing_id = found['id']
+                        elif self.table_name == 'session_candidates' and 'session_id' in d and 'candidate_id' in d:
+                            cursor.execute("SELECT session_id, candidate_id FROM session_candidates WHERE session_id = ? AND candidate_id = ?", (d['session_id'], d['candidate_id']))
+                            found = cursor.fetchone()
+                            if found:
+                                upserted_rows.append(self._deserialize_row(found))
+                                continue
+                            else:
+                                cursor.execute("INSERT OR IGNORE INTO session_candidates (session_id, candidate_id) VALUES (?, ?)", (d['session_id'], d['candidate_id']))
+                                upserted_rows.append({"session_id": d['session_id'], "candidate_id": d['candidate_id']})
+                                continue
+                        elif self.table_name == 'subscriptions' and 'user_id' in d:
+                            cursor.execute("SELECT id FROM subscriptions WHERE user_id = ?", (d['user_id'],))
+                            found = cursor.fetchone()
+                            if found:
+                                existing_id = found['id']
 
                     if existing_id:
                         d['id'] = existing_id
