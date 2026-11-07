@@ -15,7 +15,12 @@ import {
   ShieldCheck,
   RefreshCw,
   Copy,
-  Check
+  Check,
+  Zap,
+  ExternalLink,
+  ChevronRight,
+  Eye,
+  X
 } from 'lucide-react';
 import { useRecruitment, Candidate } from '@/context/RecruitmentContext';
 import { fetchWithAuth } from '@/lib/apiClient';
@@ -25,6 +30,18 @@ interface EmailTemplate {
   name: string;
   subject: string;
   bodyGenerator: (cand: Candidate, role: string, company: string) => string;
+}
+
+interface OutreachLog {
+  id: string;
+  candidate_id?: string;
+  recipient_email: string;
+  subject: string;
+  body: string;
+  template_id?: string;
+  status: 'sent' | 'simulated' | 'failed' | string;
+  error_message?: string;
+  created_at: string;
 }
 
 const TEMPLATES: EmailTemplate[] = [
@@ -121,13 +138,52 @@ export default function OutreachPage() {
   const [isSending, setIsSending] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState<string | null>(null);
+  const [quotaExceededError, setQuotaExceededError] = useState<string | null>(null);
+
+  // Outreach history & quota state
+  const [history, setHistory] = useState<OutreachLog[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
+  const [previewItem, setPreviewItem] = useState<OutreachLog | null>(null);
+
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetchWithAuth('/api/email/history?limit=20');
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.items || []);
+      }
+    } catch (err) {
+      console.warn('[OutreachPage] Failed to fetch outreach history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const fetchCredits = async () => {
+    try {
+      const res = await fetchWithAuth('/api/payments/transactions');
+      if (res.ok) {
+        const data = await res.json();
+        setCreditsRemaining(data.credits_balance ?? null);
+      }
+    } catch {
+      // Fallback silently if offline/unreachable
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+    fetchCredits();
+  }, []);
 
   // Initialize selected candidate
   useEffect(() => {
     if (!selectedCandidateId && candidates.length > 0) {
       setSelectedCandidateId(candidates[0].candidate_id);
     }
-  }, [candidates]);
+  }, [candidates, selectedCandidateId]);
 
   const activeCandidate = candidates.find(c => c.candidate_id === selectedCandidateId);
   const roleName = jd?.role || 'Senior Software Engineer';
@@ -146,12 +202,12 @@ export default function OutreachPage() {
     }
   }, [selectedCandidateId, selectedTemplateId, activeCandidate, roleName, companyName]);
 
-  // Sync editable To field when switching candidates (preserve manual edits across template changes)
+  // Sync editable To field when switching candidates
   useEffect(() => {
     if (activeCandidate) {
       setRecipientEmail(activeCandidate.email || '');
     }
-  }, [selectedCandidateId]);
+  }, [selectedCandidateId, activeCandidate]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(`${subject}\n\n${body}`);
@@ -170,16 +226,26 @@ export default function OutreachPage() {
     }
     setIsSending(true);
     setShowConfirmModal(false);
+    setQuotaExceededError(null);
 
     try {
-      const email_draft = `Subject: ${subject}\n\n${body}`;
       const res = await fetchWithAuth('/api/email/send', {
         method: 'POST',
         body: JSON.stringify({
           recipient_email: trimmedEmail,
-          email_draft,
+          subject,
+          body,
+          candidate_id: activeCandidate.candidate_id,
+          template_id: selectedTemplateId,
         }),
       });
+
+      if (res.status === 402) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData?.detail?.message || 'Candidate outreach quota exhausted. Please upgrade your subscription to continue.';
+        setQuotaExceededError(msg);
+        return;
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -206,9 +272,14 @@ export default function OutreachPage() {
 
       const data = await res.json().catch(() => ({ status: 'sent' }));
       const serverMsg: string = data.status || 'Email dispatched';
-      // Surface SMTP vs simulation transparently
+      if (typeof data.credits_remaining === 'number') {
+        setCreditsRemaining(data.credits_remaining);
+      }
       setDispatchStatus(`${serverMsg} → ${activeCandidate.name} (${trimmedEmail})`);
       setTimeout(() => setDispatchStatus(null), 6000);
+
+      // Refresh recent logs
+      fetchHistory();
     } catch (err: any) {
       setDispatchStatus(`Dispatch error: ${err.message}`);
       setTimeout(() => setDispatchStatus(null), 6000);
@@ -229,22 +300,52 @@ export default function OutreachPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Compose and review AI-personalized communications before transmission to candidates
+            Compose, audit, and dispatch AI-personalized recruiter communications to candidates
           </p>
         </div>
 
-        <Link
-          href="/dashboard/candidates"
-          className="px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
-        >
-          Candidate Pipeline
-        </Link>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {creditsRemaining !== null && (
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-indigo-50/80 border border-indigo-100 text-indigo-900 text-xs font-bold">
+              <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
+              <span>{creditsRemaining} Credits Remaining</span>
+            </div>
+          )}
+          <Link
+            href="/pricing"
+            className="px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+          >
+            <span>Top-up / Upgrade</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+          <Link
+            href="/dashboard/candidates"
+            className="px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+          >
+            Pipeline
+          </Link>
+        </div>
       </div>
+
+      {quotaExceededError && (
+        <div className="p-4 rounded-3xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{quotaExceededError}</span>
+          </div>
+          <Link
+            href="/pricing"
+            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition shrink-0"
+          >
+            View Plans
+          </Link>
+        </div>
+      )}
 
       {dispatchStatus && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-between animate-in fade-in">
           <span>{dispatchStatus}</span>
-          <button onClick={() => setDispatchStatus(null)} className="font-bold underline text-xs">Dismiss</button>
+          <button onClick={() => setDispatchStatus(null)} className="font-bold underline text-xs cursor-pointer">Dismiss</button>
         </div>
       )}
 
@@ -271,7 +372,7 @@ export default function OutreachPage() {
                     <button
                       key={cand.candidate_id}
                       onClick={() => setSelectedCandidateId(cand.candidate_id)}
-                      className={`w-full p-2.5 rounded-2xl text-left transition flex items-center gap-3 border ${
+                      className={`w-full p-2.5 rounded-2xl text-left transition flex items-center gap-3 border cursor-pointer ${
                         isSelected
                           ? 'bg-indigo-50 border-indigo-200 text-indigo-950 shadow-sm'
                           : 'bg-white hover:bg-slate-50 border-slate-100 text-slate-700'
@@ -303,7 +404,7 @@ export default function OutreachPage() {
                   <button
                     key={tmpl.id}
                     onClick={() => setSelectedTemplateId(tmpl.id)}
-                    className={`w-full p-3 rounded-2xl text-left transition border ${
+                    className={`w-full p-3 rounded-2xl text-left transition border cursor-pointer ${
                       isSelected
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                         : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
@@ -323,13 +424,13 @@ export default function OutreachPage() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="font-extrabold text-base text-slate-900">Email Composer & Review</h3>
-                <p className="text-xs text-slate-400">Personalized using parsed candidate skills & active job spec</p>
+                <p className="text-xs text-slate-400">Personalized using candidate skills & active job spec</p>
               </div>
 
               <button
                 type="button"
                 onClick={handleCopy}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-bold transition flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
               >
                 {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{isCopied ? 'Copied!' : 'Copy Text'}</span>
@@ -383,14 +484,14 @@ export default function OutreachPage() {
             <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-100">
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Requires manual confirmation prior to delivery.</span>
+                <span>Requires manual confirmation prior to delivery. Consumes 1 credit.</span>
               </div>
 
               <button
                 type="button"
                 disabled={!activeCandidate || !recipientEmail.trim() || isSending}
                 onClick={() => setShowConfirmModal(true)}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-2 shadow-sm"
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black rounded-2xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>Review & Dispatch</span>
@@ -398,7 +499,89 @@ export default function OutreachPage() {
             </div>
           </div>
         </div>
+      </div>
 
+      {/* Dispatched Outreach Audit Log Section */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="font-extrabold text-base text-slate-900">Dispatched Outreach Log & Audit Trail</h3>
+            <p className="text-xs text-slate-400">Verifiable delivery records and communications history</p>
+          </div>
+          <button
+            onClick={fetchHistory}
+            disabled={loadingHistory}
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-50 transition cursor-pointer"
+            title="Refresh history"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingHistory ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 text-xs">
+            <Mail className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p>No outreach emails dispatched yet.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                  <th className="pb-3 font-black">Date & Time</th>
+                  <th className="pb-3 font-black">Recipient</th>
+                  <th className="pb-3 font-black">Subject</th>
+                  <th className="pb-3 font-black">Delivery Channel</th>
+                  <th className="pb-3 font-black text-right">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {history.map((item) => {
+                  const dateStr = new Date(item.created_at).toLocaleString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50/60 transition group">
+                      <td className="py-3 font-medium text-slate-500 whitespace-nowrap">{dateStr}</td>
+                      <td className="py-3 font-bold text-slate-800 whitespace-nowrap">{item.recipient_email}</td>
+                      <td className="py-3 max-w-xs truncate text-slate-600">{item.subject}</td>
+                      <td className="py-3 whitespace-nowrap">
+                        {item.status === 'sent' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            SMTP Dispatched
+                          </span>
+                        ) : item.status === 'simulated' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <Clock className="w-3 h-3 text-indigo-600" />
+                            Simulated Mode
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            <AlertCircle className="w-3 h-3 text-rose-600" />
+                            Failed
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => setPreviewItem(item)}
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 hover:border-indigo-300 text-slate-600 hover:text-indigo-600 text-[11px] font-semibold transition cursor-pointer"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Confirmation Modal */}
@@ -427,14 +610,14 @@ export default function OutreachPage() {
             </div>
 
             <p className="text-xs text-slate-500 leading-relaxed">
-              This will record the outreach communication in your session history and update the candidate&apos;s status accordingly.
+              This will record the communication in your session history, deduct 1 credit from your quota balance, and update the candidate&apos;s status accordingly.
             </p>
 
             <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
               >
                 Back to Edit
               </button>
@@ -442,9 +625,50 @@ export default function OutreachPage() {
                 type="button"
                 disabled={isSending}
                 onClick={handleDispatch}
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm"
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
               >
                 {isSending ? 'Dispatching...' : 'Confirm & Dispatch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message Body Preview Modal */}
+      {previewItem && (
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-extrabold text-sm text-slate-900">Outreach Message Record</h3>
+              </div>
+              <button
+                onClick={() => setPreviewItem(null)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                <div><span className="font-bold text-slate-400">To:</span> <span className="font-medium text-slate-800">{previewItem.recipient_email}</span></div>
+                <div><span className="font-bold text-slate-400">Subject:</span> <span className="font-bold text-slate-800">{previewItem.subject}</span></div>
+                <div><span className="font-bold text-slate-400">Date:</span> <span className="text-slate-600">{new Date(previewItem.created_at).toLocaleString()}</span></div>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl max-h-60 overflow-y-auto custom-scrollbar font-mono text-[11px] whitespace-pre-wrap text-slate-800">
+                {previewItem.body}
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setPreviewItem(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

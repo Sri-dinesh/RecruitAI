@@ -54,7 +54,20 @@ Each step is developed on an isolated branch (`feat/<step-name>`), verified thro
 - [x] Dedicated `BillingTab` in Profile Modal with active plan badge, quota health gauge, upgrade cards, and credit audit history.
 - [x] Header quota quick-access CTA in `AppHeader.tsx`.
 
-### Step 5: Mobile App Upgrade Bridge [UPCOMING]
+### Step 5: Candidate Outreach Dispatch & Delivery Audit [COMPLETED]
+- [x] Supabase PostgreSQL & SQLite fallback table:
+  - `outreach_logs` (id, user_id, candidate_id, recipient_email, subject, body, template_id, status, error_message, created_at).
+- [x] Credit quota gating (HTTP 402 `INSUFFICIENT_CREDITS`) & 1-credit consumption ledger for candidate outreach communications.
+- [x] Outreach dispatch history & audit APIs:
+  - `GET /api/email/history` (Recruiter communication audit log with candidate filtering and multi-tenant isolation).
+  - `GET /api/email/stats` (Aggregated delivery counts: SMTP, simulated, failed).
+- [x] Frontend Outreach Dashboard enhancement:
+  - Live quota credit gauge with direct "+ Top-up / Upgrade" link to `/pricing`.
+  - HTTP 402 quota paywall alert banner with direct upgrade action.
+  - "Dispatched Outreach Log & Audit Trail" table with timestamps, recipient, subject, delivery badges (SMTP vs Simulated), and full email body preview drawer.
+- [x] Test suite in `backend/tests/test_email.py` covering SMTP dispatch, simulation fallback, credit deduction, HTTP 402 quota exhaustion, history filtering, and multi-tenant data isolation.
+
+### Step 6: Mobile App Upgrade Bridge [UPCOMING]
 - [ ] Add Upgrade CTA in Mobile profile and quota banner.
 - [ ] Seamless web-checkout bridge or in-app payment link.
 
@@ -65,7 +78,8 @@ Each step is developed on an isolated branch (`feat/<step-name>`), verified thro
 | Date | Branch | Changes & Milestones | Verification |
 | :--- | :--- | :--- | :--- |
 | **2026-10-29** | `feat/monetization-razorpay-roadmap` | Steps 1 & 2: Added Razorpay order creation, HMAC-SHA256 signature verification, and `/api/payments/*` routes. | `pytest tests/test_payments.py` (6 passed) |
-| **2026-10-30** | `feat/subscription-credits-gating` | Steps 3 & 4: Subscriptions & credit transaction persistence, quota paywall gating (HTTP 402), webhook event dispatching, Next.js Razorpay Checkout integration, and Profile Billing modal. | `pytest` (45 passed), `npm run build` (46/46 static pages generated) |
+| **2026-10-30** | `feat/subscription-credits-gating` | Steps 3 & 4: Subscriptions & credit transaction persistence, quota paywall gating (HTTP 402), webhook event dispatching, Next.js Razorpay Checkout integration, and Profile Billing modal. | `pytest` (175 passed), `npm run build` (46/46 static pages generated) |
+| **2026-11-07** | `feat/outreach-email-dispatch` | Step 5: Recruiter email outreach dispatch with credit quota gating (HTTP 402), `outreach_logs` persistence, `/api/email/history` & `/api/email/stats` endpoints, frontend audit trail & quota gauge, and multi-tenant test coverage. | `pytest` (180 passed), `npm run build` (46/46 static pages generated) |
 
 ---
 

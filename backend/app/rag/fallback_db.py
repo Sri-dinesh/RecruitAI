@@ -258,6 +258,25 @@ class FallbackSupabaseClient:
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_id ON credit_transactions(user_id)")
 
+        # ── 11. outreach_logs table (OUTREACH DISPATCH) ─────────────────────
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS outreach_logs (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                candidate_id TEXT,
+                recipient_email TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                template_id TEXT,
+                status TEXT NOT NULL DEFAULT 'sent',
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_outreach_logs_user_id ON outreach_logs(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_outreach_logs_candidate_id ON outreach_logs(candidate_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_outreach_logs_created_at ON outreach_logs(created_at DESC)")
+
 
         # Ensure any missing columns from previous schemas are automatically migrated
         def _ensure_col(tbl: str, col: str, col_type: str):
