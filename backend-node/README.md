@@ -1,9 +1,10 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–2 complete**:
-scaffold, tooling, boot, and the typed configuration layer with production
-gates. No feature logic lives here yet. The Python backend in `../backend/`
-remains the running service and is untouched until cutover.
+Target backend for the FastAPI → Node.js migration. **Phases 1–3 complete**:
+scaffold, tooling, boot, the typed configuration layer with production gates,
+and the auth / request-identity foundation. No feature routes live here yet.
+The Python backend in `../backend/` remains the running service and is untouched
+until cutover.
 
 ## Status
 
@@ -11,7 +12,8 @@ remains the running service and is untouched until cutover.
 | ----------------------------------- | --------------------------------------- |
 | Phase 1 — scaffold, tooling, boot   | ✅ complete                             |
 | Phase 2 — config + production gates | ✅ complete                             |
-| Phases 3–24                         | pending (see `../Backend-Migration.md`) |
+| Phase 3 — auth + request identity   | ✅ complete                             |
+| Phases 4–24                         | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -37,9 +39,10 @@ src/
 ├── main.ts         # bootstrap / entrypoint
 ├── routes/         # api/routes_*.py equivalents (health + empty API router)
 ├── config/         # app/core/config.py            (Phase 2 ✅)
-├── types/          # shared contracts, e.g. HTTP 402 (Phase 2 ✅)
-├── auth/           # app/core/auth.py              (Phase 3)
-├── middleware/     # request lifecycle + errors    (Phase 3/4)
+├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
+├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
+├── context/        # request-scoped identity (ALS) (Phase 3 ✅)
+├── middleware/     # auth + request lifecycle       (Phase 3/4)
 ├── schemas/        # app/schemas/*                 (Phase 5)
 ├── db/             # Drizzle + pgvector/SQLite     (Phase 6)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7)
@@ -86,6 +89,53 @@ Production gates (fail-fast at boot, before the server listens):
 Credit-exhaustion responses use the frozen 402 contract in
 `src/types/errors.ts` (`INSUFFICIENT_CREDITS`, message, `upgrade_url:
 "/pricing"`), including the route-specific evaluation/outreach variants.
+
+## Auth and request identity
+
+`src/auth/` ports `app/core/auth.py`; `src/middleware/auth.ts` exposes the
+Express equivalent of `Depends(get_current_user_id)`.
+
+Verification order is unchanged:
+
+1. Local HS256 verification with `SUPABASE_JWT_SECRET`, pinned algorithm,
+   mandatory `aud`/`exp` checks.
+2. Supabase Auth fallback: `GET {SUPABASE_URL}/auth/v1/user` with the
+   service-role `apikey` and caller token (5 s timeout, failures ignored).
+3. Dev-only unverified claims when `USE_LOCAL_AUTH=true` (never in production,
+   where config forces it off).
+
+Details preserved from Python:
+
+- Non-UUID subjects are rejected with
+  `Invalid user identification: token subject must be a valid UUID.` (401).
+- Missing credentials return `Authentication required. Please log in to
+continue.` with `WWW-Authenticate: Bearer`; other failures return the generic
+  `Invalid or expired authentication token. Signature verification failed.`
+- Expired tokens are rejected immediately with `Signature has expired.`
+- Dev accepts `mock-token`, `local-token`, `test-token`, `local_dev_user_123`
+  and the configured `LOCAL_DEV_USER_ID`.
+
+Usage:
+
+```ts
+app.use('/api/chat', requireAuth(), chatRouter); // protected, like FastAPI
+// Public routes (health liveness, Razorpay webhook) must not use requireAuth.
+```
+
+After `requireAuth`, the user is available as `req.userId` and through an
+isolated `AsyncLocalStorage` context:
+
+```ts
+import { getCurrentUserId, getCurrentTenantId, setSessionId } from '../context/request-context.js';
+```
+
+`tenantId` is the authenticated user id, matching Python's `user_id` tenant
+scoping. Session-scoped routes call `setSessionId()` once resolved. Explicit
+ownership checks can use `canAccessTenantResource()` / `assertTenantAccess()`
+from `src/auth/authorization.ts`; normal queries should keep filtering by
+`user_id` so cross-tenant reads stay 404, as in Python.
+
+Raw bearer tokens are never stored beyond the verification call.
 
 ## Contract rule
 
