@@ -1,10 +1,53 @@
 /**
- * HTTP error contracts shared across routers.
+ * HTTP error contracts shared across routers and middleware.
  *
- * Phase 2 ports the monetization error shape that the Python backend already
- * returns to clients. The web and mobile apps match on `error ===
- * "INSUFFICIENT_CREDITS"` and read `upgrade_url`, so this shape is frozen.
+ * Framework-agnostic on purpose: the Phase 4 error middleware maps
+ * `statusCode`, `detail` and `headers` onto the Express response, mirroring
+ * FastAPI's `HTTPException(status_code=..., detail=...)` semantics.
  */
+
+/** Base class for errors that map directly onto an HTTP response. */
+export class HttpError extends Error {
+  readonly statusCode: number;
+  readonly detail: unknown;
+  readonly headers: Readonly<Record<string, string>>;
+
+  constructor(
+    statusCode: number,
+    detail: unknown,
+    message?: string,
+    headers: Readonly<Record<string, string>> = {},
+  ) {
+    super(message ?? (typeof detail === 'string' ? detail : `HTTP ${statusCode}`));
+    this.name = 'HttpError';
+    this.statusCode = statusCode;
+    this.detail = detail;
+    this.headers = headers;
+  }
+}
+
+/**
+ * 401 with a Bearer challenge, matching FastAPI's `HTTPException` responses
+ * raised by `app/core/auth.py`.
+ */
+export class UnauthorizedError extends HttpError {
+  declare readonly detail: string;
+
+  constructor(detail = 'Authentication required. Please log in to continue.') {
+    super(401, detail, detail, { 'WWW-Authenticate': 'Bearer' });
+    this.name = 'UnauthorizedError';
+  }
+}
+
+/** 403 for explicit cross-tenant / forbidden access checks. */
+export class ForbiddenError extends HttpError {
+  declare readonly detail: string;
+
+  constructor(detail = 'Access denied.') {
+    super(403, detail, detail);
+    this.name = 'ForbiddenError';
+  }
+}
 
 /** Stable machine-readable code used by every credit-exhaustion response. */
 export const INSUFFICIENT_CREDITS = 'INSUFFICIENT_CREDITS' as const;
@@ -56,20 +99,12 @@ export function insufficientCreditsBody(
   };
 }
 
-/**
- * Thrown when a user has no credits left.
- *
- * Framework-agnostic on purpose: the Phase 3 error middleware maps
- * `statusCode`/`detail` onto the Express response, mirroring Python's
- * `raise HTTPException(status_code=402, detail=...)`.
- */
-export class InsufficientCreditsError extends Error {
-  readonly statusCode = 402;
-  readonly detail: InsufficientCreditsDetail;
+/** Thrown when a user has no credits left (HTTP 402). */
+export class InsufficientCreditsError extends HttpError {
+  declare readonly detail: InsufficientCreditsDetail;
 
   constructor(message: string = DEFAULT_INSUFFICIENT_CREDITS_MESSAGE) {
-    super(message);
+    super(402, insufficientCreditsBody(message), message);
     this.name = 'InsufficientCreditsError';
-    this.detail = insufficientCreditsBody(message);
   }
 }
