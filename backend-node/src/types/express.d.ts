@@ -11,6 +11,10 @@ declare global {
     interface Request {
       userId?: string;
       requestContext?: Readonly<RequestContext>;
+      /** Output of `validateQuery(...)` for the matched route. */
+      validatedQuery?: unknown;
+      /** Output of `validateHeaders(...)` for the matched route. */
+      validatedHeaders?: unknown;
     }
   }
 }
