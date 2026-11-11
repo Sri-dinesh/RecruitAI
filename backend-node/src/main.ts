@@ -26,7 +26,7 @@ function loadConfigOrExit(): AppConfig {
 }
 
 const config = loadConfigOrExit();
-const app = createApp();
+const app = createApp({ config });
 const { host, port } = config.server;
 
 const server = app.listen(port, host, () => {
