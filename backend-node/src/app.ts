@@ -3,6 +3,7 @@ import express, { type Express } from 'express';
 import { getConfig, type AppConfig } from './config/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { jsonBodyParser } from './middleware/json-body.js';
 import { healthRouter } from './routes/health.js';
 import { apiRouter } from './routes/index.js';
 
@@ -35,7 +36,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.disable('x-powered-by');
 
   app.use(createCorsMiddleware(config));
-  app.use(express.json());
+  app.use(jsonBodyParser);
 
   app.use(healthRouter);
   app.use('/api', apiRouter);
