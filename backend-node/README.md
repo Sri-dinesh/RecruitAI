@@ -1,19 +1,20 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–3 complete**:
-scaffold, tooling, boot, the typed configuration layer with production gates,
-and the auth / request-identity foundation. No feature routes live here yet.
-The Python backend in `../backend/` remains the running service and is untouched
-until cutover.
+Target backend for the FastAPI → Node.js migration. **Phases 1–4 complete**:
+scaffold, tooling, boot, typed configuration with production gates, the
+auth/request-identity foundation, and the Express app wiring with CORS and
+global error handling. No feature routes live here yet. The Python backend in
+`../backend/` remains the running service and is untouched until cutover.
 
 ## Status
 
-| Area                                | Status                                  |
-| ----------------------------------- | --------------------------------------- |
-| Phase 1 — scaffold, tooling, boot   | ✅ complete                             |
-| Phase 2 — config + production gates | ✅ complete                             |
-| Phase 3 — auth + request identity   | ✅ complete                             |
-| Phases 4–24                         | pending (see `../Backend-Migration.md`) |
+| Area                                  | Status                                  |
+| ------------------------------------- | --------------------------------------- |
+| Phase 1 — scaffold, tooling, boot     | ✅ complete                             |
+| Phase 2 — config + production gates   | ✅ complete                             |
+| Phase 3 — auth + request identity     | ✅ complete                             |
+| Phase 4 — app wiring + error handling | ✅ complete                             |
+| Phases 5–24                           | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -42,7 +43,7 @@ src/
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
 ├── context/        # request-scoped identity (ALS) (Phase 3 ✅)
-├── middleware/     # auth + request lifecycle       (Phase 3/4)
+├── middleware/     # CORS, auth, errors, uploads   (Phase 3/4)
 ├── schemas/        # app/schemas/*                 (Phase 5)
 ├── db/             # Drizzle + pgvector/SQLite     (Phase 6)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7)
@@ -136,6 +137,39 @@ from `src/auth/authorization.ts`; normal queries should keep filtering by
 `user_id` so cross-tenant reads stay 404, as in Python.
 
 Raw bearer tokens are never stored beyond the verification call.
+
+## App wiring and error handling
+
+`createApp({ config })` assembles the stack in the same order as `app/main.py`:
+
+1. **CORS** (outermost): `ALLOWED_ORIGINS` plus the Vercel preview regex,
+   `credentials=true`, fixed method list, reflected preflight headers, 600 s
+   max-age, and Starlette's `200` preflight status.
+2. **JSON body parsing** via `express.json()`.
+3. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+   API router so they never inherit route-level auth.
+4. **Feature routers under `/api`** — each router applies `requireAuth()`
+   itself, matching FastAPI's per-route dependency.
+5. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+6. **Terminal error handler** (last):
+   - `HttpError` subclasses render their status, headers and `{ detail }`
+     (401 Bearer challenge, 402 quota body, 403 denials).
+   - anything unhandled returns `500` with
+     `{ detail: "An unexpected server error occurred. (ref=<8 hex>)", ref }`;
+     the ref and error details are logged server-side only.
+
+Multipart uploads are not parsed globally; `src/middleware/upload.ts` exports a
+memory-storage middleware for the ingest routes (Phase 12), along with the
+existing 15 MB per-file / 10 files-per-batch limits.
+
+Intentionally absent (the Python backend has no such middleware): request-id,
+security headers, trusted-host checks, and timing middleware. Do not add them
+without marking them as new hardening and keeping response shapes unchanged.
+
+Deep readiness (`/health/ready`, `/api/health/ready`) and metrics
+(`/api/metrics`) are authenticated and arrive with the database, telemetry and
+observability phases (6/7/17). Body-parser/validation failures are normalized
+to FastAPI's 422 shape in Phase 5.
 
 ## Contract rule
 
