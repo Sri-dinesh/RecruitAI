@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 
+import type { FastApiValidationError } from '../schemas/validation.js';
 import { HttpError } from '../types/errors.js';
 
 /**
@@ -17,6 +18,27 @@ function createErrorRef(): string {
   return randomUUID().replaceAll('-', '').slice(0, 8);
 }
 
+interface BodyParserError extends Error {
+  readonly type?: string;
+  readonly status?: number;
+  readonly statusCode?: number;
+  readonly body?: unknown;
+}
+
+function asBodyParserError(error: unknown): BodyParserError | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const candidate = error as Error & { type?: unknown };
+  return typeof candidate.type === 'string' ? (candidate as BodyParserError) : undefined;
+}
+
+/** body-parser reports the 0-based position in its SyntaxError message. */
+function jsonErrorPosition(message: string): number {
+  const match = /at position (\d+)/.exec(message);
+  return match?.[1] === undefined ? 0 : Number(match[1]);
+}
+
 /**
  * Terminal error middleware.
  *
@@ -27,8 +49,9 @@ function createErrorRef(): string {
  * 2. Everything unhandled becomes an opaque 500 with a server-side reference
  *    id. Internal messages and stack traces never reach the client.
  *
- * TODO(Phase 5): normalize body-parser/validation failures into FastAPI's 422
- * shape once the shared schema layer exists.
+ * body-parser failures are normalised to the FastAPI contract:
+ *   - malformed JSON  -> 422 `json_invalid` (FastAPI's 422, not Express's 400)
+ *   - oversized body  -> 413 (interim limit until Phase 23)
  */
 export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next) => {
   if (res.headersSent) {
@@ -38,6 +61,24 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
 
   if (error instanceof HttpError) {
     res.status(error.statusCode).set(error.headers).json({ detail: error.detail });
+    return;
+  }
+
+  const bodyParserError = asBodyParserError(error);
+  if (bodyParserError?.type === 'entity.parse.failed') {
+    const detail: FastApiValidationError = {
+      type: 'json_invalid',
+      loc: ['body', jsonErrorPosition(bodyParserError.message)],
+      msg: 'JSON decode error',
+      input: {},
+      ctx: { error: bodyParserError.message },
+    };
+    res.status(422).json({ detail: [detail] });
+    return;
+  }
+
+  if (bodyParserError?.type === 'entity.too.large') {
+    res.status(413).json({ detail: 'Request body too large.' });
     return;
   }
 
