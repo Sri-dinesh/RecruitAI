@@ -1,11 +1,11 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–5 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–6 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
-handling, and the shared validation/types contract layer. No feature routes live
-here yet. The Python backend in `../backend/` remains the running service and is
-untouched until cutover.
+handling, the shared validation/types contract layer, and the Drizzle database
+access layer. No feature routes live here yet. The Python backend in
+`../backend/` remains the running service and is untouched until cutover.
 
 ## Status
 
@@ -16,7 +16,8 @@ untouched until cutover.
 | Phase 3 — auth + request identity     | ✅ complete                             |
 | Phase 4 — app wiring + error handling | ✅ complete                             |
 | Phase 5 — validation + API contracts  | ✅ complete                             |
-| Phases 6–24                           | pending (see `../Backend-Migration.md`) |
+| Phase 6 — database access layer       | ✅ complete                             |
+| Phases 7–24                           | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -47,12 +48,12 @@ src/
 ├── context/        # request-scoped identity (ALS) (Phase 3 ✅)
 ├── middleware/     # CORS, auth, errors, uploads, validators (Phase 3/4/5)
 ├── schemas/        # app/schemas/* + inline models            (Phase 5 ✅)
-├── db/             # Drizzle + pgvector/SQLite     (Phase 6)
+├── db/             # Drizzle + pgvector/SQLite       (Phase 6 ✅)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7)
 ├── agents/         # app/graph/*                   (Phase 13)
 ├── rag/            # app/rag/*                     (Phase 8+)
 ├── services/       # app/services/*                (Phases 9–16)
-│                   #   + quota guard              (Phase 2 ✅)
+│                   #   + quota guard + persistence  (Phases 2/6 ✅)
 ├── tools/          # app/tools/*                   (Phase 11/13)
 └── jobs/           # app/services/job_queue.py     (Phase 14/21)
 tests/              # ported pytest suite          (Phase 18)
@@ -77,6 +78,10 @@ Ported behavior from `app/core/config.py`:
 - `ALLOWED_ORIGINS` unset → the six defaults; set-but-empty/whitespace → `[]`.
 - `SUPABASE_JWT_AUDIENCE` defaults to `authenticated`.
 - Razorpay keys default to empty strings.
+- `DATABASE_URL` falls back to `SUPABASE_DB_URL`; both are direct Postgres
+  connection strings. `PG_POOL_MAX`, `PG_IDLE_TIMEOUT_MS` and
+  `PG_CONNECTION_TIMEOUT_MS` are strict: invalid or non-positive values fail at
+  boot. `SQLITE_FALLBACK_PATH` defaults to `recruitai_fallback.db`.
 
 Production gates (fail-fast at boot, before the server listens):
 
@@ -139,6 +144,135 @@ from `src/auth/authorization.ts`; normal queries should keep filtering by
 `user_id` so cross-tenant reads stay 404, as in Python.
 
 Raw bearer tokens are never stored beyond the verification call.
+
+## Database access layer
+
+`src/db/` maps the existing PostgreSQL schema and ports every Supabase access
+pattern to Drizzle. The SQL migrations under `supabase/migrations/`, plus
+`backend/scripts/enhanced_schema.sql` and `01_users_schema.sql`, are the **source
+of truth**; `schema.ts` is a read-only introspection of them. Drizzle Kit is not
+run against the database, and triggers, RLS policies and `SECURITY DEFINER`
+functions stay authoritative in SQL.
+
+### Schema mapping
+
+`schema.ts` covers all twelve tables the backend uses: `users`, `jobs`,
+`candidates`, `resume_chunks`, `applications`, `interviews`, `chat_sessions`,
+`chat_messages`, `session_candidates`, `subscriptions`, `credit_transactions`
+and `outreach_logs`.
+
+Preserved details include:
+
+- column names and nullability, including nullable `interviews.scheduled_at`
+  (BUG-4) and `duration_minutes DEFAULT 30`;
+- `users.credits_balance` (default 10) and `preferences`;
+- `resume_chunks.embedding vector(384)` with IVFFlat `vector_cosine_ops`;
+- the `(job_id, candidate_id)` unique key on applications, the composite
+  `(session_id, candidate_id)` key on session_candidates, and all status checks;
+- foreign keys with their cascade semantics (`cascade` for candidate/application
+  children, `set null` for `chat_sessions.job_id` and
+  `outreach_logs.candidate_id`);
+- the migration indexes, including `chat_messages(user_id)`, analytics-relevant
+  application indexes and descending ledger/outreach timestamps.
+
+`users.id` and `outreach_logs.user_id` reference Supabase's `auth.users`; the
+`auth` schema is not modeled in Drizzle, so those two constraints remain
+database-side only.
+
+### PostgreSQL client and pooling
+
+`src/db/client.ts` owns one `pg.Pool` and one Drizzle instance per process:
+
+| Env                        | Default | Meaning                                 |
+| -------------------------- | ------- | --------------------------------------- |
+| `DATABASE_URL`             | —       | direct TCP Postgres connection string   |
+| `SUPABASE_DB_URL`          | —       | fallback name when `DATABASE_URL` unset |
+| `PG_POOL_MAX`              | `10`    | max connections per Node instance       |
+| `PG_IDLE_TIMEOUT_MS`       | `30000` | idle connection reaping                 |
+| `PG_CONNECTION_TIMEOUT_MS` | `5000`  | acquire timeout                         |
+
+`DATABASE_URL` must be a Postgres connection string, not the Supabase project
+URL (that is the PostgREST endpoint). Connections are created lazily on first
+query and reused; nothing opens a connection per request. Pool math:
+`PG_POOL_MAX × instance count` must stay below the Supavisor/PgBouncer
+transaction-pool ceiling (Phase 22 expands this). Invalid pool values fail at
+boot instead of silently changing the connection budget.
+
+Call `closeDatabase()` during graceful shutdown. Missing configuration raises
+the Python-compatible 503 (`Database service configuration missing in production
+environment.`) in production.
+
+### RPC escape hatch
+
+Drizzle has no RPC equivalent, so `src/db/rpc.ts` calls the SQL functions through
+`drizzle.sql` using PostgreSQL named notation, preserving argument names and
+result shapes:
+
+| Function                                   | Result                                 |
+| ------------------------------------------ | -------------------------------------- |
+| `get_analytics_summary(p_user_id)`         | jsonb summary object                   |
+| `get_pipeline_funnel(p_user_id)`           | `{stage,count,percentage}[]`           |
+| `get_candidates_over_time(p_user_id,days)` | `{day,count}[]`                        |
+| `get_match_score_distribution(p_user_id)`  | `{bucket,count,min_score,max_score}[]` |
+| `get_top_skills(p_user_id,top_n)`          | `{skill,demand_count}[]`               |
+| `get_hiring_velocity(p_user_id)`           | jsonb velocity object                  |
+| `get_jobs_summary(p_user_id)`              | per-job summary rows                   |
+| `get_recent_activity(p_user_id,limit_n)`   | activity-feed rows                     |
+| `reset_user_workspace(target_user_id)`     | `{success,user_id,reset_at}`           |
+| `match_resume_chunks(...)`                 | pgvector match rows                    |
+
+`node-postgres` returns `bigint`/`numeric` as strings, while PostgREST emitted
+JSON numbers; the RPC client converts counts, percentages and scores back to
+numbers so responses stay byte-compatible.
+
+`src/db/vector.ts` is the pgvector integration path: batched chunk inserts,
+top-k search through `match_resume_chunks`, and tenant-scoped chunk deletion.
+
+### SQLite fallback
+
+`src/db/fallback.ts` ports `backend/app/rag/fallback_db.py` using Node's built-in
+`node:sqlite` driver (Node 24+, hence the package `engines` requirement). It is
+dev/test only and throws the Python 503
+(`… SQLite fallback is prohibited in production.`) in production.
+
+Preserved behavior:
+
+- WAL, `synchronous=NORMAL`, foreign keys and a 30 s busy timeout;
+- all tables, including the monetization tables and `outreach_logs`;
+- the seeded local recruiter and preference repair;
+- legacy column additions and the BUG-4 `scheduled_at` table rebuild;
+- JSON column round-tripping;
+- upsert priority: primary-key id first, then `applications(job_id,candidate_id)`,
+  `users(email)`, `session_candidates(session_id,candidate_id)` and
+  `subscriptions(user_id)`;
+- `reset_user_workspace` and `match_resume_chunks` (in-process cosine similarity,
+  `candidate_name` + `full_name` in the result).
+
+Unknown fallback RPCs throw instead of silently returning nothing.
+
+### Persistence service
+
+`src/services/persistence.ts` ports `persistence_service.py` over a narrow
+`WorkspaceStore` contract (`src/db/workspace-store.ts`) with two
+implementations: Drizzle/PostgreSQL for normal operation and SQLite for the
+fallback. Every query filters by `user_id`.
+
+Ported behavior:
+
+- `persistJob` upserts by user + title and keeps the Python best-effort failure
+  semantics;
+- `persistApplications` upserts `(job_id,candidate_id)`, requires real UUIDs and
+  defaults missing scores/arrays;
+- `persistInterviews` resolves candidates by name and applications by
+  candidate + job, strips the slot, never fabricates `scheduled_at`, and keeps
+  the duration/mode defaults;
+- `persistChatMessage` inserts user/assistant/system messages with optional
+  metadata;
+- `updateSessionMetadata` always rewrites `last_intent`,
+  `pending_confirmation` and `updated_at`, and only changes title/job when
+  supplied;
+- `persistSessionCandidate` links session ↔ candidate only when both rows belong
+  to the tenant.
 
 ## App wiring and error handling
 
