@@ -4,42 +4,51 @@ import { getConfig, type AppConfig } from './config/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { jsonBodyParser } from './middleware/json-body.js';
+import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
 import { healthRouter } from './routes/health.js';
-import { apiRouter } from './routes/index.js';
+import { createApiRouter } from './routes/index.js';
+import { metricsRegistry, type RedMetricsRegistry } from './telemetry/metrics.js';
 
 export interface CreateAppOptions {
   /** Explicit config (tests); defaults to the validated process singleton. */
   readonly config?: AppConfig;
+  /** Isolated metrics collector for tests; defaults to the process singleton. */
+  readonly metrics?: RedMetricsRegistry;
 }
 
 /**
  * Express application factory, mirroring `app/main.py`.
  *
  * Middleware order is deliberate and must stay stable:
- *   1. CORS (outermost, as in Starlette)
- *   2. JSON body parsing
- *   3. Public health/liveness routes (registered before the API router so
+ *   1. Request metrics (outermost; times every response, including errors)
+ *   2. CORS (as in Starlette)
+ *   3. JSON body parsing
+ *   4. Public health/liveness routes (registered before the API router so
  *      `/api/health` never inherits route-level auth)
- *   4. Feature routers under `/api` (each applies `requireAuth` itself)
- *   5. JSON 404 for unmatched paths
- *   6. Terminal error handling
+ *   5. Feature routers under `/api` (each applies `requireAuth` itself)
+ *   6. JSON 404 for unmatched paths
+ *   7. Terminal error handling
  *
- * There is intentionally no request-id, security-header, trusted-host or
- * timing middleware: the Python backend does not have them. Request identity
- * lives in `src/context/request-context.ts`.
+ * Request identity and telemetry live in `src/context/request-context.ts`.
  */
 export function createApp(options: CreateAppOptions = {}): Express {
   const config = options.config ?? getConfig();
+  const metrics = options.metrics ?? metricsRegistry;
   const app = express();
 
   // Default Express fingerprint header is not part of the existing contract.
   app.disable('x-powered-by');
 
+  // Metrics are always enabled, matching the Python config (no env toggle).
+  if (config.telemetry.enabled) {
+    app.use(createRequestMetricsMiddleware(metrics));
+  }
+
   app.use(createCorsMiddleware(config));
   app.use(jsonBodyParser);
 
   app.use(healthRouter);
-  app.use('/api', apiRouter);
+  app.use('/api', createApiRouter({ config, metrics }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

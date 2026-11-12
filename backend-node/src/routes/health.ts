@@ -16,7 +16,8 @@ function liveness(_req: Request, res: Response): void {
 /**
  * Public liveness probes — mirror GET / and GET /health | /api/health from
  * `app/main.py`. Deep readiness (`/health/ready`, `/api/health/ready`) needs
- * the database and telemetry layers (Phases 6/7); metrics arrive in Phase 17.
+ * the LLM diagnostics layer, so it arrives with a later phase. Metrics live in
+ * `metrics.ts` (Phase 7) and are authenticated.
  */
 export const healthRouter = Router();
 

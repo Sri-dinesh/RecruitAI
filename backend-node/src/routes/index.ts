@@ -1,5 +1,10 @@
 import { Router } from 'express';
 
+import type { AppConfig } from '../config/index.js';
+import { requireAuth } from '../middleware/auth.js';
+import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
+import { createMetricsRouter } from './metrics.js';
+
 /**
  * API router root, mounted at `/api` by the app factory.
  *
@@ -8,6 +13,7 @@ import { Router } from 'express';
  * because Python uses a per-route `Depends(get_current_user_id)` rather than
  * global auth middleware:
  *
+ *   /api/metrics     (Phase 7) — authenticated RED/USE metrics
  *   /api/chat        (Phase 14)
  *   /api/sessions    (Phase 15)
  *   /api/email       (Phase 11)
@@ -24,8 +30,21 @@ import { Router } from 'express';
  *   /api/payments    (Phase 10) — `/webhook` stays public; the other routes
  *                                apply `requireAuth()`
  *
- * Deep readiness (`/health/ready`, `/api/health/ready`) and metrics
- * (`/api/metrics`) are authenticated routes and arrive with the DB/telemetry
- * phases (6/7/17). Health liveness lives in `health.ts` and is public.
+ * Deep readiness (`/health/ready`, `/api/health/ready`) is authenticated and
+ * needs the LLM diagnostics layer, so it arrives with a later phase.
+ * Health liveness lives in `health.ts` and is public.
  */
-export const apiRouter = Router();
+
+export interface ApiRouterOptions {
+  /** Explicit config for tests; defaults to the validated singleton. */
+  readonly config?: AppConfig;
+  /** Isolated registry for tests; defaults to the process-wide collector. */
+  readonly metrics?: RedMetricsRegistry;
+}
+
+export function createApiRouter(options: ApiRouterOptions = {}): Router {
+  const router = Router();
+  const auth = options.config ? requireAuth({ config: options.config }) : requireAuth();
+  router.use('/metrics', auth, createMetricsRouter(options.metrics ?? metricsRegistry));
+  return router;
+}
