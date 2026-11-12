@@ -2,12 +2,15 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolConfig } from 'pg';
 
 import { getConfig, type AppConfig } from '../config/index.js';
+import { createLogger } from '../telemetry/logger.js';
 import {
   DATABASE_MISSING_IN_PRODUCTION,
   DATABASE_URL_MISSING,
   DatabaseUnavailableError,
 } from './errors.js';
 import * as schema from './schema.js';
+
+const logger = createLogger('recruitai.db');
 
 /**
  * Direct-TCP PostgreSQL client (Drizzle + node-postgres).
@@ -56,7 +59,9 @@ export function createDatabase(config: AppConfig = getConfig()): DatabaseHandle 
   // Idle-client failures are emitted asynchronously; without a listener they
   // would crash the process. Log the reason only (no connection string).
   pool.on('error', (error: Error) => {
-    console.error(`[db] idle PostgreSQL client error: ${error.message}`);
+    logger.error(`[db] idle PostgreSQL client error: ${error.message}`, {
+      error_type: error.constructor.name,
+    });
   });
 
   const db = drizzle(pool, { schema });

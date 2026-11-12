@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 
 import type { FastApiValidationError } from '../schemas/validation.js';
+import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
+
+const logger = createLogger('recruitai.server');
 
 /**
  * Express's default unmatched-route response is HTML. FastAPI returns
@@ -87,7 +90,12 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
   const message = error instanceof Error ? error.message : String(error);
 
   // Server-side only; log the path without the query string to avoid PII.
-  console.error(`[UNHANDLED_EXCEPTION ref=${ref}] ${req.method} ${req.path}: ${name}: ${message}`);
+  logger.error(`[UNHANDLED_EXCEPTION ref=${ref}] ${req.method} ${req.path}: ${name}: ${message}`, {
+    ref,
+    method: req.method,
+    path: req.path,
+    error_type: name,
+  });
 
   res.status(500).json({
     detail: `An unexpected server error occurred. (ref=${ref})`,

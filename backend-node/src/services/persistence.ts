@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type { WorkspaceStore } from '../db/workspace-store.js';
 import type { Candidate } from '../schemas/candidate.js';
 import type { JobDescription } from '../schemas/jd.js';
+import { createLogger } from '../telemetry/logger.js';
+
+const logger = createLogger('recruitai.persistence_service');
 
 /**
  * Port of `backend/app/services/persistence_service.py`.
@@ -30,6 +33,10 @@ export interface ScheduledInterview {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorType(error: unknown): string {
+  return error instanceof Error ? error.constructor.name : typeof error;
 }
 
 function asString(value: unknown): string | undefined {
@@ -90,7 +97,9 @@ export async function persistJob(
     }
   } catch (error) {
     // Preserve Python: the generated id is returned even if the write failed.
-    console.warn(`[persistence_service] Failed to persist job: ${errorMessage(error)}`);
+    logger.warn(`[persistence_service] Failed to persist job: ${errorMessage(error)}`, {
+      error_type: errorType(error),
+    });
   }
 
   return jobId;
@@ -129,8 +138,9 @@ export async function persistApplications(
         status: 'shortlisted',
       });
     } catch (error) {
-      console.warn(
+      logger.warn(
         `[persistence_service] Failed to persist application for candidate ${candidateId}: ${errorMessage(error)}`,
+        { error_type: errorType(error), candidate_id: candidateId },
       );
     }
   }
@@ -186,7 +196,9 @@ export async function persistInterviews(
         },
       });
     } catch (error) {
-      console.warn(`[persistence_service] Failed to persist interview: ${errorMessage(error)}`);
+      logger.warn(`[persistence_service] Failed to persist interview: ${errorMessage(error)}`, {
+        error_type: errorType(error),
+      });
     }
   }
 }
@@ -209,8 +221,9 @@ export async function persistChatMessage(
       ...(metadata === undefined || metadata === null ? {} : { metadata }),
     });
   } catch (error) {
-    console.warn(
+    logger.warn(
       `[persistence_service] Failed to persist chat message (${role}): ${errorMessage(error)}`,
+      { error_type: errorType(error), session_id: sessionId },
     );
   }
 }
@@ -228,8 +241,9 @@ export async function persistSessionCandidate(
   try {
     return await store.upsertSessionCandidate(userId, sessionId, candidateId);
   } catch (error) {
-    console.warn(
+    logger.warn(
       `[persistence_service] Failed to link candidate to session: ${errorMessage(error)}`,
+      { error_type: errorType(error), session_id: sessionId, candidate_id: candidateId },
     );
     return false;
   }
@@ -259,8 +273,9 @@ export async function updateSessionMetadata(
       ...(options.jobId ? { jobId: options.jobId } : {}),
     });
   } catch (error) {
-    console.warn(
+    logger.warn(
       `[persistence_service] Failed to update chat_sessions metadata: ${errorMessage(error)}`,
+      { error_type: errorType(error), session_id: sessionId },
     );
   }
 }

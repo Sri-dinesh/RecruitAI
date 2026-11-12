@@ -1,6 +1,9 @@
 import { createApp } from './app.js';
 import { getConfig, type AppConfig } from './config/index.js';
 import { loadEnvFileIfPresent } from './config/env.js';
+import { createLogger } from './telemetry/logger.js';
+
+const logger = createLogger('recruitai.server');
 
 /**
  * RecruitAI backend bootstrap.
@@ -17,10 +20,9 @@ function loadConfigOrExit(): AppConfig {
     loadEnvFileIfPresent();
     return getConfig();
   } catch (error) {
-    console.error(
-      '[recruitai] invalid configuration:',
-      error instanceof Error ? error.message : error,
-    );
+    logger.error('[recruitai] invalid configuration', {
+      error_type: error instanceof Error ? error.constructor.name : typeof error,
+    });
     process.exit(1);
   }
 }
@@ -30,10 +32,12 @@ const app = createApp({ config });
 const { host, port } = config.server;
 
 const server = app.listen(port, host, () => {
-  console.log(`[recruitai] backend listening on http://${host}:${port} (${config.environment})`);
+  logger.info(`[recruitai] backend listening on http://${host}:${port} (${config.environment})`);
 });
 
 server.on('error', (error: Error) => {
-  console.error('[recruitai] failed to start server:', error);
+  logger.error(`[recruitai] failed to start server: ${error.message}`, {
+    error_type: error.constructor.name,
+  });
   process.exitCode = 1;
 });
