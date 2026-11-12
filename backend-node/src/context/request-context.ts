@@ -12,6 +12,22 @@ import { randomUUID } from 'node:crypto';
  * `tenantId` is the authenticated user id: the Python backend scopes tenant
  * data by `user_id` everywhere (sessions, candidates, evaluations, outreach).
  */
+
+/**
+ * Telemetry scope for the active request or CLI turn.
+ *
+ * Mirrors Python's `_user_id_ctx`, `_session_id_ctx`, `_request_id_ctx`,
+ * `_turn_counter_ctx` and `_turn_logs_ctx`. Kept separate from the authenticated
+ * identity above so `clearTelemetryContext()` cannot break authorization.
+ */
+export interface TelemetryContext {
+  userId: string;
+  sessionId: string;
+  requestId: string;
+  turn: number;
+  logs: Record<string, unknown>[];
+}
+
 export interface RequestContext {
   readonly requestId: string;
   readonly userId: string;
@@ -19,6 +35,8 @@ export interface RequestContext {
   readonly startedAt: number;
   /** Set by session-scoped routes once a session is resolved. */
   sessionId?: string;
+  /** Tenant-scoped event log, isolated per request (AI-SEC-5). */
+  readonly telemetry: TelemetryContext;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -32,6 +50,13 @@ export function createRequestContext(
     userId,
     tenantId: userId,
     startedAt: Date.now(),
+    telemetry: {
+      userId,
+      sessionId: '',
+      requestId,
+      turn: 0,
+      logs: [],
+    },
   };
 }
 
@@ -62,11 +87,12 @@ export function getCurrentTenantId(): string {
   return requireRequestContext().tenantId;
 }
 
-/** Attach the resolved session id to the active request context. */
+/** Attach the resolved session id to the active request and telemetry scope. */
 export function setSessionId(sessionId: string): void {
   const context = storage.getStore();
   if (context) {
     context.sessionId = sessionId;
+    context.telemetry.sessionId = sessionId;
   }
 }
 
