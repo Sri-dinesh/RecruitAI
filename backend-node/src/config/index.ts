@@ -3,6 +3,8 @@ import {
   readCsvList,
   readInt,
   readIntStrict,
+  readNonNegativeIntStrict,
+  readPositiveIntStrict,
   readString,
   readStringOr,
   type EnvSource,
@@ -98,6 +100,26 @@ export interface SupabaseConfig {
   readonly serviceRoleKey: string | undefined;
 }
 
+/**
+ * Direct-TCP PostgreSQL access settings (Phase 6).
+ *
+ * `drizzle-orm/node-postgres` talks to Postgres over TCP, not through
+ * PostgREST. `url` must therefore be a Postgres connection string
+ * (`postgresql://user:pass@host:port/db`), not the Supabase project URL.
+ *
+ * Pool math (expanded in Phase 22): every Node instance opens at most
+ * `poolMax` connections, so `poolMax × instance count` must stay below the
+ * Supabase Supavisor/PgBouncer transaction-pool ceiling. Default 10.
+ */
+export interface DatabaseConfig {
+  readonly url: string | undefined;
+  readonly poolMax: number;
+  readonly idleTimeoutMs: number;
+  readonly connectionTimeoutMs: number;
+  /** SQLite fallback file used only outside production, as in Python. */
+  readonly fallbackPath: string;
+}
+
 export interface SmtpConfig {
   readonly server: string;
   readonly port: number;
@@ -130,6 +152,7 @@ export interface AppConfig {
   readonly auth: AuthConfig;
   readonly llm: LlmConfig;
   readonly supabase: SupabaseConfig;
+  readonly database: DatabaseConfig;
   readonly smtp: SmtpConfig;
   readonly razorpay: RazorpayConfig;
   readonly cors: CorsConfig;
@@ -206,6 +229,15 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       url: readString(env, 'SUPABASE_URL'),
       anonKey: readStringOr(env, 'SUPABASE_ANON_KEY', ''),
       serviceRoleKey: readString(env, 'SUPABASE_SERVICE_ROLE_KEY'),
+    },
+    database: {
+      // Direct Postgres connection string. `SUPABASE_DB_URL` is accepted as a
+      // fallback because that is the name Supabase's dashboard exposes.
+      url: readString(env, 'DATABASE_URL') ?? readString(env, 'SUPABASE_DB_URL'),
+      poolMax: readPositiveIntStrict(env, 'PG_POOL_MAX', 10),
+      idleTimeoutMs: readNonNegativeIntStrict(env, 'PG_IDLE_TIMEOUT_MS', 30_000),
+      connectionTimeoutMs: readNonNegativeIntStrict(env, 'PG_CONNECTION_TIMEOUT_MS', 5_000),
+      fallbackPath: readStringOr(env, 'SQLITE_FALLBACK_PATH', 'recruitai_fallback.db'),
     },
     smtp: {
       server: readStringOr(env, 'SMTP_SERVER', 'smtp.gmail.com'),

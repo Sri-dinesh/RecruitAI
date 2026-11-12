@@ -89,6 +89,31 @@ export function readIntStrict(env: EnvSource, key: string, fallback: number): nu
 }
 
 /**
+ * Strict positive-integer parsing for bounded-resource settings (pool sizing).
+ * Unset/empty uses the fallback; invalid, zero or negative values fail loudly
+ * instead of silently changing the connection budget.
+ */
+export function readPositiveIntStrict(env: EnvSource, key: string, fallback: number): number {
+  const value = readIntStrict(env, key, fallback);
+  if (value <= 0) {
+    throw new Error(`Invalid ${key}: expected a positive integer, received "${env[key]}".`);
+  }
+  return value;
+}
+
+/**
+ * Strict non-negative-integer parsing (timeouts). Unset/empty uses the
+ * fallback; invalid or negative values fail loudly.
+ */
+export function readNonNegativeIntStrict(env: EnvSource, key: string, fallback: number): number {
+  const value = readIntStrict(env, key, fallback);
+  if (value < 0) {
+    throw new Error(`Invalid ${key}: expected a non-negative integer, received "${env[key]}".`);
+  }
+  return value;
+}
+
+/**
  * Comma-separated list parsing, matching the Python ALLOWED_ORIGINS logic:
  * unset/empty -> undefined (caller applies defaults); otherwise split, trim
  * and drop empty entries.
