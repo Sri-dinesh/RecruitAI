@@ -244,12 +244,18 @@ describe('global error handling', () => {
       assert.ok(!JSON.stringify(response.body).includes('password'));
 
       assert.equal(capture.calls.length, 1);
-      const log = String(capture.calls[0]?.[0]);
+      const record = JSON.parse(String(capture.calls[0]?.[0])) as Record<string, unknown>;
+      assert.equal(record.level, 'error');
+      assert.equal(record.logger, 'recruitai.server');
+      assert.equal(record.ref, response.body.ref);
+      assert.equal(record.method, 'GET');
+      assert.equal(record.path, '/boom');
+      assert.equal(record.error_type, 'Error');
       assert.match(
-        log,
+        String(record.message),
         new RegExp(`\\[UNHANDLED_EXCEPTION ref=${response.body.ref}\\] GET /boom: Error:`),
       );
-      assert.match(log, /internal database password leaked/);
+      assert.match(String(record.message), /internal database password leaked/);
     } finally {
       capture.restore();
     }
