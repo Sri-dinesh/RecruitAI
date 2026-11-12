@@ -1,11 +1,12 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–6 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–7 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
-handling, the shared validation/types contract layer, and the Drizzle database
-access layer. No feature routes live here yet. The Python backend in
-`../backend/` remains the running service and is untouched until cutover.
+handling, the shared validation/types contract layer, the Drizzle database
+access layer, and the structured logging/telemetry layer. No feature routes live
+here yet. The Python backend in `../backend/` remains the running service and is
+untouched until cutover.
 
 ## Status
 
@@ -17,7 +18,8 @@ access layer. No feature routes live here yet. The Python backend in
 | Phase 4 — app wiring + error handling | ✅ complete                             |
 | Phase 5 — validation + API contracts  | ✅ complete                             |
 | Phase 6 — database access layer       | ✅ complete                             |
-| Phases 7–24                           | pending (see `../Backend-Migration.md`) |
+| Phase 7 — logging, context, telemetry | ✅ complete                             |
+| Phases 8–24                           | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -49,7 +51,7 @@ src/
 ├── middleware/     # CORS, auth, errors, uploads, validators (Phase 3/4/5)
 ├── schemas/        # app/schemas/* + inline models            (Phase 5 ✅)
 ├── db/             # Drizzle + pgvector/SQLite       (Phase 6 ✅)
-├── telemetry/      # app/core/logging.py/telemetry (Phase 7)
+├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
 ├── agents/         # app/graph/*                   (Phase 13)
 ├── rag/            # app/rag/*                     (Phase 8+)
 ├── services/       # app/services/*                (Phases 9–16)
@@ -274,21 +276,68 @@ Ported behavior:
 - `persistSessionCandidate` links session ↔ candidate only when both rows belong
   to the tenant.
 
+## Logging, request context, and telemetry
+
+`src/telemetry/` ports `app/core/logging.py` (AI-SEC-5) and
+`app/core/telemetry.py` (OPS-1).
+
+**Request context.** `requireAuth` runs every request inside an
+`AsyncLocalStorage` store. In addition to the authenticated identity, the store
+holds a nested `telemetry` scope (`userId`, `sessionId`, `requestId`, `turn`,
+`logs`), so `clearTelemetryContext()` can never break authorization. Outside a
+request (CLI, tests) a module-level fallback reproduces Python's contextvar
+defaults.
+
+**Structured logger** (`logger.ts`). One JSON object per line, level filtering
+(default `info`), and a strict field allowlist. Keys containing
+`prompt`, `resume`, `completion`, `text`, `message`, `candidate_name`, `email`
+or `phone` are dropped; serialization failures fall back to a field-less record
+instead of throwing.
+
+**Tenant-scoped events** (`logging.ts`). Ports `set_telemetry_context`,
+`clear_telemetry_context`, `log_event`, `increment_turn`, `get_all_logs` and
+`mask_exception`. The turn counter survives `set`/`clear`, as in Python.
+`maskException()` returns only `{ error_type, error_code }` — never the message.
+Audit helpers emit the exact Python messages and add structured fields plus
+request/session ids:
+
+```
+[AUDIT] [GDPR_ERASURE] candidate_id=... user_id=... status=purged
+[AUDIT] [GDPR_ACCOUNT_ERASURE] user_id=... status=account_purged
+[AUDIT] [WORKSPACE_RESET] user_id=... timestamp=... action=reset_all_data
+```
+
+**Metrics** (`metrics.ts`). In-memory RED/USE registry: requests, 4xx/5xx error
+breakdown, per-endpoint latency percentiles (p50/p90/p95/p99, 500-sample window
+per endpoint), queue depth/workers, token and cost accounting, and SLO health.
+`GET /api/metrics` is authenticated and returns the JSON summary, or Prometheus
+text when `Accept` includes `text/plain`. Request labels use the matched route
+(`/users/:id`), never the concrete URL; unmatched paths use `unmatched`.
+
+**Tracing** (`tracing.ts`). Dependency-free OpenTelemetry-shaped spans (32-char
+trace id, 16-char span id, attributes, events, status) and `withSpan()` for
+success/error spans. Swap the span sink for an OTLP exporter later without
+touching call sites.
+
+Metrics are always enabled, matching the Python config (no env toggle).
+
 ## App wiring and error handling
 
 `createApp({ config })` assembles the stack in the same order as `app/main.py`:
 
-1. **CORS** (outermost): `ALLOWED_ORIGINS` plus the Vercel preview regex,
+1. **Request metrics** (outermost): records every finished response, including
+   errors and 404s.
+2. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-2. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
+3. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
    primitive JSON roots reach the validators; interim 25 MB limit).
-3. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+4. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
-4. **Feature routers under `/api`** — each router applies `requireAuth()`
+5. **Feature routers under `/api`** — each router applies `requireAuth()`
    itself, matching FastAPI's per-route dependency.
-5. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
-6. **Terminal error handler** (last):
+6. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+7. **Terminal error handler** (last):
    - `HttpError` subclasses render their status, headers and `{ detail }`
      (401 Bearer challenge, 402 quota body, 403 denials).
    - validation failures render FastAPI's `422` `{ detail: [...] }` shape.
