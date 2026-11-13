@@ -1,13 +1,13 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–8 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–9 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
-access layer, the structured logging/telemetry layer, and the Gemini LLM
-routing layer with safety gates. No feature routes live here yet. The Python
-backend in `../backend/` remains the running service and is untouched until
-cutover.
+access layer, the structured logging/telemetry layer, the Gemini LLM routing
+layer with safety gates, and the document/resume/JD parsing plus matching
+services. The Python backend in `../backend/` remains the running service and is
+untouched until cutover.
 
 ## Status
 
@@ -21,7 +21,8 @@ cutover.
 | Phase 6 — database access layer       | ✅ complete                             |
 | Phase 7 — logging, context, telemetry | ✅ complete                             |
 | Phase 8 — LLM routing + safety gates  | ✅ complete                             |
-| Phases 9–24                           | pending (see `../Backend-Migration.md`) |
+| Phase 9 — parsing + matching services | ✅ complete                             |
+| Phases 10–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -56,8 +57,9 @@ src/
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
 ├── llm/            # app/core/llm_router.py         (Phase 8 ✅)
 ├── agents/         # app/graph/*                   (Phase 13)
-├── rag/            # app/rag/*                     (Phase 9+)
-├── services/       # app/services/*                (Phases 9–16)
+├── rag/            # app/rag/*                     (later phases)
+├── services/       # app/services/*                (Phase 9 ✅ + later phases)
+│                   #   parsing, resume/JD, Tavily, matching (Phase 9 ✅)
 │                   #   + quota guard + persistence  (Phases 2/6 ✅)
 ├── tools/          # app/tools/*                   (Phase 11/13)
 └── jobs/           # app/services/job_queue.py     (Phase 14/21)
@@ -362,6 +364,74 @@ switch (`LLM_KILL_SWITCH`) short-circuits with
 `AllProvidersFailedError`, `verifyProviderCompliance()` enforces AI-SEC-1 in
 production, and a missing or placeholder `GEMINI_API_KEY` is rejected with
 Python's exact message.
+
+## Document parsing, resume/JD extraction, and matching
+
+`src/services/` ports the deterministic business logic that ingestion and
+evaluation depend on. Every module is a direct translation of its Python
+counterpart, including the quirks noted below, so parity checks compare like for
+like.
+
+**`document-parser.ts`** (`app/services/document_parser.py`).
+
+- `parsePdf` uses the pdf.js legacy build with standard font data resolved from
+  the package. Pages with no text are skipped, page text is joined with blank
+  lines, control characters are stripped, and Python's exact `ValueError`
+  messages (`File not found:`, `PDF content is empty (0 bytes).`, encrypted,
+  scanned-only, `Failed to parse PDF file:`) are preserved. The loading task is
+  always destroyed in `finally`.
+- `parsePdfDetails` reports `{ text, num_pages, contact_info, has_text }` and
+  wraps failures as `Failed to parse PDF details: ...`.
+- `parseDocx` reads `word/document.xml` through JSZip. It walks direct
+  `<w:body>` children so table-cell paragraphs are not emitted twice, keeps
+  Python's paragraph-then-table ordering, joins row cells with `" | "`, joins
+  cell paragraphs with newlines, and decodes tabs, breaks and XML entities.
+- `parseImage` sends base64 `inlineData` to Gemini at `temperature: 0.1`; without
+  a usable key (or when every model fails) it returns Python's placeholder
+  `Candidate Resume (Extracted from Mobile Photo Image)`.
+- `parseDocument` dispatches by extension first, then sniffs `%PDF`,
+  `PK\x03\x04`, PNG and JPEG magic bytes, and falls back to UTF-8 text.
+- `extractContactInfo` returns sorted, de-duplicated emails, phones and URLs.
+
+**`resume-parser.ts`** (`app/services/resume_parser.py`). Deterministic by
+default: filename/name detection, contact extraction, keyword skill scan,
+first years-of-experience mention (default `2.0`), headline, education and role
+lines. An LLM refinement pass runs only when `llmFunc` is supplied, matching
+Python's quota behaviour; invalid JSON or provider errors fall back silently to
+the heuristics. Summary and `candidate_id` follow Python's formatting.
+
+**`jd-parser.ts`** (`app/services/jd_parser.py`). LLM structured extraction is
+the default path (the adapter calls Phase 8 `callLlm`), with heuristic fallbacks
+that guarantee a non-empty role and `required_skills`
+(`Software Development`, `Problem Solving`). Alias lists, labelled-field
+extraction (`Company:`, `Location:`), filename-derived roles, and the
+`Empty JD text provided.` defaults match Python.
+
+**`tavily.ts`** (`app/services/tavily_service.py`, job-discovery subset). Phase 9
+ports `searchLiveJobs` only; salary, trend and recruiter-intel helpers arrive
+with later phases. A key must be non-empty, must not contain `your_tavily`, and
+must not start with `placeholder`. Searches target the Python job-board domain
+list, filter snippets of 100 characters or fewer, cache non-empty results for
+one hour (TTL clock injectable for tests), and return `[]` on HTTP/network
+failure.
+
+**`job-desc-api.ts`** (`app/services/job_desc_api.py`). `getMockJd` reproduces
+the frontend/backend/generic templates; `fetchLiveJobDescription` uses Tavily
+when available and falls back to the mock; `mapRawJobToJd` wraps the live result
+in a synthetic JD and fills missing company/location.
+
+**`matching.ts`** (`app/services/matching_service.py`). Five-pillar scoring
+(technical 35, experience 25, architecture 15, leadership 15, education 10),
+synonym-aware token normalisation, composite splitting for `or`/`and`/`/`
+requirements, a 30-point floor whenever any skill matched, a 97-point cap, and
+Python's half-even rounding. `detectRedFlags` reports insufficient experience and
+zero overlap; `evaluateCandidateAgainstJd` mutates the candidate with score,
+matched skills, gaps, red flags, headline and summary; `evaluateCandidatesBatch`
+sorts descending by score.
+
+Phase 9 adds 98 tests across `document-parser`, `resume-parser`, `jd-parser`,
+`tavily` and `matching` (synthetic PDF/DOCX fixtures, multimodal stubs, cache
+clocks, and scoring edge cases).
 
 ## App wiring and error handling
 
