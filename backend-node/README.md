@@ -1,12 +1,13 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–7 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–8 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
-access layer, and the structured logging/telemetry layer. No feature routes live
-here yet. The Python backend in `../backend/` remains the running service and is
-untouched until cutover.
+access layer, the structured logging/telemetry layer, and the Gemini LLM
+routing layer with safety gates. No feature routes live here yet. The Python
+backend in `../backend/` remains the running service and is untouched until
+cutover.
 
 ## Status
 
@@ -19,7 +20,8 @@ untouched until cutover.
 | Phase 5 — validation + API contracts  | ✅ complete                             |
 | Phase 6 — database access layer       | ✅ complete                             |
 | Phase 7 — logging, context, telemetry | ✅ complete                             |
-| Phases 8–24                           | pending (see `../Backend-Migration.md`) |
+| Phase 8 — LLM routing + safety gates  | ✅ complete                             |
+| Phases 9–24                           | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -52,8 +54,9 @@ src/
 ├── schemas/        # app/schemas/* + inline models            (Phase 5 ✅)
 ├── db/             # Drizzle + pgvector/SQLite       (Phase 6 ✅)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
+├── llm/            # app/core/llm_router.py         (Phase 8 ✅)
 ├── agents/         # app/graph/*                   (Phase 13)
-├── rag/            # app/rag/*                     (Phase 8+)
+├── rag/            # app/rag/*                     (Phase 9+)
 ├── services/       # app/services/*                (Phases 9–16)
 │                   #   + quota guard + persistence  (Phases 2/6 ✅)
 ├── tools/          # app/tools/*                   (Phase 11/13)
@@ -320,6 +323,45 @@ success/error spans. Swap the span sink for an OTLP exporter later without
 touching call sites.
 
 Metrics are always enabled, matching the Python config (no env toggle).
+
+## LLM routing and safety gates
+
+`src/llm/` ports `app/core/llm_router.py` (ENG-4).
+
+**Transport** (`gemini.ts`). `invokeGemini` calls the REST
+`models/{model}:generateContent` endpoint with `fetch` — no vendor SDK — and
+preserves Python's request settings: `temperature: 0`, an optional
+`systemInstruction`, `responseMimeType: application/json` when `jsonMode` is
+set, and a 30 s `AbortController` timeout. Responses are shaped like a LangChain
+`AIMessage` (`content` plus `usage_metadata`/`response_metadata`), so later
+graph nodes can consume them unchanged. Errors carry the provider status
+(`Gemini API error (429): ...`) so rate-limit detection keeps working.
+
+**Router** (`router.ts`).
+
+- `callLlm(prompt, { systemInstruction, providerOverride, jsonMode })` returns
+  `{ text, provider, latencyMs }` (Python's `(text, provider, latency_ms)`) and
+  raises `AllProvidersFailedError` when the pool is exhausted.
+- Model order is round-robin across `ROTATING_MODELS`; a valid
+  `providerOverride` leads the order without advancing the cursor. Healthy
+  circuits (CLOSED/HALF_OPEN) come first, tripped models last, and the full pool
+  is returned when every circuit is open.
+- `ModelCircuitBreaker` opens after 3 consecutive failures, opens immediately on
+  a rate limit (`429` / `resource_exhausted` / `rate_limit`), and probes
+  HALF_OPEN after a 60 s cooldown. A success closes the circuit.
+- `extractText()` handles every content shape Python handles; `parseJsonSafely()`
+  strips markdown fences and trailing commas, and never falls back to literal
+  evaluation.
+- Accounting uses the provider's token counts, otherwise Python's
+  `len(text) // 4` heuristic, at $0.075/1M input and $0.30/1M output. Each call
+  emits the `llm_call_completed` telemetry event and feeds `recordTokens()` so
+  `/api/metrics` reports totals.
+
+Gates run before any request leaves the process, in Python's order: the kill
+switch (`LLM_KILL_SWITCH`) short-circuits with
+`AllProvidersFailedError`, `verifyProviderCompliance()` enforces AI-SEC-1 in
+production, and a missing or placeholder `GEMINI_API_KEY` is rejected with
+Python's exact message.
 
 ## App wiring and error handling
 
