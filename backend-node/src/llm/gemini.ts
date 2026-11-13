@@ -37,6 +37,10 @@ export interface GeminiRequest {
   readonly systemInstruction?: string;
   /** Enforce `responseMimeType: application/json` (upstream JSON mode). */
   readonly jsonMode?: boolean;
+  /** Sampling temperature. Python text calls use 0, vision uses 0.1. */
+  readonly temperature?: number;
+  /** Base64 inline image part for multimodal extraction. */
+  readonly image?: { readonly mimeType: string; readonly data: string };
   readonly timeoutMs?: number;
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -87,10 +91,17 @@ export const invokeGemini: GeminiInvoker = async (request) => {
     `${baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(request.model)}` +
     `:generateContent?key=${encodeURIComponent(request.apiKey)}`;
 
+  const parts: Array<Record<string, unknown>> = [{ text: request.prompt }];
+  if (request.image) {
+    parts.push({
+      inlineData: { mimeType: request.image.mimeType, data: request.image.data },
+    });
+  }
+
   const body: Record<string, unknown> = {
-    contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
+    contents: [{ role: 'user', parts }],
     generationConfig: {
-      temperature: 0,
+      temperature: request.temperature ?? 0,
       ...(request.jsonMode ? { responseMimeType: 'application/json' } : {}),
     },
   };
