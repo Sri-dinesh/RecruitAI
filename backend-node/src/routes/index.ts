@@ -3,9 +3,11 @@ import { Router } from 'express';
 import type { AppConfig } from '../config/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import type { EmailService } from '../services/email-service.js';
+import type { IngestionService } from '../services/ingestion-service.js';
 import type { PaymentService } from '../services/payment-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
 import { createEmailRouter } from './email.js';
+import { createIngestRouter } from './ingest.js';
 import { createMetricsRouter } from './metrics.js';
 import { createPaymentsRouter } from './payments.js';
 
@@ -48,6 +50,8 @@ export interface ApiRouterOptions {
   readonly paymentService?: PaymentService;
   /** Shared email/outreach service. */
   readonly emailService?: EmailService;
+  /** Shared ingest/ingestion service. */
+  readonly ingestionService?: IngestionService;
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
@@ -68,6 +72,16 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
       ...(options.config === undefined ? {} : { config: options.config }),
       auth,
       ...(options.emailService === undefined ? {} : { emailService: options.emailService }),
+    }),
+  );
+  router.use(
+    '/ingest',
+    createIngestRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...(options.ingestionService === undefined
+        ? {}
+        : { ingestionService: options.ingestionService }),
     }),
   );
   return router;

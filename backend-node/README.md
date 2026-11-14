@@ -1,14 +1,15 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–11 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–12 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
 access layer, the structured logging/telemetry layer, the Gemini LLM routing
 layer with safety gates, the document/resume/JD parsing plus matching
-services, payments/credits, and email tooling with outreach dispatch, history
-and stats. The Python backend in `../backend/` remains the running service and
-is untouched until cutover.
+services, payments/credits, email tooling with outreach dispatch, history and
+stats, and resume/JD ingestion with campaign context hydration. The Python
+backend in `../backend/` remains the running service and is untouched until
+cutover.
 
 ## Status
 
@@ -25,7 +26,8 @@ is untouched until cutover.
 | Phase 9 — parsing + matching services | ✅ complete                             |
 | Phase 10 — payments + credits         | ✅ complete                             |
 | Phase 11 — email + outreach           | ✅ complete                             |
-| Phases 12–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 12 — ingest + campaign context  | ✅ complete                             |
+| Phases 13–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -60,11 +62,12 @@ src/
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
 ├── llm/            # app/core/llm_router.py         (Phase 8 ✅)
 ├── agents/         # app/graph/*                   (Phase 13)
-├── rag/            # app/rag/*                     (later phases)
+├── rag/            # app/rag/*                     (Phase 12 ✅ + later phases)
 ├── services/       # app/services/*                (Phase 9 ✅ + later phases)
 │                   #   parsing, resume/JD, Tavily, matching (Phase 9 ✅)
 │                   #   + quota guard + persistence  (Phases 2/6 ✅)
 │                   #   + payments + email/outreach  (Phases 10/11 ✅)
+│                   #   + ingestion + campaign       (Phase 12 ✅)
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13)
 └── jobs/           # app/services/job_queue.py     (Phase 14/21)
 tests/              # ported pytest suite          (Phase 18)
@@ -511,6 +514,54 @@ sorts descending by score.
 Phase 9 adds 98 tests across `document-parser`, `resume-parser`, `jd-parser`,
 `tavily` and `matching` (synthetic PDF/DOCX fixtures, multimodal stubs, cache
 clocks, and scoring edge cases).
+
+## Ingestion, RAG, and campaign context
+
+**`src/rag/`** ports the pieces ingestion needs from `app/rag/` and
+`app/services/redaction.py`:
+
+- `chunking.ts` — paragraph-first resume chunking with the 150-word window and
+  25-word overlap.
+- `redaction.ts` — stateless PII minimization before embedding
+  (`[REDACTED_EMAIL]`, `[REDACTED_PHONE]`, `[REDACTED_URL]`,
+  `[REDACTED_LOCATION]`, `[CANDIDATE_ANONYMOUS]`), including tag neutralisation.
+- `embeddings.ts` — Gemini `gemini-embedding-2` via `:embedContent` with 384
+  output dimensions and the redacted text. A missing/placeholder key, provider
+  error or timeout degrades to the reproducible deterministic SHA-256 vector
+  instead of failing ingestion.
+
+**`src/services/ingestion-service.ts`** (`app/services/ingestion_service.py`).
+Deterministic SHA-256 resume hashing (normalized text, minimum 20 characters)
+is the primary deduplication key, with a verified non-`@recruitai.local` email
+as the secondary key. It preserves the candidate metadata shape, merges
+`session_id`/`session_ids`, links `session_candidates`, scores new candidates
+immediately against the session's active JD (writing `applications` and
+metadata), and replaces the candidate's `resume_chunks` with freshly embedded
+chunks. Every read and write goes through the tenant-scoped `WorkspaceStore`,
+so the Drizzle/PostgreSQL path and the SQLite fallback share one
+implementation. `saveJobDescription` always inserts a new job, binds it to the
+session, retitles the campaign `Hiring: <role>`, and re-scores existing session
+candidates as `new` applications.
+
+**`src/routes/ingest.ts`** (`app/api/routes_ingest.py`). Both endpoints require
+auth. `/api/ingest/upload` accepts `files` (many) then `file` (single), resolves
+extensions from the filename, Content-Type or magic bytes, enforces the 15 MB
+per-file limit, and preserves Python's response contract: single failure → 400
+plain detail, mixed batch → RFC 4918 `207` array, success → `200` array.
+`/api/ingest/upload-jd` requires `file`, maps read failures and empty text to
+400, oversize to 413 and parse failures to 500, then persists and binds the job.
+
+**`src/services/campaign-service.ts`** (`app/services/campaign_service.py`).
+`ensureSessionExists` creates a `New Hiring Campaign` row when missing and is
+tenant-scoped; hydration fills a missing JD from the session's job, up to 50
+candidate resumes, and the last 20 messages in ascending order. Every hydration
+step is best-effort and matches Python's truthiness rules (an empty JD is
+treated as missing). `execute_agent_turn` stays in Phase 13 because it depends
+on the LangGraph agent.
+
+Phase 12 adds 64 tests across `rag`, `ingestion-service`, `campaign-service`
+and the ingest routes (multipart batches, partial failures, session linking,
+JD binding, hydration limits and error swallowing).
 
 ## App wiring and error handling
 
