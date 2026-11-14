@@ -2,8 +2,10 @@ import { Router } from 'express';
 
 import type { AppConfig } from '../config/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { EmailService } from '../services/email-service.js';
 import type { PaymentService } from '../services/payment-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
+import { createEmailRouter } from './email.js';
 import { createMetricsRouter } from './metrics.js';
 import { createPaymentsRouter } from './payments.js';
 
@@ -44,6 +46,8 @@ export interface ApiRouterOptions {
   readonly metrics?: RedMetricsRegistry;
   /** Shared payment service (also used by the public webhook route). */
   readonly paymentService?: PaymentService;
+  /** Shared email/outreach service. */
+  readonly emailService?: EmailService;
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
@@ -56,6 +60,14 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
       ...(options.config === undefined ? {} : { config: options.config }),
       auth,
       ...(options.paymentService === undefined ? {} : { paymentService: options.paymentService }),
+    }),
+  );
+  router.use(
+    '/email',
+    createEmailRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...(options.emailService === undefined ? {} : { emailService: options.emailService }),
     }),
   );
   return router;

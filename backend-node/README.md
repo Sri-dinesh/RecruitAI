@@ -1,13 +1,14 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–9 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–11 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
 access layer, the structured logging/telemetry layer, the Gemini LLM routing
-layer with safety gates, and the document/resume/JD parsing plus matching
-services. The Python backend in `../backend/` remains the running service and is
-untouched until cutover.
+layer with safety gates, the document/resume/JD parsing plus matching
+services, payments/credits, and email tooling with outreach dispatch, history
+and stats. The Python backend in `../backend/` remains the running service and
+is untouched until cutover.
 
 ## Status
 
@@ -23,7 +24,8 @@ untouched until cutover.
 | Phase 8 — LLM routing + safety gates  | ✅ complete                             |
 | Phase 9 — parsing + matching services | ✅ complete                             |
 | Phase 10 — payments + credits         | ✅ complete                             |
-| Phases 11–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 11 — email + outreach           | ✅ complete                             |
+| Phases 12–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -47,7 +49,7 @@ Default server: `http://localhost:8000` (`HOST` / `PORT` from the environment).
 src/
 ├── app.ts          # Express app factory
 ├── main.ts         # bootstrap / entrypoint
-├── routes/         # api/routes_*.py equivalents (health, metrics, payments)
+├── routes/         # api/routes_*.py equivalents (health, metrics, payments, email)
 ├── config/         # app/core/config.py            (Phase 2 ✅)
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
@@ -62,7 +64,8 @@ src/
 ├── services/       # app/services/*                (Phase 9 ✅ + later phases)
 │                   #   parsing, resume/JD, Tavily, matching (Phase 9 ✅)
 │                   #   + quota guard + persistence  (Phases 2/6 ✅)
-├── tools/          # app/tools/*                   (Phase 11/13)
+│                   #   + payments + email/outreach  (Phases 10/11 ✅)
+├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13)
 └── jobs/           # app/services/job_queue.py     (Phase 14/21)
 tests/              # ported pytest suite          (Phase 18)
 ```
@@ -317,6 +320,45 @@ use `requireAuth()`. `/consume-credit` returns **HTTP 402** with a plain-string
 the separate quota guard. The webhook is mounted before the global JSON parser
 so signature verification sees the exact bytes and malformed JSON returns the
 route's `400 Invalid JSON payload in webhook body.` instead of body-parser's 422.
+
+### Email tooling, outreach dispatch, history, and stats
+
+`src/tools/email-tool.ts` ports `app/tools/email_tool.py`; `src/services/email-service.ts`
+ports the behavior of `app/api/routes_email.py`; `src/db/outreach-store.ts`
+provides the `OutreachStore` contract with Drizzle/PostgreSQL and SQLite
+implementations.
+
+Preserved behavior:
+
+- `draftRecruiterEmail` asks the LLM pool for a subject/body/signature draft and
+  falls back to the same action-specific template (`interview invite`,
+  `rejection`, `offer`, generic) with the exact fallback note when every
+  provider fails;
+- `sendEmailDraft` dispatches over SMTP only when **both** `SMTP_USERNAME` and
+  `SMTP_PASSWORD` are configured (`nodemailer`, TLS on port 587, sender falling
+  back to the username); otherwise it simulates the dispatch;
+- simulated logs mask the recipient after the first two characters
+  (`alice@example.com` → `al***@example.com`), while the full address is still
+  stored in `outreach_logs` for the recruiter;
+- the route classifies dispatch from the tool's status string:
+  `Email sent successfully via SMTP` → `sent`/`smtp`,
+  `Failed to send email via SMTP` → `failed`/`smtp` (HTTP 500),
+  anything else → `simulated`/`simulated`;
+- `POST /api/email/send` returns `{ status, log_id, dispatch_type,
+credits_remaining }`, checks the structured outreach 402 body first, and
+  deducts exactly one credit (`Candidate outreach email to <recipient>`) after a
+  successful or simulated dispatch; ledger/log failures are logged but never
+  fail the request;
+- `subject`/`body` override the `Subject:` line in `email_draft`; otherwise the
+  line is parsed case-insensitively and the default is `RecruitAI Outreach`;
+- `GET /api/email/history` is tenant-scoped, newest first, optional
+  `candidate_id`, `limit` default `50` and bounded `1..100`, and degrades to an
+  empty result on database failure;
+- `GET /api/email/stats` counts `sent`/`simulated`/`failed` for the tenant and
+  degrades to zeroed counters.
+
+All three routes use `requireAuth()` and preserve the Pydantic recipient
+validation (`Invalid recipient email format: '<clean>'`, trimmed).
 
 ## Logging, request context, and telemetry
 

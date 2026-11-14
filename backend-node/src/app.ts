@@ -9,6 +9,7 @@ import { healthRouter } from './routes/health.js';
 import { createApiRouter } from './routes/index.js';
 import { createPaymentsWebhookRouter } from './routes/payments.js';
 import { createPaymentService, type PaymentService } from './services/payment-service.js';
+import { createEmailService, type EmailService } from './services/email-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from './telemetry/metrics.js';
 
 export interface CreateAppOptions {
@@ -18,6 +19,8 @@ export interface CreateAppOptions {
   readonly metrics?: RedMetricsRegistry;
   /** Shared payment service for the API routes and the public webhook. */
   readonly paymentService?: PaymentService;
+  /** Shared email/outreach service; defaults to one using the payment service. */
+  readonly emailService?: EmailService;
 }
 
 /**
@@ -40,6 +43,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const config = options.config ?? getConfig();
   const metrics = options.metrics ?? metricsRegistry;
   const paymentService = options.paymentService ?? createPaymentService({ config });
+  const emailService = options.emailService ?? createEmailService({ config, paymentService });
   const app = express();
 
   // Default Express fingerprint header is not part of the existing contract.
@@ -59,7 +63,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(jsonBodyParser);
 
   app.use(healthRouter);
-  app.use('/api', createApiRouter({ config, metrics, paymentService }));
+  app.use('/api', createApiRouter({ config, metrics, paymentService, emailService }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
