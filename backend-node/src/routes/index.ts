@@ -2,8 +2,10 @@ import { Router } from 'express';
 
 import type { AppConfig } from '../config/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { PaymentService } from '../services/payment-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
 import { createMetricsRouter } from './metrics.js';
+import { createPaymentsRouter } from './payments.js';
 
 /**
  * API router root, mounted at `/api` by the app factory.
@@ -40,11 +42,21 @@ export interface ApiRouterOptions {
   readonly config?: AppConfig;
   /** Isolated registry for tests; defaults to the process-wide collector. */
   readonly metrics?: RedMetricsRegistry;
+  /** Shared payment service (also used by the public webhook route). */
+  readonly paymentService?: PaymentService;
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
   const router = Router();
   const auth = options.config ? requireAuth({ config: options.config }) : requireAuth();
   router.use('/metrics', auth, createMetricsRouter(options.metrics ?? metricsRegistry));
+  router.use(
+    '/payments',
+    createPaymentsRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...(options.paymentService === undefined ? {} : { paymentService: options.paymentService }),
+    }),
+  );
   return router;
 }

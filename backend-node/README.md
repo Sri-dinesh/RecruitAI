@@ -22,7 +22,8 @@ untouched until cutover.
 | Phase 7 — logging, context, telemetry | ✅ complete                             |
 | Phase 8 — LLM routing + safety gates  | ✅ complete                             |
 | Phase 9 — parsing + matching services | ✅ complete                             |
-| Phases 10–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 10 — payments + credits         | ✅ complete                             |
+| Phases 11–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -46,7 +47,7 @@ Default server: `http://localhost:8000` (`HOST` / `PORT` from the environment).
 src/
 ├── app.ts          # Express app factory
 ├── main.ts         # bootstrap / entrypoint
-├── routes/         # api/routes_*.py equivalents (health + empty API router)
+├── routes/         # api/routes_*.py equivalents (health, metrics, payments)
 ├── config/         # app/core/config.py            (Phase 2 ✅)
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
@@ -281,6 +282,42 @@ Ported behavior:
 - `persistSessionCandidate` links session ↔ candidate only when both rows belong
   to the tenant.
 
+### Payments, subscriptions, and credits
+
+`src/services/payment-service.ts` ports `payment_service.py`; `src/db/payment-store.ts`
+provides the `PaymentStore` contract with Drizzle/PostgreSQL and SQLite
+implementations, resolved lazily (PostgreSQL when `DATABASE_URL` is set,
+otherwise the SQLite fallback).
+
+Preserved behavior:
+
+- the three plans (`starter` ₹1,499/50 credits, `pro` ₹3,999/250,
+  `agency` ₹7,999/1,000) and `DEFAULT_FREE_CREDITS = 10`;
+- order creation through Razorpay's REST `/v1/orders` endpoint with Basic auth,
+  the `rcpt_<user prefix>_<decimal>` receipt, and notes carrying
+  `user_id`/`plan_id`;
+- simulated `order_mock_<14 hex>` orders with `rzp_test_mock_key` when keys are
+  absent; a live Razorpay failure is fatal in production only, and the frontend
+  sandbox keeps working for keys containing `mock`;
+- checkout HMAC verification over `order_id|payment_id`, the
+  `mock_valid_signature`/`test_` acceptance rules, and webhook HMAC verification
+  over the raw body;
+- subscription activation (one consolidated row per tenant), 30-day periods,
+  credit top-ups, and best-effort ledger writes;
+- `sub_<12 hex>`/`tx_<12 hex>` public ids, with storage UUIDs generated on
+  PostgreSQL where the schema requires them;
+- newest-first credit transaction history and credit consumption with the exact
+  messages (`Amount must be greater than 0.`,
+  `Insufficient credits. Remaining: X, required: Y`).
+
+`src/routes/payments.ts` ports every endpoint. `/plans` and `/webhook` are
+public; `/order`, `/verify`, `/status`, `/transactions` and `/consume-credit`
+use `requireAuth()`. `/consume-credit` returns **HTTP 402** with a plain-string
+`detail`, matching Python; the structured `INSUFFICIENT_CREDITS` body belongs to
+the separate quota guard. The webhook is mounted before the global JSON parser
+so signature verification sees the exact bytes and malformed JSON returns the
+route's `400 Invalid JSON payload in webhook body.` instead of body-parser's 422.
+
 ## Logging, request context, and telemetry
 
 `src/telemetry/` ports `app/core/logging.py` (AI-SEC-5) and
@@ -442,14 +479,16 @@ clocks, and scoring edge cases).
 2. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-3. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
+3. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
+   mounted before the JSON parser so HMAC verification uses the exact bytes.
+4. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
    primitive JSON roots reach the validators; interim 25 MB limit).
-4. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+5. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
-5. **Feature routers under `/api`** — each router applies `requireAuth()`
+6. **Feature routers under `/api`** — each router applies `requireAuth()`
    itself, matching FastAPI's per-route dependency.
-6. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
-7. **Terminal error handler** (last):
+7. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+8. **Terminal error handler** (last):
    - `HttpError` subclasses render their status, headers and `{ detail }`
      (401 Bearer challenge, 402 quota body, 403 denials).
    - validation failures render FastAPI's `422` `{ detail: [...] }` shape.
@@ -467,9 +506,8 @@ Intentionally absent (the Python backend has no such middleware): request-id,
 security headers, trusted-host checks, and timing middleware. Do not add them
 without marking them as new hardening and keeping response shapes unchanged.
 
-Deep readiness (`/health/ready`, `/api/health/ready`) and metrics
-(`/api/metrics`) are authenticated and arrive with the database, telemetry and
-observability phases (6/7/17).
+Deep readiness (`/health/ready`, `/api/health/ready`) is authenticated and
+arrives with a later phase. Metrics (`/api/metrics`) were delivered in Phase 7.
 
 ## Validation and API contracts
 
