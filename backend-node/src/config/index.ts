@@ -144,6 +144,26 @@ export interface TelemetryConfig {
   readonly enabled: true;
 }
 
+/**
+ * Async chat job execution (Phase 14).
+ *
+ * The Python job queue is process-local. When `REDIS_URL` is set the service
+ * uses the BullMQ-backed manager; otherwise it falls back to the in-memory
+ * Python-equivalent manager so local development and tests need no Redis.
+ */
+export interface JobsConfig {
+  readonly redisUrl: string | null;
+  readonly queueName: string;
+  /** Job/event retention in seconds (Python: 3600). */
+  readonly ttlSeconds: number;
+  /** Fleet-wide cap on concurrently running turns per user. */
+  readonly perUserConcurrency: number;
+  /** Turns a single worker process may run at once (Python: 10 threads). */
+  readonly workerConcurrency: number;
+  /** Maximum events kept for replay per job. */
+  readonly eventReplayLimit: number;
+}
+
 export interface AppConfig {
   readonly environment: string;
   readonly nodeEnv: string | undefined;
@@ -156,6 +176,7 @@ export interface AppConfig {
   readonly smtp: SmtpConfig;
   readonly razorpay: RazorpayConfig;
   readonly cors: CorsConfig;
+  readonly jobs: JobsConfig;
   readonly telemetry: TelemetryConfig;
   /** Required keys that are currently missing (informational outside production). */
   readonly missingKeys: readonly string[];
@@ -254,6 +275,14 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
     cors: {
       allowedOrigins,
       previewOriginRegex: VERCEL_PREVIEW_ORIGIN_REGEX,
+    },
+    jobs: {
+      redisUrl: readString(env, 'REDIS_URL') || null,
+      queueName: readStringOr(env, 'JOB_QUEUE_NAME', 'recruitai-agent-jobs'),
+      ttlSeconds: readPositiveIntStrict(env, 'JOB_TTL_SECONDS', 3600),
+      perUserConcurrency: readPositiveIntStrict(env, 'JOB_PER_USER_CONCURRENCY', 2),
+      workerConcurrency: readPositiveIntStrict(env, 'JOB_WORKER_CONCURRENCY', 10),
+      eventReplayLimit: readPositiveIntStrict(env, 'JOB_EVENT_REPLAY_LIMIT', 100),
     },
     telemetry: { enabled: true },
     missingKeys: getMissingKeys(env),
