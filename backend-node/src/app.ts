@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 
 import { getConfig, type AppConfig } from './config/index.js';
+import { createChatJobManager, type ChatJobManager } from './jobs/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { jsonBodyParser } from './middleware/json-body.js';
@@ -8,6 +9,11 @@ import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
 import { healthRouter } from './routes/health.js';
 import { createApiRouter } from './routes/index.js';
 import { createPaymentsWebhookRouter } from './routes/payments.js';
+import {
+  createCampaignService,
+  type CampaignService,
+  type ExecuteAgentTurnInput,
+} from './services/campaign-service.js';
 import { createPaymentService, type PaymentService } from './services/payment-service.js';
 import { createEmailService, type EmailService } from './services/email-service.js';
 import { createIngestionService, type IngestionService } from './services/ingestion-service.js';
@@ -24,6 +30,9 @@ export interface CreateAppOptions {
   readonly emailService?: EmailService;
   /** Shared ingest service; defaults to one using the shared config. */
   readonly ingestionService?: IngestionService;
+  /** Shared chat/campaign service and async job manager. */
+  readonly campaignService?: CampaignService;
+  readonly chatJobManager?: ChatJobManager;
 }
 
 /**
@@ -48,6 +57,14 @@ export function createApp(options: CreateAppOptions = {}): Express {
   const paymentService = options.paymentService ?? createPaymentService({ config });
   const emailService = options.emailService ?? createEmailService({ config, paymentService });
   const ingestionService = options.ingestionService ?? createIngestionService({ config });
+  const campaignService = options.campaignService ?? createCampaignService({ config });
+  const chatJobManager =
+    options.chatJobManager ??
+    createChatJobManager({
+      config,
+      runner: (payload) =>
+        campaignService.executeAgentTurn(payload as unknown as ExecuteAgentTurnInput),
+    });
   const app = express();
 
   // Default Express fingerprint header is not part of the existing contract.
@@ -69,7 +86,15 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(healthRouter);
   app.use(
     '/api',
-    createApiRouter({ config, metrics, paymentService, emailService, ingestionService }),
+    createApiRouter({
+      config,
+      metrics,
+      paymentService,
+      emailService,
+      ingestionService,
+      campaignService,
+      chatJobManager,
+    }),
   );
 
   app.use(notFoundHandler);

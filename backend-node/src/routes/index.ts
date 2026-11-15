@@ -1,11 +1,14 @@
 import { Router } from 'express';
 
 import type { AppConfig } from '../config/index.js';
+import type { ChatJobManager } from '../jobs/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { CampaignService } from '../services/campaign-service.js';
 import type { EmailService } from '../services/email-service.js';
 import type { IngestionService } from '../services/ingestion-service.js';
 import type { PaymentService } from '../services/payment-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
+import { createChatRouter } from './chat.js';
 import { createEmailRouter } from './email.js';
 import { createIngestRouter } from './ingest.js';
 import { createMetricsRouter } from './metrics.js';
@@ -52,12 +55,27 @@ export interface ApiRouterOptions {
   readonly emailService?: EmailService;
   /** Shared ingest/ingestion service. */
   readonly ingestionService?: IngestionService;
+  /** Shared chat/campaign service and async job manager. */
+  readonly campaignService?: CampaignService;
+  readonly chatJobManager?: ChatJobManager;
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
   const router = Router();
   const auth = options.config ? requireAuth({ config: options.config }) : requireAuth();
   router.use('/metrics', auth, createMetricsRouter(options.metrics ?? metricsRegistry));
+  router.use(
+    '/chat',
+    auth,
+    createChatRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...(options.campaignService === undefined
+        ? {}
+        : { campaignService: options.campaignService }),
+      ...(options.chatJobManager === undefined ? {} : { jobManager: options.chatJobManager }),
+    }),
+  );
   router.use(
     '/payments',
     createPaymentsRouter({
