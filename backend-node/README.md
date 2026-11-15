@@ -1,16 +1,16 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–13 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–14 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
 access layer, the structured logging/telemetry layer, the Gemini LLM routing
 layer with safety gates, the document/resume/JD parsing plus matching
 services, payments/credits, email tooling with outreach dispatch, history and
-stats, resume/JD ingestion with campaign context hydration, and the
-multi-agent supervisor graph with its 15 specialized nodes. The Python
-backend in `../backend/` remains the running service and is untouched until
-cutover.
+stats, resume/JD ingestion with campaign context hydration, the multi-agent
+supervisor graph with its 15 specialized nodes, and the chat API with its async
+job queue and SSE streaming. The Python backend in `../backend/` remains the
+running service and is untouched until cutover.
 
 ## Status
 
@@ -29,7 +29,8 @@ cutover.
 | Phase 11 — email + outreach           | ✅ complete                             |
 | Phase 12 — ingest + campaign context  | ✅ complete                             |
 | Phase 13 — multi-agent graph + nodes  | ✅ complete                             |
-| Phases 14–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 14 — chat + jobs + SSE          | ✅ complete                             |
+| Phases 15–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -53,7 +54,7 @@ Default server: `http://localhost:8000` (`HOST` / `PORT` from the environment).
 src/
 ├── app.ts          # Express app factory
 ├── main.ts         # bootstrap / entrypoint
-├── routes/         # api/routes_*.py equivalents (health, metrics, payments, email)
+├── routes/         # api/routes_*.py equivalents (health, metrics, payments, email, chat)
 ├── config/         # app/core/config.py            (Phase 2 ✅)
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
@@ -72,7 +73,7 @@ src/
 │                   #   + ingestion + campaign       (Phase 12 ✅)
 │                   #   + redaction, mismatch, RAG intel (Phase 13 ✅)
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
-└── jobs/           # app/services/job_queue.py     (Phase 14/21)
+└── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
 tests/              # ported pytest suite          (Phase 18)
 ```
 
@@ -99,6 +100,15 @@ Ported behavior from `app/core/config.py`:
   connection strings. `PG_POOL_MAX`, `PG_IDLE_TIMEOUT_MS` and
   `PG_CONNECTION_TIMEOUT_MS` are strict: invalid or non-positive values fail at
   boot. `SQLITE_FALLBACK_PATH` defaults to `recruitai_fallback.db`.
+
+Async chat job settings (Phase 14) live under `config.jobs`:
+
+- `REDIS_URL` unset → the in-memory job manager (Python parity, single process).
+  Set → the BullMQ/Redis manager with durable jobs and cross-instance SSE.
+- `JOB_QUEUE_NAME` defaults to `recruitai-agent-jobs`; `JOB_TTL_SECONDS` to
+  `3600`; `JOB_PER_USER_CONCURRENCY` to `2`; `JOB_WORKER_CONCURRENCY` to `10`;
+  `JOB_EVENT_REPLAY_LIMIT` to `100`. All numeric values are strict and must be
+  positive.
 
 Production gates (fail-fast at boot, before the server listens):
 
@@ -619,7 +629,59 @@ Supporting services added in this phase:
 
 Phase 13 adds 156 tests across the graph runtime, router, builder, node
 groups, campaign turn persistence, redaction, Tavily intelligence, advanced
-RAG and mismatch analysis (648 tests total).
+RAG and mismatch analysis.
+
+## Chat API, async job queue, and SSE
+
+**`src/routes/chat.ts`** (`app/api/routes_chat.py`). Three authenticated routes
+under `/api/chat`, with the Python contract preserved byte-for-byte:
+
+- `POST /api/chat` validates `ChatRequest`, creates/reuses the session and
+  hydrates context, then either runs `executeAgentTurn` inline (`200`
+  `ChatResponse`) or enqueues it. `async_mode` is accepted from the query
+  string (`?async_mode=true`) or the JSON body; sync failures map to
+  `500 {"detail":"Agent execution failed. (ref=<8 hex>)"}` with the detail
+  logged server-side.
+- `GET /api/chat/jobs/:job_id` returns the `AgentJob.to_dict()` field order
+  (`job_id, session_id, status, created_at, updated_at, steps_count, result,
+error`) and is tenant-scoped: another user's job is a `404
+{"detail":"Agent job not found."}`.
+- `GET /api/chat/jobs/:job_id/stream` returns `text/event-stream` with
+  `init`, `status`, then `complete` or `error` frames. A finished job replays
+  its terminal frame immediately. The generator is aborted when the client
+  disconnects.
+
+An async request returns `202` with:
+`{job_id, session_id, status:"queued", check_url, stream_url}`, where
+`check_url`/`stream_url` are `/api/chat/jobs/<id>` and
+`/api/chat/jobs/<id>/stream`.
+
+**`src/jobs/`** ports `app/services/job_queue.py` behind one `ChatJobManager`
+interface with two implementations, selected by `REDIS_URL`:
+
+- `in-memory-job-manager.ts` — the direct Python equivalent: UUID jobs,
+  `queued → running → completed | failed`, `setTimeout` dispatch instead of
+  `loop.create_task`, `steps_count`, per-job SSE queues, and a one-hour TTL
+  sweep on the next `createJob`. Deliberate improvement: events are buffered
+  per job and replayed to every subscriber, so reconnects do not miss the
+  `running` frame.
+- `redis-job-manager.ts` — BullMQ `Queue`/`Worker` with the job id as the
+  BullMQ id, job records in TTL'd Redis hashes, event frames in a capped Redis
+  list plus per-job pub/sub for live fan-out and replay, and a Redis Lua
+  counter for a fleet-wide per-user concurrency cap (a worker delays and
+  retries rather than failing). Unknown/foreign job ids stay indistinguishable
+  from missing ones.
+
+Both managers share `chat-job-manager.ts` (types, `formatSseEvent`,
+`jobToDict`, terminal-event mapping). `src/app.ts` builds one
+`CampaignService` and one `ChatJobManager`, injects them into the API router,
+and the manager's runner calls `CampaignService.executeAgentTurn`, keeping the
+HTTP request and the long-running turn separate.
+
+Phase 14 adds 44 tests across the in-memory manager, the Redis manager (fake
+Redis/queue/worker backend, so no server is needed) and the chat routes
+(sync/async dispatch, job polling, SSE frames, tenant isolation, 422/500
+shapes; 692 tests total).
 
 ## App wiring and error handling
 
@@ -637,7 +699,9 @@ RAG and mismatch analysis (648 tests total).
 5. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
 6. **Feature routers under `/api`** — each router applies `requireAuth()`
-   itself, matching FastAPI's per-route dependency.
+   itself, matching FastAPI's per-route dependency. `/api/chat` receives the
+   shared `CampaignService` and `ChatJobManager` built by the app factory so
+   sync turns, queued turns and SSE all use the same instances.
 7. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
 8. **Terminal error handler** (last):
    - `HttpError` subclasses render their status, headers and `{ detail }`
@@ -744,4 +808,6 @@ intentionally differs from the FastAPI contracts; changes require explicit revie
 - No commits are made automatically; branch: `feat/backend-express-migration`.
 - Python backend stays runnable during the whole migration for parity checks.
 - Scale architecture (Redis jobs/SSE, pooling, rate limits) is specified in
-  Phases 21–24 of `../Backend-Migration.md`.
+  Phases 21–24 of `../Backend-Migration.md`. Phase 14 already ships the
+  Redis/BullMQ job path; `ChatJobManager.close()` exists so Phase 21's graceful
+  shutdown can drain workers and streams on `SIGTERM`.
