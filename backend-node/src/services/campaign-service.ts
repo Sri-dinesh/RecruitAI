@@ -2,19 +2,33 @@ import { randomUUID } from 'node:crypto';
 
 import { getConfig, type AppConfig } from '../config/index.js';
 import { createWorkspaceStore, type WorkspaceStore } from '../db/workspace-store.js';
+import { buildRecruitGraph } from '../graph/builder.js';
+import { getGraphDeps, type GraphDeps } from '../graph/deps.js';
+import type { RecruitState, ScheduledInterview } from '../graph/state.js';
+import { candidateSchema } from '../schemas/candidate.js';
+import { jobDescriptionSchema } from '../schemas/jd.js';
+import { clearTelemetryContext, getAllLogs, setTelemetryContext } from '../telemetry/logging.js';
 import { createLogger } from '../telemetry/logger.js';
+import {
+  persistApplications,
+  persistChatMessage,
+  persistInterviews,
+  persistJob,
+  updateSessionMetadata,
+} from './persistence.js';
 
 const logger = createLogger('recruitai.campaign_service');
 
 /**
- * Port of the hydration half of `backend/app/services/campaign_service.py`.
+ * Port of `backend/app/services/campaign_service.py`.
  *
- * `execute_agent_turn` stays with Phase 13 because it needs the LangGraph
- * agent. Session creation and context hydration are independent of the graph,
- * so the Phase 14 chat route can call them unchanged.
+ * Session creation, context hydration and single-turn agent execution. All
+ * reads and writes go through `WorkspaceStore`, keeping every query
+ * tenant-scoped on both Drizzle/PostgreSQL and the SQLite fallback.
  *
- * All reads go through `WorkspaceStore`, keeping every query tenant-scoped and
- * available on both Drizzle/PostgreSQL and the SQLite fallback.
+ * The graph itself lives in `src/graph` and takes an injectable `GraphDeps`
+ * bundle, so `executeAgentTurn` can be exercised without Gemini, Tavily or
+ * Postgres.
  */
 
 export interface CampaignServiceOptions {
@@ -22,6 +36,8 @@ export interface CampaignServiceOptions {
   readonly store?: WorkspaceStore;
   /** Injectable clock; unused by hydration but kept for parity with tests. */
   readonly now?: () => Date;
+  /** Injectable graph dependencies (tests / DI); defaults to the singleton. */
+  readonly graphDeps?: GraphDeps;
 }
 
 export interface HydrateChatContextInput {
@@ -38,6 +54,41 @@ export interface HydratedChatContext {
   readonly history: Array<{ role: string; content: string }>;
 }
 
+export interface ExecuteAgentTurnInput {
+  readonly userId: string;
+  readonly sessionId: string;
+  readonly message: string;
+  readonly jd: Record<string, unknown> | null;
+  readonly resumes: readonly Record<string, unknown>[];
+  readonly shortlist?: readonly Record<string, unknown>[] | null;
+  readonly history?: readonly { role: string; content: string }[];
+  readonly pendingConfirmation?: Record<string, unknown> | null;
+  readonly lastIntent?: string | null;
+  readonly scheduledInterviews?: readonly Record<string, unknown>[] | null;
+  readonly focusedCandidateId?: string | null;
+}
+
+export interface AgentTurnResult {
+  readonly response: string;
+  readonly jd_structured: Record<string, unknown> | null;
+  readonly resumes: Record<string, unknown>[];
+  readonly last_shortlist: Record<string, unknown>[] | null;
+  readonly pending_confirmation: Record<string, unknown> | null;
+  readonly last_intent: string | null;
+  readonly conversation_history: Array<{ role: string; content: string }>;
+  readonly router_logs: Record<string, unknown>[];
+  readonly scheduled_interviews: Record<string, unknown>[] | null;
+  readonly session_id: string;
+}
+
+const DEFAULT_AGENT_STEPS = ['Supervisor: Synthesized agent response'];
+
+const DEFAULT_SUGGESTED_FOLLOWUPS = [
+  'Compare our top candidates side-by-side',
+  'Generate a technical interview rubric for this role',
+  'Draft interview invitation email for the top candidate',
+];
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -53,11 +104,13 @@ function getOr(source: Record<string, unknown>, key: string, fallback: unknown):
 
 export class CampaignService {
   private readonly config: AppConfig;
+  private readonly graphDeps: GraphDeps | undefined;
   private store: WorkspaceStore | undefined;
 
   constructor(options: CampaignServiceOptions = {}) {
     this.config = options.config ?? getConfig();
     this.store = options.store;
+    this.graphDeps = options.graphDeps;
   }
 
   private getStore(): WorkspaceStore {
@@ -164,6 +217,121 @@ export class CampaignService {
     }
 
     return { jd, resumes, history };
+  }
+
+  /**
+   * Execute one agent turn end to end:
+   * 1. persist the incoming user message;
+   * 2. rebuild the typed state and run the multi-agent graph;
+   * 3. persist artifacts best-effort (job, applications, interviews, assistant
+   *    message, session metadata);
+   * 4. return the serialized response payload the chat route expects.
+   */
+  async executeAgentTurn(input: ExecuteAgentTurnInput): Promise<AgentTurnResult> {
+    const { userId, sessionId, message } = input;
+    const store = this.getStore();
+    const graph = buildRecruitGraph(this.graphDeps ?? getGraphDeps());
+
+    setTelemetryContext(userId, sessionId);
+
+    try {
+      // 1. Persist the user message (best effort, same as Python).
+      await persistChatMessage(store, userId, sessionId, 'user', message);
+
+      // 2. Reconstruct the typed models from the incoming JSON payload.
+      const jdObject = input.jd ? jobDescriptionSchema.parse(input.jd) : null;
+      const resumeObjects = input.resumes.map((resume) => candidateSchema.parse(resume));
+      const shortlistObjects = input.shortlist
+        ? input.shortlist.map((candidate) => candidateSchema.parse(candidate))
+        : null;
+
+      const conversation = [...(input.history ?? []), { role: 'user', content: message }];
+
+      const initialState: RecruitState = {
+        jd_structured: jdObject,
+        resumes: resumeObjects,
+        conversation_history: conversation,
+        last_shortlist: shortlistObjects,
+        pending_confirmation: input.pendingConfirmation ?? null,
+        last_intent: input.lastIntent ?? null,
+        scheduled_interviews: input.scheduledInterviews
+          ? ([...input.scheduledInterviews] as ScheduledInterview[])
+          : null,
+        user_id: userId,
+        focused_candidate_id: input.focusedCandidateId ?? null,
+      };
+
+      // 3. Run the agent graph.
+      const result = await graph.invoke(initialState);
+
+      // 4. Serialize output models to plain JSON values.
+      const jdValue = result.jd_structured ?? null;
+      const responseJd = jdValue ? ({ ...jdValue } as Record<string, unknown>) : null;
+      const responseResumes = (result.resumes ?? []).map(
+        (candidate) => ({ ...candidate }) as Record<string, unknown>,
+      );
+      const responseShortlist = result.last_shortlist
+        ? result.last_shortlist.map((candidate) => ({ ...candidate }) as Record<string, unknown>)
+        : null;
+
+      const history = result.conversation_history ?? [];
+      const assistantContent =
+        history.length > 0 ? (history[history.length - 1]?.content ?? '') : '';
+      const responseHistory = history.map((entry) => ({
+        role: entry.role,
+        content: entry.content,
+      }));
+
+      const logs = getAllLogs();
+
+      // 5. Atomic, best-effort persistence.
+      const jdRole = jdValue?.role ?? null;
+      let jobId: string | null = null;
+      if (jdValue && jdRole) {
+        jobId = await persistJob(store, userId, jdValue, jdValue.raw_text ?? '');
+      }
+
+      if (jobId && result.last_shortlist) {
+        await persistApplications(store, userId, jobId, result.last_shortlist);
+      }
+
+      if (result.scheduled_interviews && result.scheduled_interviews.length > 0) {
+        await persistInterviews(store, userId, result.scheduled_interviews, jobId);
+      }
+
+      await persistChatMessage(store, userId, sessionId, 'assistant', assistantContent, {
+        router_logs: logs,
+        agent_steps: result.agent_steps ?? DEFAULT_AGENT_STEPS,
+        suggested_followups: result.suggested_followups ?? DEFAULT_SUGGESTED_FOLLOWUPS,
+      });
+
+      const title = jdValue && jdRole ? `Hiring: ${jdRole}` : null;
+      await updateSessionMetadata(store, userId, sessionId, {
+        title,
+        jobId,
+        lastIntent: result.last_intent ?? null,
+        pendingConfirmation: result.pending_confirmation ?? null,
+      });
+
+      return {
+        response: assistantContent,
+        jd_structured: responseJd,
+        resumes: responseResumes,
+        last_shortlist: responseShortlist,
+        pending_confirmation: result.pending_confirmation ?? null,
+        last_intent: result.last_intent ?? null,
+        conversation_history: responseHistory,
+        router_logs: logs,
+        scheduled_interviews: result.scheduled_interviews
+          ? result.scheduled_interviews.map(
+              (interview) => ({ ...interview }) as Record<string, unknown>,
+            )
+          : null,
+        session_id: sessionId,
+      };
+    } finally {
+      clearTelemetryContext();
+    }
   }
 }
 
