@@ -1,13 +1,14 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–12 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–13 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
 access layer, the structured logging/telemetry layer, the Gemini LLM routing
 layer with safety gates, the document/resume/JD parsing plus matching
 services, payments/credits, email tooling with outreach dispatch, history and
-stats, and resume/JD ingestion with campaign context hydration. The Python
+stats, resume/JD ingestion with campaign context hydration, and the
+multi-agent supervisor graph with its 15 specialized nodes. The Python
 backend in `../backend/` remains the running service and is untouched until
 cutover.
 
@@ -27,7 +28,8 @@ cutover.
 | Phase 10 — payments + credits         | ✅ complete                             |
 | Phase 11 — email + outreach           | ✅ complete                             |
 | Phase 12 — ingest + campaign context  | ✅ complete                             |
-| Phases 13–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 13 — multi-agent graph + nodes  | ✅ complete                             |
+| Phases 14–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -61,14 +63,15 @@ src/
 ├── db/             # Drizzle + pgvector/SQLite       (Phase 6 ✅)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
 ├── llm/            # app/core/llm_router.py         (Phase 8 ✅)
-├── agents/         # app/graph/*                   (Phase 13)
-├── rag/            # app/rag/*                     (Phase 12 ✅ + later phases)
+├── graph/          # app/graph/*                   (Phase 13 ✅)
+├── rag/            # app/rag/*                     (Phase 12 ✅ + Phase 13)
 ├── services/       # app/services/*                (Phase 9 ✅ + later phases)
 │                   #   parsing, resume/JD, Tavily, matching (Phase 9 ✅)
 │                   #   + quota guard + persistence  (Phases 2/6 ✅)
 │                   #   + payments + email/outreach  (Phases 10/11 ✅)
 │                   #   + ingestion + campaign       (Phase 12 ✅)
-├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13)
+│                   #   + redaction, mismatch, RAG intel (Phase 13 ✅)
+├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
 └── jobs/           # app/services/job_queue.py     (Phase 14/21)
 tests/              # ported pytest suite          (Phase 18)
 ```
@@ -556,12 +559,67 @@ plain detail, mixed batch → RFC 4918 `207` array, success → `200` array.
 tenant-scoped; hydration fills a missing JD from the session's job, up to 50
 candidate resumes, and the last 20 messages in ascending order. Every hydration
 step is best-effort and matches Python's truthiness rules (an empty JD is
-treated as missing). `execute_agent_turn` stays in Phase 13 because it depends
-on the LangGraph agent.
+treated as missing). `executeAgentTurn` builds the initial `RecruitState`,
+invokes the compiled supervisor graph (a per-instance `graphDeps` bundle, or
+the process default), and persists the turn best-effort: candidate rows,
+applications for the shortlist, interviews for booked slots, both chat
+messages, and the session's `job_id`/`title`/`last_intent`/
+`pending_confirmation`. Persistence failures are logged and never discard the
+model's response.
 
 Phase 12 adds 64 tests across `rag`, `ingestion-service`, `campaign-service`
 and the ingest routes (multipart batches, partial failures, session linking,
 JD binding, hydration limits and error swallowing).
+
+## Multi-agent graph and specialized nodes
+
+**`src/graph/runtime.ts`** is a minimal typed `StateGraph`/`END` runtime, not a
+LangGraph dependency. It reproduces the observable contract Python relies on:
+an entry node, named nodes, static and conditional edges, a reducer-free merge
+of each node's partial state, and a hard stop at `END`. `CompiledGraph.invoke`
+never mutates the caller's state. `src/graph/state.ts` mirrors
+`RecruitState` (`TypedDict, total=False`) field for field, and
+`src/graph/deps.ts` defines the injectable `GraphDeps` bundle (LLM, embeddings,
+vector store, Tavily, ingestion, email, clock) so nodes and tests run without
+Postgres, Gemini or Tavily.
+
+**`src/graph/builder.ts`** matches the verified Python topology:
+`supervisor_agent` → one conditional hop to `jd_agent`, `screening_agent`,
+`interview_salary_agent`, `hitl_confirm` or `fallback`, each ending at `END`.
+`src/graph/router.ts` holds the rule-based intents, the LLM classification gate
+(≥ 0.6 confidence), pending-confirmation handling, and entity memory
+(`active_candidate_id`, `active_candidate_ids`, pronoun/bare follow-ups).
+`GRAPH_NODE_NAMES` and `routeToSubagent` are exported for topology tests.
+
+**`src/graph/nodes/`** contains the 15 ported behaviors, grouped by their
+owning agent:
+
+- `jd_agent` — `parse_jd`, `jd_rewrite`, `fetch_jd_api`.
+- `screening_agent` — `screen`, `count`, `compare`, `redflags`,
+  `candidate_qa`.
+- `interview_salary_agent` — `interview_qgen`, `salary`, `email`, `trend`,
+  `schedule`, `web_intel`.
+- `hitl_confirm` — finalize/replace-JD/edit confirmation flows.
+
+Supporting services added in this phase:
+
+- `src/services/redaction.ts` — stateful `PiiSanitizer` (reversible tokens for
+  names, emails, phones, URLs, addresses) plus `detectPromptInjection`;
+  `src/rag/redaction.ts` re-exports the stateless embedding variant.
+- `src/rag/advanced-rag.ts` — LLM query expansion and 1–10 chunk reranking,
+  both with deterministic fallbacks.
+- `src/services/mismatch-analyzer.ts` — regex/LLM experience extraction,
+  pool-vs-JD mismatch analysis, JD improvement suggestions, red-flag
+  detection (results cached on the candidate).
+- `src/services/tavily.ts` — salary benchmarks, skill trends, and recruiter
+  web intelligence, each live with TTL caching and curated offline fallbacks
+  (`data/salary_fallback.json`).
+- `src/tools/skill-trend-tool.ts`, `src/tools/tavily-search.ts` — tool-shaped
+  wrappers consumed by the trend/web-intel nodes.
+
+Phase 13 adds 156 tests across the graph runtime, router, builder, node
+groups, campaign turn persistence, redaction, Tavily intelligence, advanced
+RAG and mismatch analysis (648 tests total).
 
 ## App wiring and error handling
 
