@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { extname } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { extname, join } from 'node:path';
 
 import { ensureValidUuid } from '../auth/index.js';
 import { getConfig, type AppConfig } from '../config/index.js';
@@ -48,6 +49,9 @@ export const SUPPORTED_EXTENSIONS = [
 ] as const;
 
 export const MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024;
+
+/** Extensions read by `ingest_resumes_pipeline` / `load_resumes`. */
+const SUPPORTED_DIRECTORY_EXTENSIONS: ReadonlySet<string> = new Set(['.txt', '.pdf', '.docx']);
 
 const CONTENT_TYPE_EXTENSIONS: Readonly<Record<string, string>> = {
   'application/pdf': '.pdf',
@@ -513,6 +517,56 @@ export class IngestionService {
 
     await store.insertResumeChunks(records);
     return candidate;
+  }
+
+  /**
+   * Ingest every supported resume in a directory, mirroring Python's
+   * `ingest_resumes_pipeline`. Files are processed in sorted filename order and
+   * an unreadable file is skipped rather than aborting the batch.
+   */
+  async ingestResumesFromDirectory(
+    directoryPath: string,
+    userId?: string | null,
+    sessionId: string | null = null,
+  ): Promise<Candidate[]> {
+    const candidates: Candidate[] = [];
+    let entries;
+
+    try {
+      entries = readdirSync(directoryPath, { withFileTypes: true });
+    } catch {
+      return candidates;
+    }
+
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      if (!entry.isFile()) {
+        continue;
+      }
+      const extension = extname(entry.name).toLowerCase();
+      if (!SUPPORTED_DIRECTORY_EXTENSIONS.has(extension)) {
+        continue;
+      }
+
+      try {
+        const filePath = join(directoryPath, entry.name);
+        const rawText = await this.parseDocumentImpl(readFileSync(filePath), entry.name);
+        if (!rawText) {
+          continue;
+        }
+
+        const candidate = await this.parseResumeImpl(rawText, entry.name);
+        // Python keeps the file stem on the parsed object; ingestion then
+        // replaces it with the persisted UUID.
+        candidate.candidate_id = entry.name.slice(0, -extension.length);
+        candidates.push(await this.ingestCandidateObject(candidate, userId, sessionId));
+      } catch (error) {
+        logger.warn(`Skipping resume file '${entry.name}': ${errorMessage(error)}`, {
+          status: 'skipped',
+        });
+      }
+    }
+
+    return candidates;
   }
 
   /** Parse raw candidate text into a Candidate and ingest it. */
