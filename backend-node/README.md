@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–15 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–16 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -11,8 +11,9 @@ stats, resume/JD ingestion with campaign context hydration, the multi-agent
 supervisor graph with its 15 specialized nodes, the chat API with its async
 job queue and SSE streaming, and the remaining public route groups (sessions,
 candidate evaluation/ATS export, PDF reports, analytics, user profile, and
-GDPR/privacy). The Python backend in `../backend/` remains the running service
-and is untouched until cutover.
+GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI. The
+Python backend in `../backend/` remains the running service and is untouched
+until cutover.
 
 ## Status
 
@@ -33,7 +34,8 @@ and is untouched until cutover.
 | Phase 13 — multi-agent graph + nodes  | ✅ complete                             |
 | Phase 14 — chat + jobs + SSE          | ✅ complete                             |
 | Phase 15 — remaining public API       | ✅ complete                             |
-| Phases 16–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 16 — operational retention      | ✅ complete                             |
+| Phases 17–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -78,7 +80,10 @@ src/
 │                   #   + redaction, mismatch, RAG intel (Phase 13 ✅)
 │                   #   + sessions, evaluation, reports, analytics, users, privacy (Phase 15 ✅)
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
-└── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
+├── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
+│                   #   + retention scheduler        (Phase 16 ✅)
+└── cli/            # operational commands           (Phase 16 ✅)
+tests/              # ported pytest suite            (Phase 18)
 tests/              # ported pytest suite          (Phase 18)
 ```
 
@@ -114,6 +119,18 @@ Async chat job settings (Phase 14) live under `config.jobs`:
   `3600`; `JOB_PER_USER_CONCURRENCY` to `2`; `JOB_WORKER_CONCURRENCY` to `10`;
   `JOB_EVENT_REPLAY_LIMIT` to `100`. All numeric values are strict and must be
   positive.
+
+Operational retention settings (Phase 16) live under `config.retention` and are
+**opt-in**:
+
+- `RETENTION_JOB_ENABLED` defaults to `false`. Python never scheduled retention,
+  so a deploy must explicitly enable sweeps.
+- `RETENTION_JOB_INTERVAL_SECONDS` defaults to `86400` (daily) and must be a
+  positive integer.
+- `RETENTION_RAW_RESUME_TTL_DAYS` defaults to `90` and
+  `RETENTION_CHAT_TTL_DAYS` to `365`, matching the Python route defaults. Both
+  accept `0` (purge at boot/run time) and are strict non-negative integers;
+  invalid values fail at boot.
 
 Production gates (fail-fast at boot, before the server listens):
 
@@ -748,6 +765,55 @@ Documented deviations:
 Phase 15 adds 56 tests (store, sessions, evaluation/ATS, analytics, privacy,
 reports, and user profile), bringing the suite to 748 tests / 182 suites.
 
+## Operational retention and background jobs
+
+Phase 16 audits everything that runs outside a user request and decides where
+it runs in Node:
+
+| Behavior                                      | Python trigger                                       | Node decision                                                                                          |
+| --------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Retention sweep (raw resume text + chat TTLs) | Authenticated `POST /api/privacy/retention/run` only | Same route (tenant-scoped) **plus** an opt-in Express-side scheduler and `npm run retention:run`       |
+| Candidate erasure / user account purge        | Authenticated privacy routes                         | Same routes, backed by reusable `PrivacyService` methods so future jobs can call the identical cascade |
+| Chat/agent turns                              | `asyncio.create_task` background job                 | Phase 14 `ChatJobManager` (in-memory or BullMQ), with TTL sweeps/Redis expiry                          |
+| Razorpay webhooks                             | Synchronous route, HMAC over raw bytes               | Same, mounted before the JSON parser; no retry queue because Python has none                           |
+| Tavily lookups                                | In-process cache with TTL                            | Same; no durable background work needed                                                                |
+
+**`src/jobs/retention-scheduler.ts`** runs `PrivacyService.enforceRetentionPolicy`
+for each tenant:
+
+- **Disabled by default** (`RETENTION_JOB_ENABLED=false`). Python never deleted
+  data on a timer, so enabling this is an explicit deployment decision.
+- **Tenant isolation by construction**: the scheduler reads tenant ids from
+  `users`, then calls the tenant-scoped service/store for each one. There is no
+  global `WHERE created_at < cutoff` delete path, so one tenant's sweep cannot
+  touch another tenant's rows.
+- **Single flight**: overlapping ticks are skipped and logged, not queued.
+- **Deferred first run**: the first sweep happens one interval after boot, not
+  during startup.
+- **Observable**: each run logs tenant counts, rows touched, failures and
+  duration (`[retention] ...`), and per-tenant failures are counted without
+  aborting the rest of the sweep.
+- The timer is `unref()`ed so it never keeps the process alive.
+
+**`src/cli/retention.ts`** is the manual operational path:
+
+```bash
+npm run retention:run -- --dry-run
+npm run retention:run -- --user-id <uuid> --raw-resume-ttl-days 30 --chat-ttl-days 365
+```
+
+It shares the scheduler/service code, prints one JSON result on stdout
+(operational logs go to stderr), exits non-zero if any tenant failed, and
+supports `--dry-run` (count rows without mutating) plus `--help`. Defaults are
+the Python TTLs (90/365 days).
+
+Destructive privacy cascades keep the Phase 15 ordering and are intentionally
+not autonomous: GDPR Art. 17 erasure still requires the authenticated route (or
+an explicit operational call to `PrivacyService`), never a scheduled sweep.
+
+Phase 16 adds 17 tests (scheduler behavior, CLI parsing/execution, store count
+helpers and config defaults), bringing the suite to 765 tests / 185 suites.
+
 ## App wiring and error handling
 
 `createApp({ config })` assembles the stack in the same order as `app/main.py`:
@@ -784,6 +850,10 @@ reports, and user profile), bringing the suite to 748 tests / 182 suites.
 Multipart uploads are not parsed globally; `src/middleware/upload.ts` exports a
 memory-storage middleware for the ingest routes (Phase 12), along with the
 existing 15 MB per-file / 10 files-per-batch limits.
+
+Bootstrap (`src/main.ts`) also starts the Phase 16 retention scheduler after
+the app is created. `start()` is a no-op unless `RETENTION_JOB_ENABLED=true`,
+and the timer is stopped when the HTTP server closes.
 
 Intentionally absent (the Python backend has no such middleware): request-id,
 security headers, trusted-host checks, and timing middleware. Do not add them
