@@ -60,6 +60,18 @@ function isoSeconds(date: Date): string {
   return `${date.toISOString().slice(0, 19)}Z`;
 }
 
+/** Shared TTL cutoff math so preview and enforcement cannot drift. */
+export function retentionCutoffs(
+  now: Date,
+  rawResumeTtlDays: number,
+  chatTtlDays: number,
+): { readonly resumeCutoff: string; readonly chatCutoff: string } {
+  return {
+    resumeCutoff: new Date(now.getTime() - rawResumeTtlDays * 86_400_000).toISOString(),
+    chatCutoff: new Date(now.getTime() - chatTtlDays * 86_400_000).toISOString(),
+  };
+}
+
 function pick(row: DbRow, keys: readonly string[]): DbRow {
   const result: DbRow = {};
   for (const key of keys) {
@@ -175,9 +187,11 @@ export class PrivacyService {
   ): Promise<RetentionSummary> {
     const store = this.getStore();
     const summary: RetentionSummary = { raw_resumes_cleared: 0, chat_messages_purged: 0 };
-    const now = this.now();
-    const resumeCutoff = new Date(now.getTime() - rawResumeTtlDays * 86_400_000).toISOString();
-    const chatCutoff = new Date(now.getTime() - chatTtlDays * 86_400_000).toISOString();
+    const { resumeCutoff, chatCutoff } = retentionCutoffs(
+      this.now(),
+      rawResumeTtlDays,
+      chatTtlDays,
+    );
 
     try {
       summary.raw_resumes_cleared = await store.clearRawResumeTextBefore(userId, resumeCutoff);
@@ -190,6 +204,30 @@ export class PrivacyService {
     }
 
     return summary;
+  }
+
+  /**
+   * Count-only counterpart to `enforceRetentionPolicy`, used by `--dry-run`
+   * and scheduler previews. Counts match what the real sweep would touch:
+   * candidates older than the resume TTL and chat messages older than the
+   * chat TTL, scoped to one tenant when `userId` is provided.
+   */
+  async previewRetentionPolicy(
+    userId: string | undefined,
+    rawResumeTtlDays = 90,
+    chatTtlDays = 365,
+  ): Promise<RetentionSummary> {
+    const store = this.getStore();
+    const { resumeCutoff, chatCutoff } = retentionCutoffs(
+      this.now(),
+      rawResumeTtlDays,
+      chatTtlDays,
+    );
+
+    return {
+      raw_resumes_cleared: await store.countCandidatesBefore(userId, resumeCutoff),
+      chat_messages_purged: await store.countChatMessagesBefore(userId, chatCutoff),
+    };
   }
 
   /** GDPR Art. 15/20 recruiter export. */

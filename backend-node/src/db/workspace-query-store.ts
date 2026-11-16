@@ -92,6 +92,7 @@ export interface WorkspaceQueryStore {
   insertChatMessage(record: ChatMessageInsert): Promise<void>;
   listChatMessages(userId: string, sessionId: string, query?: ChatMessageQuery): Promise<DbRow[]>;
   deleteChatMessagesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
+  countChatMessagesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
 
   // ── Candidates ────────────────────────────────────────────────────────────
   listCandidates(userId: string): Promise<DbRow[]>;
@@ -104,6 +105,7 @@ export interface WorkspaceQueryStore {
   ): Promise<DbRow | undefined>;
   listCandidatesCreatedSince(userId: string, cutoffIso: string): Promise<DbRow[]>;
   clearRawResumeTextBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
+  countCandidatesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
   deleteCandidate(userId: string, candidateId: string): Promise<void>;
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
@@ -150,6 +152,8 @@ export interface WorkspaceQueryStore {
 
   // ── Users ─────────────────────────────────────────────────────────────────
   getUser(userId: string): Promise<DbRow | undefined>;
+  /** Tenant ids for operational sweeps; never used to read tenant data. */
+  listUserIds(): Promise<string[]>;
   updateUser(userId: string, patch: Record<string, unknown>): Promise<DbRow | undefined>;
   deleteUser(userId: string): Promise<void>;
   purgeUserAccount(userId: string): Promise<void>;
@@ -475,6 +479,19 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       return rows.length;
     },
 
+    async countChatMessagesBefore(userId, cutoffIso) {
+      const cutoff = asDate(cutoffIso);
+      if (!cutoff) {
+        return 0;
+      }
+      const where =
+        userId === undefined
+          ? lt(chatMessages.createdAt, cutoff)
+          : and(eq(chatMessages.userId, userId), lt(chatMessages.createdAt, cutoff));
+      const rows = await db.select({ id: chatMessages.id }).from(chatMessages).where(where);
+      return rows.length;
+    },
+
     async listCandidates(userId) {
       const rows = await db
         .select()
@@ -540,6 +557,19 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         .set({ rawResumeText: null })
         .where(where)
         .returning({ id: candidates.id });
+      return rows.length;
+    },
+
+    async countCandidatesBefore(userId, cutoffIso) {
+      const cutoff = asDate(cutoffIso);
+      if (!cutoff) {
+        return 0;
+      }
+      const where =
+        userId === undefined
+          ? lt(candidates.createdAt, cutoff)
+          : and(eq(candidates.userId, userId), lt(candidates.createdAt, cutoff));
+      const rows = await db.select({ id: candidates.id }).from(candidates).where(where);
       return rows.length;
     },
 
@@ -743,6 +773,11 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
     async getUser(userId) {
       const rows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       return rows[0] ? drizzleUserRow(rows[0]) : undefined;
+    },
+
+    async listUserIds() {
+      const rows = await db.select({ id: users.id }).from(users).orderBy(asc(users.id));
+      return rows.map((row) => row.id);
     },
 
     async updateUser(userId, patch) {
@@ -984,6 +1019,12 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       return count;
     },
 
+    async countChatMessagesBefore(userId, cutoffIso) {
+      const builder = db.table('chat_messages').select('id').lt('created_at', cutoffIso);
+      const scoped = userId === undefined ? builder : builder.eq('user_id', userId);
+      return scoped.execute().data.length;
+    },
+
     async listCandidates(userId) {
       const rows = db
         .table('candidates')
@@ -1044,6 +1085,14 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
         .table('candidates')
         .update({ raw_resume_text: null })
         .lt('created_at', cutoffIso);
+      if (userId !== undefined) {
+        builder = builder.eq('user_id', userId);
+      }
+      return builder.execute().data.length;
+    },
+
+    async countCandidatesBefore(userId, cutoffIso) {
+      let builder = db.table('candidates').select('id').lt('created_at', cutoffIso);
       if (userId !== undefined) {
         builder = builder.eq('user_id', userId);
       }
@@ -1258,6 +1307,16 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
         unknown
       >[];
       return rows[0] ? sqliteRow('users', rows[0]) : undefined;
+    },
+
+    async listUserIds() {
+      return db
+        .table('users')
+        .select('id')
+        .order('id', false)
+        .execute()
+        .data.map((row) => String(row['id']))
+        .filter((id) => id.length > 0);
     },
 
     async updateUser(userId, patch) {

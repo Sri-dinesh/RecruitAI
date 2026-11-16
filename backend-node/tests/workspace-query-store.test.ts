@@ -108,6 +108,65 @@ describe('WorkspaceQueryStore (SQLite)', () => {
     });
   });
 
+  it('counts retention candidates and chat messages', async () => {
+    await withPhase15(async ({ store, db }) => {
+      db.table('candidates')
+        .insert([
+          {
+            id: 'old-own',
+            user_id: USER_ID,
+            full_name: 'Old Own',
+            metadata: '{}',
+            created_at: daysAgo(200),
+          },
+          {
+            id: 'new-own',
+            user_id: USER_ID,
+            full_name: 'New Own',
+            metadata: '{}',
+            created_at: daysAgo(1),
+          },
+          {
+            id: 'old-other',
+            user_id: OTHER_USER_ID,
+            full_name: 'Old Other',
+            metadata: '{}',
+            created_at: daysAgo(200),
+          },
+        ])
+        .execute();
+      db.table('chat_messages')
+        .insert([
+          {
+            id: 'chat-old',
+            session_id: 's-1',
+            user_id: USER_ID,
+            role: 'user',
+            content: 'old',
+            created_at: daysAgo(400),
+          },
+          {
+            id: 'chat-new',
+            session_id: 's-1',
+            user_id: USER_ID,
+            role: 'user',
+            content: 'new',
+            created_at: daysAgo(1),
+          },
+        ])
+        .execute();
+
+      assert.equal(await store.countCandidatesBefore(USER_ID, daysAgo(90)), 1);
+      assert.equal(await store.countCandidatesBefore(undefined, daysAgo(90)), 2);
+      assert.equal(await store.countCandidatesBefore(USER_ID, daysAgo(300)), 0);
+      assert.equal(await store.countChatMessagesBefore(USER_ID, daysAgo(365)), 1);
+      assert.equal(await store.countChatMessagesBefore(undefined, daysAgo(365)), 1);
+      assert.equal(await store.countChatMessagesBefore(OTHER_USER_ID, daysAgo(365)), 0);
+      const userIds = await store.listUserIds();
+      assert.deepEqual(userIds.slice().sort(), [USER_ID, 'local_dev_user_123'].sort());
+    });
+  });
+
   it('updates candidate metadata and clears raw resume text by cutoff', async () => {
     await withPhase15(async ({ store, db }) => {
       await store.insertCandidate({
