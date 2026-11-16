@@ -1,18 +1,31 @@
 import { Router } from 'express';
 
 import type { AppConfig } from '../config/index.js';
+import type { WorkspaceQueryStore } from '../db/workspace-query-store.js';
 import type { ChatJobManager } from '../jobs/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { AnalyticsService } from '../services/analytics-service.js';
 import type { CampaignService } from '../services/campaign-service.js';
 import type { EmailService } from '../services/email-service.js';
+import type { EvaluationService } from '../services/evaluation-service.js';
 import type { IngestionService } from '../services/ingestion-service.js';
 import type { PaymentService } from '../services/payment-service.js';
+import type { PrivacyService } from '../services/privacy-service.js';
+import type { ReportService } from '../services/report-service.js';
+import type { SessionService } from '../services/session-service.js';
+import type { UserService } from '../services/user-service.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
+import { createAnalyticsRouter } from './analytics.js';
 import { createChatRouter } from './chat.js';
 import { createEmailRouter } from './email.js';
+import { createEvaluateRouter } from './evaluate.js';
 import { createIngestRouter } from './ingest.js';
 import { createMetricsRouter } from './metrics.js';
 import { createPaymentsRouter } from './payments.js';
+import { createPrivacyRouter } from './privacy.js';
+import { createReportsRouter } from './reports.js';
+import { createSessionsRouter } from './sessions.js';
+import { createUsersRouter } from './users.js';
 
 /**
  * API router root, mounted at `/api` by the app factory.
@@ -58,11 +71,22 @@ export interface ApiRouterOptions {
   /** Shared chat/campaign service and async job manager. */
   readonly campaignService?: CampaignService;
   readonly chatJobManager?: ChatJobManager;
+  /** Shared Phase 15 data-access layer (Drizzle or SQLite fallback). */
+  readonly workspaceQueryStore?: WorkspaceQueryStore;
+  /** Explicit Phase 15 services for tests. */
+  readonly sessionService?: SessionService;
+  readonly evaluationService?: EvaluationService;
+  readonly reportService?: ReportService;
+  readonly analyticsService?: AnalyticsService;
+  readonly userService?: UserService;
+  readonly privacyService?: PrivacyService;
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
   const router = Router();
   const auth = options.config ? requireAuth({ config: options.config }) : requireAuth();
+  const storeOptions =
+    options.workspaceQueryStore === undefined ? {} : { queryStore: options.workspaceQueryStore };
   router.use('/metrics', auth, createMetricsRouter(options.metrics ?? metricsRegistry));
   router.use(
     '/chat',
@@ -100,6 +124,66 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
       ...(options.ingestionService === undefined
         ? {}
         : { ingestionService: options.ingestionService }),
+    }),
+  );
+  router.use(
+    '/sessions',
+    createSessionsRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.sessionService === undefined ? {} : { sessionService: options.sessionService }),
+    }),
+  );
+  router.use(
+    '/privacy',
+    createPrivacyRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.privacyService === undefined ? {} : { privacyService: options.privacyService }),
+    }),
+  );
+  router.use(
+    '/reports',
+    createReportsRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.reportService === undefined ? {} : { reportService: options.reportService }),
+    }),
+  );
+  router.use(
+    '/analytics',
+    createAnalyticsRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.analyticsService === undefined
+        ? {}
+        : { analyticsService: options.analyticsService }),
+    }),
+  );
+  router.use(
+    '/users',
+    createUsersRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.userService === undefined ? {} : { userService: options.userService }),
+    }),
+  );
+  // `routes_evaluate.py` declares `/candidates/...` and `/export/ats` without a
+  // shared prefix, so this router is mounted at the API root.
+  router.use(
+    createEvaluateRouter({
+      ...(options.config === undefined ? {} : { config: options.config }),
+      auth,
+      ...storeOptions,
+      ...(options.paymentService === undefined ? {} : { paymentService: options.paymentService }),
+      ...(options.evaluationService === undefined
+        ? {}
+        : { evaluationService: options.evaluationService }),
     }),
   );
   return router;

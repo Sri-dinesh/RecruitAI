@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–14 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–15 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -8,9 +8,11 @@ access layer, the structured logging/telemetry layer, the Gemini LLM routing
 layer with safety gates, the document/resume/JD parsing plus matching
 services, payments/credits, email tooling with outreach dispatch, history and
 stats, resume/JD ingestion with campaign context hydration, the multi-agent
-supervisor graph with its 15 specialized nodes, and the chat API with its async
-job queue and SSE streaming. The Python backend in `../backend/` remains the
-running service and is untouched until cutover.
+supervisor graph with its 15 specialized nodes, the chat API with its async
+job queue and SSE streaming, and the remaining public route groups (sessions,
+candidate evaluation/ATS export, PDF reports, analytics, user profile, and
+GDPR/privacy). The Python backend in `../backend/` remains the running service
+and is untouched until cutover.
 
 ## Status
 
@@ -30,7 +32,8 @@ running service and is untouched until cutover.
 | Phase 12 — ingest + campaign context  | ✅ complete                             |
 | Phase 13 — multi-agent graph + nodes  | ✅ complete                             |
 | Phase 14 — chat + jobs + SSE          | ✅ complete                             |
-| Phases 15–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 15 — remaining public API       | ✅ complete                             |
+| Phases 16–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -55,6 +58,7 @@ src/
 ├── app.ts          # Express app factory
 ├── main.ts         # bootstrap / entrypoint
 ├── routes/         # api/routes_*.py equivalents (health, metrics, payments, email, chat)
+│                   #   + sessions, evaluate/ATS, reports, analytics, users, privacy (Phase 15 ✅)
 ├── config/         # app/core/config.py            (Phase 2 ✅)
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
@@ -72,6 +76,7 @@ src/
 │                   #   + payments + email/outreach  (Phases 10/11 ✅)
 │                   #   + ingestion + campaign       (Phase 12 ✅)
 │                   #   + redaction, mismatch, RAG intel (Phase 13 ✅)
+│                   #   + sessions, evaluation, reports, analytics, users, privacy (Phase 15 ✅)
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
 └── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
 tests/              # ported pytest suite          (Phase 18)
@@ -681,7 +686,67 @@ HTTP request and the long-running turn separate.
 Phase 14 adds 44 tests across the in-memory manager, the Redis manager (fake
 Redis/queue/worker backend, so no server is needed) and the chat routes
 (sync/async dispatch, job polling, SSE frames, tenant isolation, 422/500
-shapes; 692 tests total).
+shapes).
+
+## Sessions, evaluation, reports, analytics, users, and privacy
+
+Phase 15 ports the remaining public route groups. All of them share
+`src/db/workspace-query-store.ts`, which exposes one `WorkspaceQueryStore`
+interface with a Drizzle/Postgres implementation and an equivalent SQLite
+implementation over `FallbackDatabase`. Rows cross the boundary as snake_case
+`DbRow` dictionaries, the same shape PostgREST returned to Python, so services
+keep the Python logic verbatim instead of remapping column names.
+
+| Python module         | Node module           | Routes                                                                                                                                 |
+| --------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes_sessions.py`  | `routes/sessions.ts`  | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/:id`, `POST /api/sessions/reset-all`                                         |
+| `routes_evaluate.py`  | `routes/evaluate.ts`  | `POST /api/candidates/evaluate`, `GET /api/candidates/:id/evaluation`, `POST/PATCH /api/candidates/:id/status`, `POST /api/export/ats` |
+| `routes_reports.py`   | `routes/reports.ts`   | `POST /api/reports/generate`, `GET /api/reports/session/:id`                                                                           |
+| `routes_analytics.py` | `routes/analytics.ts` | eight `GET /api/analytics/*` endpoints                                                                                                 |
+| `routes_users.py`     | `routes/users.ts`     | `GET/PATCH /api/users/me`                                                                                                              |
+| `routes_privacy.py`   | `routes/privacy.ts`   | export/erasure, retention, bias audit, user export/account purge                                                                       |
+
+Preserved behavior:
+
+- **Tenant isolation everywhere.** Every read/write is scoped by the
+  authenticated `user_id`. `reset-all` and account erasure only touch the
+  caller's rows (join-table cleanup additionally requires tenant-owned
+  candidates), and cross-tenant ids resolve as `404`.
+- **Reset rate limit** stays 30 s per user with the Python detail string and a
+  `Retry-After` header.
+- **Evaluation quota** returns `402` with the `INSUFFICIENT_CREDITS` body and
+  deducts one credit after the rubric is saved. The GDPR Art. 22 guard returns
+  the exact `403` detail for automated adverse decisions.
+- **Cascades** keep the Python order: candidate erasure
+  `session_candidates → interviews → applications → resume_chunks → candidates`;
+  account purge adds `chat_messages`, `chat_sessions`, `jobs`, then `users`.
+- **Reports** stream a PDF with `Content-Disposition` (plus
+  `Access-Control-Expose-Headers`) and the Python filenames
+  (`recruitment_report.pdf`, `{slug}_{session[:8]}.pdf`). ATS export streams
+  `ats_export.csv` or returns the JSON payload.
+- **Analytics** keeps the RPC semantics (KPI rates, funnel percentages,
+  zero-filled day buckets, score tiers, weighted skill demand, velocity, job
+  summary, activity feed) including Python's half-even rounding.
+- **Privacy** keeps GDPR export sections, retention TTL defaults (90/365 days),
+  and the NYC Local Law 144 bias-audit statistics.
+
+Documented deviations:
+
+- PDF generation uses `pdfkit` with the built-in Helvetica fonts and a manual
+  layout that mirrors the ReportLab sections (banner, KPIs, candidate matrix,
+  questions, salary, interviews, compliance, page numbers). Non-WinAnsi
+  characters are transliterated or dropped so a candidate name cannot break a
+  report.
+- Analytics compute from tables directly instead of calling Supabase RPCs; the
+  plan permits either, and the values match the Python fallback path.
+- `users` has no `department` column and there is no `candidate_evaluations`
+  table, so `department` is always `null` in responses and rubric data is read
+  from `applications.match_reasoning.rubric` (then candidate metadata).
+- Session reports have no `session_id` on interviews, so interviews are filtered
+  by the session's candidate ids.
+
+Phase 15 adds 56 tests (store, sessions, evaluation/ATS, analytics, privacy,
+reports, and user profile), bringing the suite to 748 tests / 182 suites.
 
 ## App wiring and error handling
 
@@ -701,7 +766,10 @@ shapes; 692 tests total).
 6. **Feature routers under `/api`** — each router applies `requireAuth()`
    itself, matching FastAPI's per-route dependency. `/api/chat` receives the
    shared `CampaignService` and `ChatJobManager` built by the app factory so
-   sync turns, queued turns and SSE all use the same instances.
+   sync turns, queued turns and SSE all use the same instances. The Phase 15
+   routers share one `WorkspaceQueryStore`; `createApp({ workspaceQueryStore })`
+   lets tests inject an isolated SQLite store, which is how the Phase 15 suite
+   runs without Postgres.
 7. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
 8. **Terminal error handler** (last):
    - `HttpError` subclasses render their status, headers and `{ detail }`

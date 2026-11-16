@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 
 import { getConfig, type AppConfig } from './config/index.js';
+import type { WorkspaceQueryStore } from './db/workspace-query-store.js';
 import { createChatJobManager, type ChatJobManager } from './jobs/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
@@ -33,6 +34,8 @@ export interface CreateAppOptions {
   /** Shared chat/campaign service and async job manager. */
   readonly campaignService?: CampaignService;
   readonly chatJobManager?: ChatJobManager;
+  /** Shared Phase 15 data-access layer (tests inject an isolated SQLite store). */
+  readonly workspaceQueryStore?: WorkspaceQueryStore;
 }
 
 /**
@@ -94,6 +97,9 @@ export function createApp(options: CreateAppOptions = {}): Express {
       ingestionService,
       campaignService,
       chatJobManager,
+      ...(options.workspaceQueryStore === undefined
+        ? {}
+        : { workspaceQueryStore: options.workspaceQueryStore }),
     }),
   );
 
