@@ -164,6 +164,25 @@ export interface JobsConfig {
   readonly eventReplayLimit: number;
 }
 
+/**
+ * Operational data-retention sweeps (Phase 16).
+ *
+ * Python only exposes retention as an authenticated request
+ * (`POST /api/privacy/retention/run`) and never schedules it. The Node backend
+ * keeps that route and adds an opt-in Express-side scheduler, disabled unless
+ * `RETENTION_JOB_ENABLED=true` so a deploy never starts deleting data without
+ * an explicit decision.
+ */
+export interface RetentionConfig {
+  readonly enabled: boolean;
+  /** Seconds between sweeps when the scheduler is enabled. */
+  readonly intervalSeconds: number;
+  /** Python default: raw resume text is cleared after 90 days. */
+  readonly rawResumeTtlDays: number;
+  /** Python default: chat messages are purged after 365 days. */
+  readonly chatTtlDays: number;
+}
+
 export interface AppConfig {
   readonly environment: string;
   readonly nodeEnv: string | undefined;
@@ -177,6 +196,7 @@ export interface AppConfig {
   readonly razorpay: RazorpayConfig;
   readonly cors: CorsConfig;
   readonly jobs: JobsConfig;
+  readonly retention: RetentionConfig;
   readonly telemetry: TelemetryConfig;
   /** Required keys that are currently missing (informational outside production). */
   readonly missingKeys: readonly string[];
@@ -283,6 +303,12 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       perUserConcurrency: readPositiveIntStrict(env, 'JOB_PER_USER_CONCURRENCY', 2),
       workerConcurrency: readPositiveIntStrict(env, 'JOB_WORKER_CONCURRENCY', 10),
       eventReplayLimit: readPositiveIntStrict(env, 'JOB_EVENT_REPLAY_LIMIT', 100),
+    },
+    retention: {
+      enabled: readBoolean(env, 'RETENTION_JOB_ENABLED', false),
+      intervalSeconds: readPositiveIntStrict(env, 'RETENTION_JOB_INTERVAL_SECONDS', 86_400),
+      rawResumeTtlDays: readNonNegativeIntStrict(env, 'RETENTION_RAW_RESUME_TTL_DAYS', 90),
+      chatTtlDays: readNonNegativeIntStrict(env, 'RETENTION_CHAT_TTL_DAYS', 365),
     },
     telemetry: { enabled: true },
     missingKeys: getMissingKeys(env),

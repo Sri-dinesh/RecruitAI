@@ -84,6 +84,12 @@ describe('config defaults (development)', () => {
     assert.equal(config.razorpay.keySecret, '');
     assert.equal(config.razorpay.webhookSecret, '');
     assert.deepEqual(config.cors.allowedOrigins, [...DEFAULT_ALLOWED_ORIGINS]);
+    assert.deepEqual(config.retention, {
+      enabled: false,
+      intervalSeconds: 86_400,
+      rawResumeTtlDays: 90,
+      chatTtlDays: 365,
+    });
     assert.equal(config.telemetry.enabled, true);
     assert.deepEqual(config.missingKeys, [...REQUIRED_PRODUCTION_KEYS]);
   });
@@ -245,6 +251,27 @@ describe('parsing quirks', () => {
 
   it('keeps GROQ_API_KEY available for parity', () => {
     assert.equal(loadConfig({ GROQ_API_KEY: 'groq-key' }).llm.groqApiKey, 'groq-key');
+  });
+
+  it('parses the opt-in retention scheduler settings', () => {
+    const config = loadConfig({
+      RETENTION_JOB_ENABLED: 'true',
+      RETENTION_JOB_INTERVAL_SECONDS: '3600',
+      RETENTION_RAW_RESUME_TTL_DAYS: '30',
+      RETENTION_CHAT_TTL_DAYS: '0',
+    });
+    assert.deepEqual(config.retention, {
+      enabled: true,
+      intervalSeconds: 3600,
+      rawResumeTtlDays: 30,
+      chatTtlDays: 0,
+    });
+    assert.equal(loadConfig({ RETENTION_JOB_ENABLED: 'yes' }).retention.enabled, false);
+    assertThrowsWith(
+      () => loadConfig({ RETENTION_RAW_RESUME_TTL_DAYS: '-1' }),
+      'non-negative integer',
+    );
+    assertThrowsWith(() => loadConfig({ RETENTION_JOB_INTERVAL_SECONDS: '0' }), 'positive integer');
   });
 });
 
