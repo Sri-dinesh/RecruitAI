@@ -143,6 +143,8 @@ export class TableBuilder {
   private onConflict: string | undefined;
   private readonly eqFilters: Array<[string, unknown]> = [];
   private readonly neqFilters: Array<[string, unknown]> = [];
+  private readonly comparisonFilters: Array<['<' | '<=' | '>' | '>=', string, unknown]> = [];
+  private readonly inFilters: Array<[string, readonly unknown[]]> = [];
   private orderBy: string | undefined;
   private orderDesc = false;
   private limitValue: number | undefined;
@@ -192,6 +194,32 @@ export class TableBuilder {
     return this;
   }
 
+  lt(column: string, value: unknown): this {
+    this.comparisonFilters.push(['<', column, value]);
+    return this;
+  }
+
+  lte(column: string, value: unknown): this {
+    this.comparisonFilters.push(['<=', column, value]);
+    return this;
+  }
+
+  gt(column: string, value: unknown): this {
+    this.comparisonFilters.push(['>', column, value]);
+    return this;
+  }
+
+  gte(column: string, value: unknown): this {
+    this.comparisonFilters.push(['>=', column, value]);
+    return this;
+  }
+
+  /** PostgREST `in` filter (`column=in.(a,b)`). An empty list matches nothing. */
+  in(column: string, values: readonly unknown[]): this {
+    this.inFilters.push([column, values]);
+    return this;
+  }
+
   order(column: string, desc = false): this {
     this.orderBy = column;
     this.orderDesc = desc;
@@ -213,6 +241,18 @@ export class TableBuilder {
     for (const [column, value] of this.neqFilters) {
       clauses.push(`${column} != ?`);
       params.push(...asParams([value]));
+    }
+    for (const [operator, column, value] of this.comparisonFilters) {
+      clauses.push(`${column} ${operator} ?`);
+      params.push(...asParams([value]));
+    }
+    for (const [column, values] of this.inFilters) {
+      if (values.length === 0) {
+        clauses.push('0 = 1');
+        continue;
+      }
+      clauses.push(`${column} IN (${values.map(() => '?').join(', ')})`);
+      params.push(...asParams(values));
     }
     return {
       sql: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
