@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { getConfig, type AppConfig } from './config/index.js';
 import { loadEnvFileIfPresent } from './config/env.js';
+import { createRetentionScheduler } from './jobs/retention-scheduler.js';
 import { createLogger } from './telemetry/logger.js';
 
 const logger = createLogger('recruitai.server');
@@ -31,8 +32,17 @@ const config = loadConfigOrExit();
 const app = createApp({ config });
 const { host, port } = config.server;
 
+// Phase 16: opt-in operational retention sweeps. `start()` is a no-op unless
+// RETENTION_JOB_ENABLED=true; the timer is unref'd and tenant-scoped per sweep.
+const retentionScheduler = createRetentionScheduler({ config });
+retentionScheduler.start();
+
 const server = app.listen(port, host, () => {
   logger.info(`[recruitai] backend listening on http://${host}:${port} (${config.environment})`);
+});
+
+server.on('close', () => {
+  retentionScheduler.stop();
 });
 
 server.on('error', (error: Error) => {
