@@ -1,3 +1,5 @@
+import { getActiveRequestId, getRequestContext } from '../context/request-context.js';
+
 /**
  * Structured JSON logger.
  *
@@ -132,6 +134,33 @@ export function defaultLogSink(line: string, level: LogLevel): void {
   }
 }
 
+/**
+ * Identity fields for the active request.
+ *
+ * Request id is always present (the request-id middleware opens the scope for
+ * the whole request, including auth failures). Tenant/user/session are added as
+ * soon as auth and session resolution establish them. Values are ids only; no
+ * request content is ever read here.
+ */
+function requestScopeFields(): Record<string, unknown> {
+  const context = getRequestContext();
+  const requestId = context?.requestId ?? getActiveRequestId();
+  const fields: Record<string, unknown> = {};
+  if (requestId) {
+    fields['request_id'] = requestId;
+  }
+  if (context?.userId) {
+    fields['user_id'] = context.userId;
+  }
+  if (context?.tenantId) {
+    fields['tenant_id'] = context.tenantId;
+  }
+  if (context?.sessionId) {
+    fields['session_id'] = context.sessionId;
+  }
+  return fields;
+}
+
 /** Create a named structured logger. */
 export function createLogger(nameOrOptions: string | LoggerOptions): Logger {
   const options: LoggerOptions =
@@ -150,7 +179,9 @@ export function createLogger(nameOrOptions: string | LoggerOptions): Logger {
       level: logLevel,
       logger: options.name,
       message,
-      ...sanitizeLogFields(fields),
+      // Request identity is injected automatically and is authoritative: a
+      // caller cannot spoof another tenant into the log record.
+      ...sanitizeLogFields({ ...fields, ...requestScopeFields() }),
     };
 
     let line: string;

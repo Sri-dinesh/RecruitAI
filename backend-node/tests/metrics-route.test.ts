@@ -36,11 +36,39 @@ describe('GET /api/metrics', () => {
 
   it('returns Prometheus text when Accept includes text/plain', async () => {
     const { app } = buildApp();
+    // Produce one real sample first; `recordRequest` runs on `finish`.
+    await request(app).get('/health').expect(200);
+    await new Promise((resolve) => setImmediate(resolve));
+
     const response = await request(app).get('/api/metrics').set('Accept', 'text/plain').expect(200);
 
     assert.match(response.headers['content-type'] ?? '', /^text\/plain/);
-    assert.match(response.text, /# HELP recruitai_requests_total/);
-    assert.match(response.text, /# TYPE recruitai_queue_depth gauge/);
+    // Stable names referenced by docs/slo.md alerting and scraping.
+    for (const metric of [
+      'recruitai_requests_total',
+      'recruitai_queue_depth',
+      'recruitai_tokens_total',
+      'recruitai_llm_cost_usd',
+    ]) {
+      assert.match(response.text, new RegExp(`# HELP ${metric} `));
+      assert.match(response.text, new RegExp(`# TYPE ${metric} `));
+    }
+    assert.match(response.text, /recruitai_requests_total\{endpoint="\/health",status="200"\} 1/);
+    assert.match(response.text, /recruitai_tokens_total\{type="input"\} \d+/);
+  });
+
+  it('keeps the JSON summary for every other Accept value', async () => {
+    const { app } = buildApp();
+    for (const accept of ['application/json', '*/*', undefined]) {
+      const pending = request(app).get('/api/metrics');
+      const response = await (
+        accept === undefined ? pending : pending.set('Accept', accept)
+      ).expect(200);
+      assert.match(response.headers['content-type'] ?? '', /^application\/json/);
+      assert.ok('red_metrics' in response.body);
+      assert.ok('use_metrics' in response.body);
+      assert.ok('token_accounting' in response.body);
+    }
   });
 
   it('requires authentication', async () => {

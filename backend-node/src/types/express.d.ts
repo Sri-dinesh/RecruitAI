@@ -11,6 +11,8 @@ declare global {
     interface Request {
       userId?: string;
       requestContext?: Readonly<RequestContext>;
+      /** Correlation id set by `createRequestIdMiddleware`. */
+      requestId?: string;
       /** Output of `validateQuery(...)` for the matched route. */
       validatedQuery?: unknown;
       /** Output of `validateHeaders(...)` for the matched route. */

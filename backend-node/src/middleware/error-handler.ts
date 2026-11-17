@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ErrorRequestHandler, RequestHandler } from 'express';
+import type { ErrorRequestHandler, Request, RequestHandler } from 'express';
 
+import { getRequestContext } from '../context/request-context.js';
 import type { FastApiValidationError } from '../schemas/validation.js';
 import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
@@ -19,6 +20,31 @@ export const notFoundHandler: RequestHandler = (_req, res) => {
 /** Opaque reference id format used by the Python handler (`uuid4().hex[:8]`). */
 function createErrorRef(): string {
   return randomUUID().replaceAll('-', '').slice(0, 8);
+}
+
+/**
+ * Server-side log fields for one failed request.
+ *
+ * Request id comes from the request-id middleware so even failures that happen
+ * before authentication are correlated. Tenant/user ids come from the active
+ * request context when auth has already run. The query string is deliberately
+ * excluded from `path` to avoid logging user input.
+ */
+function requestLogFields(req: Request): Record<string, unknown> {
+  const fields: Record<string, unknown> = {
+    method: req.method,
+    path: req.path,
+  };
+  if (req.requestId) {
+    fields['request_id'] = req.requestId;
+  }
+  const context = getRequestContext();
+  if (context) {
+    fields['user_id'] = context.userId;
+    fields['tenant_id'] = context.tenantId;
+    fields['duration_ms'] = Date.now() - context.startedAt;
+  }
+  return fields;
 }
 
 interface BodyParserError extends Error {
@@ -63,6 +89,19 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
   }
 
   if (error instanceof HttpError) {
+    // 5xx HttpErrors carry an internal diagnostic message. Log it server-side
+    // only (with request/tenant identity); the client still gets `detail`.
+    if (error.statusCode >= 500) {
+      logger.error(
+        `[HTTP_ERROR status=${error.statusCode}] ${req.method} ${req.path}: ` +
+          `${error.name}: ${error.message}`,
+        {
+          ...requestLogFields(req),
+          status_code: error.statusCode,
+          error_type: error.name,
+        },
+      );
+    }
     res.status(error.statusCode).set(error.headers).json({ detail: error.detail });
     return;
   }
@@ -91,9 +130,8 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
 
   // Server-side only; log the path without the query string to avoid PII.
   logger.error(`[UNHANDLED_EXCEPTION ref=${ref}] ${req.method} ${req.path}: ${name}: ${message}`, {
+    ...requestLogFields(req),
     ref,
-    method: req.method,
-    path: req.path,
     error_type: name,
   });
 

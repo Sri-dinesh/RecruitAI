@@ -26,7 +26,9 @@ export function requireAuth(options: RequireAuthOptions = {}): RequestHandler {
 
     void auth.getCurrentUserId(token).then(
       (userId) => {
-        const context = createRequestContext(userId);
+        // Reuse the id opened by the request-id middleware so pre-auth and
+        // post-auth logs for one request share a correlation id.
+        const context = createRequestContext(userId, req.requestId);
         req.userId = userId;
         req.requestContext = context;
         runWithRequestContext(context, next);

@@ -10,6 +10,7 @@ import {
 } from '../src/db/workspace-query-store.js';
 import { errorHandler, notFoundHandler } from '../src/middleware/error-handler.js';
 import { jsonBodyParser } from '../src/middleware/json-body.js';
+import { createRequestIdMiddleware } from '../src/middleware/request-id.js';
 import { clearResetRateLimits } from '../src/services/session-service.js';
 import type { AnalyticsService } from '../src/services/analytics-service.js';
 import type { EvaluationService } from '../src/services/evaluation-service.js';
@@ -88,6 +89,7 @@ export async function withPhase15<T>(
 
     const app = express();
     app.disable('x-powered-by');
+    app.use(createRequestIdMiddleware());
     app.use(jsonBodyParser);
     app.use(
       '/api',

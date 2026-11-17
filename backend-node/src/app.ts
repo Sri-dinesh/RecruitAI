@@ -6,8 +6,9 @@ import { createChatJobManager, type ChatJobManager } from './jobs/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { jsonBodyParser } from './middleware/json-body.js';
+import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
-import { healthRouter } from './routes/health.js';
+import { createReadinessRouter, healthRouter } from './routes/health.js';
 import { createApiRouter } from './routes/index.js';
 import { createPaymentsWebhookRouter } from './routes/payments.js';
 import {
@@ -42,15 +43,17 @@ export interface CreateAppOptions {
  * Express application factory, mirroring `app/main.py`.
  *
  * Middleware order is deliberate and must stay stable:
- *   1. Request metrics (outermost; times every response, including errors)
- *   2. CORS (as in Starlette)
- *   3. Razorpay webhook (needs the exact raw bytes, before JSON parsing)
- *   4. JSON body parsing
- *   5. Public health/liveness routes (registered before the API router so
+ *   1. Request id (outermost; every log and response shares one correlation id)
+ *   2. Request metrics (times every response, including errors)
+ *   3. CORS (as in Starlette)
+ *   4. Razorpay webhook (needs the exact raw bytes, before JSON parsing)
+ *   5. JSON body parsing
+ *   6. Public health/liveness routes (registered before the API router so
  *      `/api/health` never inherits route-level auth)
- *   6. Feature routers under `/api` (each applies `requireAuth` itself)
- *   7. JSON 404 for unmatched paths
- *   8. Terminal error handling
+ *   7. Authenticated deep readiness (`/health/ready`, `/api/health/ready`)
+ *   8. Feature routers under `/api` (each applies `requireAuth` itself)
+ *   9. JSON 404 for unmatched paths
+ *  10. Terminal error handling
  *
  * Request identity and telemetry live in `src/context/request-context.ts`.
  */
@@ -73,6 +76,9 @@ export function createApp(options: CreateAppOptions = {}): Express {
   // Default Express fingerprint header is not part of the existing contract.
   app.disable('x-powered-by');
 
+  // Correlation id first: auth failures, parser errors and 404s all carry it.
+  app.use(createRequestIdMiddleware());
+
   // Metrics are always enabled, matching the Python config (no env toggle).
   if (config.telemetry.enabled) {
     app.use(createRequestMetricsMiddleware(metrics));
@@ -87,6 +93,14 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(jsonBodyParser);
 
   app.use(healthRouter);
+  app.use(
+    createReadinessRouter({
+      config,
+      ...(options.workspaceQueryStore === undefined
+        ? {}
+        : { queryStore: options.workspaceQueryStore }),
+    }),
+  );
   app.use(
     '/api',
     createApiRouter({

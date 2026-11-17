@@ -76,6 +76,15 @@ export interface ChatMessageQuery {
 }
 
 export interface WorkspaceQueryStore {
+  /**
+   * Backing store label for readiness diagnostics. Never a connection string
+   * or any other internal detail.
+   */
+  readonly kind: 'postgresql' | 'sqlite_fallback';
+
+  /** Cheap round trip used by the readiness probe. */
+  ping(): Promise<void>;
+
   // ── Sessions ──────────────────────────────────────────────────────────────
   listSessions(userId: string): Promise<DbRow[]>;
   getSession(userId: string, sessionId: string): Promise<DbRow | undefined>;
@@ -390,6 +399,14 @@ function drizzleUserPatch(patch: Record<string, unknown>): Partial<typeof users.
 
 export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQueryStore {
   return {
+    kind: 'postgresql',
+
+    async ping() {
+      // Same probe semantics as Python's `table("chat_sessions").select("id").limit(1)`:
+      // confirm the connection and schema are reachable without reading tenant data.
+      await db.select({ id: chatSessions.id }).from(chatSessions).limit(1);
+    },
+
     async listSessions(userId) {
       const rows = await db
         .select()
@@ -925,6 +942,12 @@ function nowIso(): string {
 
 export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): WorkspaceQueryStore {
   return {
+    kind: 'sqlite_fallback',
+
+    async ping() {
+      db.table('chat_sessions').select('id').limit(1).execute();
+    },
+
     async listSessions(userId) {
       const rows = db
         .table('chat_sessions')

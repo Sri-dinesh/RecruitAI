@@ -41,9 +41,29 @@ export interface RequestContext {
 
 const storage = new AsyncLocalStorage<RequestContext>();
 
+/**
+ * Request-id scope that exists before authentication.
+ *
+ * `requireAuth` has to resolve a token before it knows the user, but logs and
+ * metrics emitted while authenticating still need a correlation id. The
+ * request-id middleware opens this scope for the whole request; the auth
+ * middleware then reuses the same id when it builds the full context.
+ */
+const requestIdStorage = new AsyncLocalStorage<string>();
+
+/** Run `fn` with `requestId` as the active correlation id. */
+export function runWithRequestId<T>(requestId: string, fn: () => T): T {
+  return requestIdStorage.run(requestId, fn);
+}
+
+/** Correlation id for the current request, set before auth by middleware. */
+export function getActiveRequestId(): string | undefined {
+  return requestIdStorage.getStore();
+}
+
 export function createRequestContext(
   userId: string,
-  requestId: string = randomUUID(),
+  requestId: string = getActiveRequestId() ?? randomUUID(),
 ): RequestContext {
   return {
     requestId,

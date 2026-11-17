@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import {
+  createDrizzleWorkspaceQueryStore,
+  type WorkspaceQueryStore,
+} from '../src/db/workspace-query-store.js';
 import { daysAgo, OTHER_USER_ID, USER_ID, withPhase15 } from './phase15-helpers.js';
 
 describe('WorkspaceQueryStore (SQLite)', () => {
+  it('exposes a safe backend label and a readiness ping', async () => {
+    await withPhase15(async ({ store }) => {
+      assert.equal(store.kind, 'sqlite_fallback');
+      await store.ping();
+
+      // The Postgres implementation reports its own label without connecting.
+      const drizzle = createDrizzleWorkspaceQueryStore(
+        {} as unknown as Parameters<typeof createDrizzleWorkspaceQueryStore>[0],
+      );
+      assert.equal(drizzle.kind, 'postgresql');
+      assert.equal(typeof drizzle.ping, 'function');
+      const contract: WorkspaceQueryStore = drizzle;
+      assert.equal(contract.kind, 'postgresql');
+    });
+  });
+
   it('manages sessions with tenant scoping', async () => {
     await withPhase15(async ({ store }) => {
       await store.insertSession({ id: 's-1', userId: USER_ID, title: 'Campaign A' });

@@ -52,9 +52,9 @@ import { createUsersRouter } from './users.js';
  *   /api/payments    (Phase 10) — `/webhook` stays public; the other routes
  *                                apply `requireAuth()`
  *
- * Deep readiness (`/health/ready`, `/api/health/ready`) is authenticated and
- * needs the LLM diagnostics layer, so it arrives with a later phase.
- * Health liveness lives in `health.ts` and is public.
+ * Deep readiness (`/health/ready`, `/api/health/ready`) requires authentication
+ * and lives in `health.ts`, mounted by the app factory before this router.
+ * Health liveness lives there too and is public.
  */
 
 export interface ApiRouterOptions {
