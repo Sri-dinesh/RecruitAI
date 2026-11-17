@@ -185,7 +185,7 @@ describe('authenticated readiness', () => {
       assert.equal(typeof response.body.uptime_seconds, 'number');
 
       assert.equal(response.body.services.database.status, 'healthy');
-      assert.equal(response.body.services.database.type, 'postgresql');
+      assert.equal(response.body.services.database.type, 'supabase_postgresql');
       assert.equal(typeof response.body.services.database.latency_ms, 'number');
 
       assert.equal(response.body.services.llm.status, 'configured');

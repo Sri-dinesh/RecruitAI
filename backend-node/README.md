@@ -829,7 +829,7 @@ any response contract clients rely on.
   readiness** probes with the same JSON shape as Python:
   - `services.database` — a real round trip through the shared
     `WorkspaceQueryStore.ping()` (never tenant data), plus `type`
-    (`postgresql` / `sqlite_fallback`) and `latency_ms`.
+    (`supabase_postgresql` / `sqlite_fallback`) and `latency_ms`.
   - `services.llm` — `configured` with the rotating model names, or
     `unconfigured`/`error`. The API key is never returned.
   - `services.auth` — `local_dev`, `supabase_jwt` or `unconfigured_jwt`.

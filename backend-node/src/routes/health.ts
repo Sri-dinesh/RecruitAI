@@ -132,7 +132,9 @@ export function createReadinessRouter(options: ReadinessRouterOptions): Router {
       await database.ping();
       services.database = {
         status: 'healthy',
-        type: database.kind,
+        // Python reports `supabase_postgresql` for the hosted database. Keep
+        // that label while the internal store kind stays deployment-neutral.
+        type: database.kind === 'sqlite_fallback' ? 'sqlite_fallback' : 'supabase_postgresql',
         latency_ms: roundMs(performance.now() - dbStarted),
       };
       // A working SQLite fallback is usable but operationally degraded, as in
