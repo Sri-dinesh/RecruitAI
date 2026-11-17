@@ -1,6 +1,7 @@
 import {
   readBoolean,
   readCsvList,
+  readEnumStrict,
   readInt,
   readIntStrict,
   readNonNegativeIntStrict,
@@ -9,6 +10,7 @@ import {
   readStringOr,
   type EnvSource,
 } from './env.js';
+import { LOG_LEVELS, type LogLevel } from '../telemetry/logger.js';
 
 /**
  * Typed application configuration.
@@ -144,6 +146,33 @@ export interface TelemetryConfig {
   readonly enabled: true;
 }
 
+/** Structured log verbosity (Phase 19). */
+export interface LoggingConfig {
+  readonly level: LogLevel;
+}
+
+/**
+ * In-process request rate limiting (Phase 19).
+ *
+ * Python has no global limiter, so this is a Node-side production-hardening
+ * addition. It is enabled by default only when `isProduction`; development and
+ * tests stay unlimited unless `RATE_LIMIT_ENABLED=true` is set explicitly.
+ *
+ * The limiter is per process and keyed by client IP. It is a coarse abuse guard
+ * for a single instance, not a distributed quota; Phase 22 moves fleet-wide
+ * quotas to Redis if needed.
+ */
+export interface RateLimitConfig {
+  readonly enabled: boolean;
+  readonly windowSeconds: number;
+  readonly maxRequests: number;
+  /**
+   * Trust `X-Forwarded-For` for the client IP. Enable only when the service is
+   * reachable exclusively through a proxy that overwrites the header.
+   */
+  readonly trustProxy: boolean;
+}
+
 /**
  * Async chat job execution (Phase 14).
  *
@@ -198,6 +227,8 @@ export interface AppConfig {
   readonly jobs: JobsConfig;
   readonly retention: RetentionConfig;
   readonly telemetry: TelemetryConfig;
+  readonly logging: LoggingConfig;
+  readonly rateLimit: RateLimitConfig;
   /** Required keys that are currently missing (informational outside production). */
   readonly missingKeys: readonly string[];
 }
@@ -311,6 +342,17 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       chatTtlDays: readNonNegativeIntStrict(env, 'RETENTION_CHAT_TTL_DAYS', 365),
     },
     telemetry: { enabled: true },
+    logging: {
+      level: readEnumStrict(env, 'LOG_LEVEL', LOG_LEVELS, 'info'),
+    },
+    rateLimit: {
+      // Production hardening is on by default in production; development and
+      // tests keep Python's unlimited behavior unless explicitly enabled.
+      enabled: readBoolean(env, 'RATE_LIMIT_ENABLED', isProduction),
+      windowSeconds: readPositiveIntStrict(env, 'RATE_LIMIT_WINDOW_SECONDS', 60),
+      maxRequests: readPositiveIntStrict(env, 'RATE_LIMIT_MAX_REQUESTS', 600),
+      trustProxy: readBoolean(env, 'TRUST_PROXY', false),
+    },
     missingKeys: getMissingKeys(env),
   };
 

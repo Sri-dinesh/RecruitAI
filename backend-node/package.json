@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "retention:run": "tsx src/cli/retention.ts",
+    "preflight": "tsx src/cli/preflight.ts",
     "parity:check": "node scripts/parity-check.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

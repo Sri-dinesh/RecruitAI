@@ -114,6 +114,28 @@ export function readNonNegativeIntStrict(env: EnvSource, key: string, fallback: 
 }
 
 /**
+ * Strict enum parsing for startup-critical switches (log level). Unset/empty
+ * uses the fallback; any other value that is not in `allowed` fails loudly so a
+ * typo cannot silently change production behavior.
+ */
+export function readEnumStrict<T extends string>(
+  env: EnvSource,
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === '') {
+    return fallback;
+  }
+  const value = raw.trim().toLowerCase();
+  if ((allowed as readonly string[]).includes(value)) {
+    return value as T;
+  }
+  throw new Error(`Invalid ${key}: expected one of ${allowed.join(', ')}, received "${raw}".`);
+}
+
+/**
  * Comma-separated list parsing, matching the Python ALLOWED_ORIGINS logic:
  * unset/empty -> undefined (caller applies defaults); otherwise split, trim
  * and drop empty entries.

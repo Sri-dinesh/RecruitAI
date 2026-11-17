@@ -85,6 +85,26 @@ export type LogFields = Readonly<Record<string, unknown>>;
 
 export type LogSink = (line: string, level: LogLevel) => void;
 
+/**
+ * Process-wide default level.
+ *
+ * Module-level loggers are created at import time, before bootstrap has read
+ * the validated config. Keeping the default behind a mutable value (and
+ * resolving it on every emit) lets `LOG_LEVEL` take effect for those loggers
+ * without recreating them.
+ */
+let defaultLevel: LogLevel = 'info';
+
+/** Set the default level (bootstrap calls this from the validated config). */
+export function setDefaultLogLevel(level: LogLevel): void {
+  defaultLevel = level;
+}
+
+/** Read the current default level (tests/diagnostics). */
+export function getDefaultLogLevel(): LogLevel {
+  return defaultLevel;
+}
+
 export interface LoggerOptions {
   readonly name: string;
   /** Minimum level to emit. Defaults to `info`. */
@@ -165,13 +185,12 @@ function requestScopeFields(): Record<string, unknown> {
 export function createLogger(nameOrOptions: string | LoggerOptions): Logger {
   const options: LoggerOptions =
     typeof nameOrOptions === 'string' ? { name: nameOrOptions } : nameOrOptions;
-  const level = options.level ?? 'info';
-  const threshold = LEVEL_PRIORITY[level];
   const sink = options.sink ?? defaultLogSink;
   const now = options.now ?? (() => new Date());
+  const activeLevel = (): LogLevel => options.level ?? defaultLevel;
 
   const emit = (logLevel: LogLevel, message: string, fields?: LogFields): void => {
-    if (LEVEL_PRIORITY[logLevel] < threshold) {
+    if (LEVEL_PRIORITY[logLevel] < LEVEL_PRIORITY[activeLevel()]) {
       return;
     }
     const record: Record<string, unknown> = {
@@ -202,7 +221,9 @@ export function createLogger(nameOrOptions: string | LoggerOptions): Logger {
 
   return {
     name: options.name,
-    level,
+    get level() {
+      return activeLevel();
+    },
     debug: (message, fields) => emit('debug', message, fields),
     info: (message, fields) => emit('info', message, fields),
     warn: (message, fields) => emit('warn', message, fields),

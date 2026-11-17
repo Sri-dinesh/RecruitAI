@@ -91,6 +91,13 @@ describe('config defaults (development)', () => {
       chatTtlDays: 365,
     });
     assert.equal(config.telemetry.enabled, true);
+    assert.equal(config.logging.level, 'info');
+    assert.deepEqual(config.rateLimit, {
+      enabled: false,
+      windowSeconds: 60,
+      maxRequests: 600,
+      trustProxy: false,
+    });
     assert.deepEqual(config.missingKeys, [...REQUIRED_PRODUCTION_KEYS]);
   });
 
@@ -185,6 +192,52 @@ describe('production gates', () => {
       'SUPABASE_URL',
       'SUPABASE_SERVICE_ROLE_KEY',
     ]);
+  });
+});
+
+describe('logging and rate limiting config', () => {
+  it('enables the limiter by default only in production', () => {
+    assert.equal(loadConfig({}).rateLimit.enabled, false);
+    assert.equal(loadConfig({ ENVIRONMENT: 'staging' }).rateLimit.enabled, false);
+    assert.equal(loadConfig(productionEnv()).rateLimit.enabled, true);
+  });
+
+  it('honours explicit limiter settings and bounds', () => {
+    const config = loadConfig({
+      RATE_LIMIT_ENABLED: 'true',
+      RATE_LIMIT_WINDOW_SECONDS: '30',
+      RATE_LIMIT_MAX_REQUESTS: '120',
+      TRUST_PROXY: 'true',
+    });
+    assert.deepEqual(config.rateLimit, {
+      enabled: true,
+      windowSeconds: 30,
+      maxRequests: 120,
+      trustProxy: true,
+    });
+
+    const disabled = loadConfig(productionEnv({ RATE_LIMIT_ENABLED: 'false' }));
+    assert.equal(disabled.rateLimit.enabled, false);
+  });
+
+  it('rejects invalid limiter bounds instead of silently changing them', () => {
+    for (const key of ['RATE_LIMIT_WINDOW_SECONDS', 'RATE_LIMIT_MAX_REQUESTS']) {
+      assertThrowsWith(() => loadConfig({ [key]: '0' }), `Invalid ${key}`);
+      assertThrowsWith(() => loadConfig({ [key]: '-1' }), `Invalid ${key}`);
+      assertThrowsWith(() => loadConfig({ [key]: 'abc' }), `Invalid ${key}`);
+    }
+  });
+
+  it('parses and validates LOG_LEVEL', () => {
+    assert.equal(loadConfig({ LOG_LEVEL: 'WARN' }).logging.level, 'warn');
+    assert.equal(loadConfig({ LOG_LEVEL: '' }).logging.level, 'info');
+    assertThrowsWith(() => loadConfig({ LOG_LEVEL: 'verbose' }), 'Invalid LOG_LEVEL');
+  });
+
+  it('parses TRUST_PROXY with the Python boolean rules', () => {
+    assert.equal(loadConfig({ TRUST_PROXY: 'true' }).rateLimit.trustProxy, true);
+    assert.equal(loadConfig({ TRUST_PROXY: 'TRUE' }).rateLimit.trustProxy, true);
+    assert.equal(loadConfig({ TRUST_PROXY: '1' }).rateLimit.trustProxy, false);
   });
 });
 

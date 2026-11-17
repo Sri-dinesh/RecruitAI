@@ -6,6 +6,7 @@ import { createChatJobManager, type ChatJobManager } from './jobs/index.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { jsonBodyParser } from './middleware/json-body.js';
+import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
 import { createReadinessRouter, healthRouter } from './routes/health.js';
@@ -46,14 +47,15 @@ export interface CreateAppOptions {
  *   1. Request id (outermost; every log and response shares one correlation id)
  *   2. Request metrics (times every response, including errors)
  *   3. CORS (as in Starlette)
- *   4. Razorpay webhook (needs the exact raw bytes, before JSON parsing)
- *   5. JSON body parsing
- *   6. Public health/liveness routes (registered before the API router so
+ *   4. Rate limit (production abuse guard; 429s still carry CORS headers)
+ *   5. Razorpay webhook (needs the exact raw bytes, before JSON parsing)
+ *   6. JSON body parsing
+ *   7. Public health/liveness routes (registered before the API router so
  *      `/api/health` never inherits route-level auth)
- *   7. Authenticated deep readiness (`/health/ready`, `/api/health/ready`)
- *   8. Feature routers under `/api` (each applies `requireAuth` itself)
- *   9. JSON 404 for unmatched paths
- *  10. Terminal error handling
+ *   8. Authenticated deep readiness (`/health/ready`, `/api/health/ready`)
+ *   9. Feature routers under `/api` (each applies `requireAuth` itself)
+ *  10. JSON 404 for unmatched paths
+ *  11. Terminal error handling
  *
  * Request identity and telemetry live in `src/context/request-context.ts`.
  */
@@ -76,6 +78,12 @@ export function createApp(options: CreateAppOptions = {}): Express {
   // Default Express fingerprint header is not part of the existing contract.
   app.disable('x-powered-by');
 
+  // Behind a trusted proxy (Render, Fly, k8s ingress) req.ip must come from
+  // X-Forwarded-For. Off by default so a direct client cannot spoof its key.
+  if (config.rateLimit.trustProxy) {
+    app.set('trust proxy', true);
+  }
+
   // Correlation id first: auth failures, parser errors and 404s all carry it.
   app.use(createRequestIdMiddleware());
 
@@ -85,6 +93,16 @@ export function createApp(options: CreateAppOptions = {}): Express {
   }
 
   app.use(createCorsMiddleware(config));
+
+  // After CORS so a browser can read the 429 body, before parsing so abusive
+  // requests are rejected cheaply. Disabled outside production by default.
+  app.use(
+    createRateLimitMiddleware({
+      enabled: config.rateLimit.enabled,
+      windowMs: config.rateLimit.windowSeconds * 1000,
+      maxRequests: config.rateLimit.maxRequests,
+    }),
+  );
 
   // The webhook verifies an HMAC over the raw body, so it must not pass
   // through `express.json()` first. Invalid JSON is reported by the route.
