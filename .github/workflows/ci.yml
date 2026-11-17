@@ -2,9 +2,9 @@ name: RecruitAI Production CI Quality Gate
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   backend-quality-gate:
@@ -50,6 +50,60 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder"
         run: |
           pytest tests/ --cov=app/services --cov-report=term-missing
+
+  backend-node-quality-gate:
+    name: Express Backend Lint, Type, Test & Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend-node
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
+          cache-dependency-path: backend-node/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Static Analysis (eslint)
+        run: npm run lint
+
+      - name: Formatting (prettier)
+        run: npm run format:check
+
+      - name: TypeScript Static Type Check (src + tests)
+        run: npm run typecheck
+
+      - name: Unit, Contract and Parity Tests
+        run: npm test
+
+      - name: Production Build
+        run: npm run build
+
+      # Proves the Phase 19 preflight passes on a complete, non-placeholder
+      # production environment (optional integrations warn, hard gates pass).
+      - name: Production Preflight (fixture environment)
+        env:
+          ENVIRONMENT: production
+          NODE_ENV: production
+          LLM_DATA_USE_MODE: zero_retention_verified
+          GEMINI_API_KEY: ci_gemini_key_1234567890
+          TAVILY_API_KEY: ci_tavily_key_1234567890
+          SUPABASE_URL: https://ci-project.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci_service_role_value_1234567890
+          SUPABASE_JWT_SECRET: ci_jwt_secret_value_1234567890abcdef
+          DATABASE_URL: postgresql://ci_user:ci_password@db.internal:5432/recruitai
+          ALLOWED_ORIGINS: https://ci.recruitai.test
+          USE_LOCAL_AUTH: "false"
+        run: node dist/cli/preflight.js
 
   frontend-quality-gate:
     name: Frontend TypeScript, Lint & Build Integrity
@@ -118,4 +172,3 @@ jobs:
 
       - name: Expo Config Validation
         run: npx expo config --type public
-

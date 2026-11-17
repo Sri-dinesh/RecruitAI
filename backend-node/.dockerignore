@@ -1,0 +1,27 @@
+# Build context hygiene: the image only needs package files, src and dist.
+node_modules
+dist
+coverage
+tests
+scripts
+docs
+
+# Never bake secrets or local databases into an image.
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+
+# Local tooling and history.
+.git
+.github
+.vscode
+.idea
+*.log
+logs
+
+# Docker metadata (not needed inside the image).
+Dockerfile
+.dockerignore
