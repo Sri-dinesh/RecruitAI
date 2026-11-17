@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–18 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–19 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -12,10 +12,11 @@ supervisor graph with its 15 specialized nodes, the chat API with its async
 job queue and SSE streaming, and the remaining public route groups (sessions,
 candidate evaluation/ATS export, PDF reports, analytics, user profile, and
 GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI, the
-Phase 17 health/readiness, request-id and audit-log finalization, and the Phase
-18 parity matrix, dual-run parity checker and cutover/rollback procedure. The
-Python backend in `../backend/` remains the running service and is untouched
-until cutover.
+Phase 17 health/readiness, request-id and audit-log finalization, the Phase 18
+parity matrix, dual-run parity checker and cutover/rollback procedure, and the
+Phase 19 deployment artifact, production preflight, request limiter and
+log/metric export contract. The Python backend in `../backend/` remains the
+running service and is untouched until cutover.
 
 ## Status
 
@@ -39,7 +40,8 @@ until cutover.
 | Phase 16 — operational retention      | ✅ complete                             |
 | Phase 17 — observability and health   | ✅ complete                             |
 | Phase 18 — tests, parity, cutover     | ✅ complete                             |
-| Phases 19–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 19 — deploy + hardening         | ✅ complete                             |
+| Phases 20–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -48,6 +50,7 @@ npm install          # install dependencies
 npm run dev          # tsx watch src/main.ts (development)
 npm run build        # tsc → dist/
 npm start            # node dist/main.js (production)
+npm run preflight    # validate a production deployment environment
 npm run typecheck    # tsc --noEmit (src + tests)
 npm test             # node:test via tsx
 npm run parity:check # read-only FastAPI vs Express comparison
@@ -87,10 +90,12 @@ src/
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
 ├── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
 │                   #   + retention scheduler        (Phase 16 ✅)
-└── cli/            # operational commands           (Phase 16 ✅)
+└── cli/            # operational commands (retention, preflight) (Phases 16/19 ✅)
 tests/              # ported pytest suite            (Phase 18 ✅)
                     #   PARITY.md maps every backend/tests module to a suite
 scripts/            # parity-check.mjs (dual-run HTTP comparison)
+Dockerfile          # multi-stage, non-root runtime image (Phase 19 ✅)
+.dockerignore       # excludes .env* (except the template) and local databases
 ```
 
 ## Environment
@@ -138,6 +143,18 @@ Operational retention settings (Phase 16) live under `config.retention` and are
   accept `0` (purge at boot/run time) and are strict non-negative integers;
   invalid values fail at boot.
 
+Logging and hardening settings (Phase 19):
+
+- `LOG_LEVEL` (`debug`/`info`/`warn`/`error`) defaults to `info` and is
+  validated strictly; an invalid value fails boot. It applies to loggers that
+  were created at import time because the default level is resolved per emit.
+- `RATE_LIMIT_ENABLED` defaults to `true` when `ENVIRONMENT=production` and
+  `false` otherwise, so development and tests keep Python's unlimited behavior.
+- `RATE_LIMIT_WINDOW_SECONDS` defaults to `60` and
+  `RATE_LIMIT_MAX_REQUESTS` to `600`; both are strict positive integers.
+- `TRUST_PROXY` defaults to `false` and must be enabled only behind a proxy
+  that overwrites `X-Forwarded-For`.
+
 Production gates (fail-fast at boot, before the server listens):
 
 - **AI-SEC-1** — throws unless `LLM_DATA_USE_MODE` is exactly
@@ -148,6 +165,11 @@ Production gates (fail-fast at boot, before the server listens):
   enforces it.
 - **PORT** — a non-integer value throws instead of silently binding another
   port (mirrors the Python launcher's `int()` crash).
+- **Preflight** — in production, startup also runs the Phase 19 preflight and
+  exits `1` on any hard failure (missing/weak JWT secret, non-PostgreSQL
+  `DATABASE_URL`, loopback CORS, placeholder secrets, partial SMTP/Razorpay).
+  Run the same checks against a deployment before switching traffic with
+  `npm run preflight` or `node dist/cli/preflight.js`.
 
 Credit-exhaustion responses use the frozen 402 contract in
 `src/types/errors.ts` (`INSUFFICIENT_CREDITS`, message, `upgrade_url:
@@ -864,8 +886,8 @@ so Node is the first runtime to populate these counters.
 
 ### Request ids and log correlation
 
-`src/middleware/request-id.ts` runs first, before metrics, CORS and body
-parsing:
+`src/middleware/request-id.ts` runs first, before metrics, CORS, rate limiting
+and body parsing:
 
 - reuses a short, URL-safe inbound `X-Request-ID` or mints a UUID;
 - echoes the id on every response, including 401/404/422/500;
@@ -972,6 +994,103 @@ incident index and from the 5xx mitigation path.
 Phase 18 adds 11 client-contract tests plus the parity tooling, bringing the
 suite to 794 tests / 194 suites.
 
+## Deployment and production hardening (Phase 19)
+
+Phase 19 turns the Node backend into a deployable service and closes the
+production-safety gaps that only appear outside development. The canonical
+deployment contract is [`../docs/deployment.md`](../docs/deployment.md);
+incident procedures are in [`../docs/runbooks.md`](../docs/runbooks.md) and the
+switchover steps in [`../docs/cutover.md`](../docs/cutover.md).
+
+### Artifact and entrypoint
+
+- `Dockerfile` is multi-stage: `npm ci` + `tsc` in a build stage, then a runtime
+  stage with production dependencies and `dist/` only, running as the non-root
+  `node` user.
+- `CMD ["node", "dist/main.js"]` is the Node equivalent of
+  `uvicorn app.main:app --host $HOST --port $PORT`. It loads `.env` only when
+  present (platform variables always win), validates config, sets the log
+  level, runs the production preflight, then starts the retention scheduler and
+  HTTP server.
+- `RELOAD` is parsed for Python parity but has no effect on the built server;
+  `npm run dev` (`tsx watch`) is the development loop.
+- The container healthcheck calls the public `/health` liveness route.
+  Readiness (`/api/health/ready`) is authenticated and is used as a post-deploy
+  check.
+- `../render.yaml` is the concrete deployment target: a Docker web service
+  rooted at `backend-node`, `/health` health check, non-secret production values
+  inline, and every credential marked `sync: false` so Render prompts for it.
+- `backend/app/cli.py` is intentionally not ported: it is an interactive
+  developer REPL, not an operational command. The HTTP API, retention CLI and
+  preflight CLI cover the ops surface.
+
+### Production preflight
+
+`src/config/preflight.ts` is side-effect free, prints no secret values, and is
+shared by two entrypoints:
+
+- `npm run preflight` (`tsx src/cli/preflight.ts`) for a deployment environment;
+- the compiled `node dist/cli/preflight.js` for containers and CI;
+- `src/main.ts`, which runs the same evaluation at production startup.
+
+Hard failures (exit `1`, server refuses to listen): non-production
+environment, missing required keys, unverified `LLM_DATA_USE_MODE`, missing or
+< 32-character/placeholder JWT secret, missing or non-PostgreSQL `DATABASE_URL`,
+`USE_LOCAL_AUTH=true`, empty/loopback/invalid CORS origins, placeholder
+integration secrets, and partial SMTP or Razorpay configuration.
+
+Warnings (deployment continues): kill switch on, non-default JWT audience,
+SMTP/Razorpay absent (simulation mode), Redis absent (single instance),
+retention scheduler enabled, limiter disabled, debug logging, and
+`TRUST_PROXY=true`.
+
+CI runs `node dist/cli/preflight.js` against a complete fixture production
+environment, so a change that breaks the gates fails the pipeline before
+deploy.
+
+### Request rate limiting
+
+`src/middleware/rate-limit.ts` adds a dependency-free fixed-window limiter:
+
+- enabled by default only when `ENVIRONMENT=production`;
+- keyed by `req.ip` (proxy-aware only when `TRUST_PROXY=true`);
+- `429` + `Retry-After` with the standard `{ "detail": "..." }` body, emitted
+  after CORS so browsers can read it and before parsing so abuse is cheap;
+- bounded memory: expired windows are pruned and the oldest is evicted at
+  10,000 tracked keys;
+- per process, not a distributed quota. Phase 22 can move fleet-wide limits to
+  Redis if needed.
+
+### Log and metric export
+
+- Structured logs already go to stdout/stderr as one JSON object per line;
+  `LOG_LEVEL` controls verbosity. The request id is on every line and every
+  response, and sensitive fields (`prompt`, `resume`, `completion`, `text`,
+  `message`, `email`, `phone`) are never logged.
+- `/api/metrics` keeps its Phase 7/17 contract and stable metric names. It is
+  authenticated, so Prometheus scrapes it with an HS256 service token
+  (`aud=authenticated`, UUID `sub`) stored as a secret. Configuration is in
+  `docs/deployment.md`.
+- Secrets live in the platform store (Render env vars; `sync: false` in the
+  blueprint) and never in git or the image. Preflight reports check names, not
+  values.
+
+### Operational commands
+
+| Command                                   | Use                                             |
+| :---------------------------------------- | :---------------------------------------------- |
+| `npm run preflight`                       | Validate a deployment environment (hard gates). |
+| `node dist/cli/preflight.js`              | Same check from the built image/CI.             |
+| `npm run retention:run -- --dry-run`      | Preview tenant-scoped retention.                |
+| `npm run retention:run -- --user-id <id>` | Sweep one tenant manually.                      |
+| `npm run parity:check`                    | Read-only FastAPI vs Express comparison.        |
+| `npm start`                               | Run the built server.                           |
+
+Phase 19 adds focused tests for the limiter, preflight report and dynamic log
+level, bringing the suite to **823 tests / 198 suites**, and the Node job in
+`.github/workflows/ci.yml` gates lint, formatting, typecheck, tests, build and
+preflight.
+
 ## App wiring and error handling
 
 `createApp({ config })` assembles the stack in the same order as `app/main.py`:
@@ -983,22 +1102,25 @@ suite to 794 tests / 194 suites.
 3. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-4. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
+4. **Rate limit**: per-process fixed-window limiter (Phase 19), enabled by
+   default only in production. Runs after CORS so a browser can read the 429,
+   and before parsing so rejected requests are cheap.
+5. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
    mounted before the JSON parser so HMAC verification uses the exact bytes.
-5. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
+6. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
    primitive JSON roots reach the validators; interim 25 MB limit).
-6. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+7. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
-7. **Authenticated readiness**: `/health/ready`, `/api/health/ready`.
-8. **Feature routers under `/api`** — each router applies `requireAuth()`
+8. **Authenticated readiness**: `/health/ready`, `/api/health/ready`.
+9. **Feature routers under `/api`** — each router applies `requireAuth()`
    itself, matching FastAPI's per-route dependency. `/api/chat` receives the
    shared `CampaignService` and `ChatJobManager` built by the app factory so
    sync turns, queued turns and SSE all use the same instances. The Phase 15
    routers share one `WorkspaceQueryStore`; `createApp({ workspaceQueryStore })`
    lets tests inject an isolated SQLite store, which is how the Phase 15 suite
    runs without Postgres.
-9. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
-10. **Terminal error handler** (last):
+10. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+11. **Terminal error handler** (last):
 
 - `HttpError` subclasses render their status, headers and `{ detail }`
   (401 Bearer challenge, 402 quota body, 403 denials).
@@ -1019,8 +1141,9 @@ and the timer is stopped when the HTTP server closes.
 
 Intentionally absent: security headers, trusted-host checks, and timing
 middleware. Do not add them without marking them as new hardening and keeping
-response shapes unchanged. Request-id propagation _is_ present now (Phase 17);
-metrics moved to Phase 7 and readiness to Phase 17.
+response shapes unchanged. Request-id propagation _is_ present now (Phase 17),
+metrics moved to Phase 7, readiness to Phase 17, and global rate limiting to
+Phase 19.
 
 ## Validation and API contracts
 
