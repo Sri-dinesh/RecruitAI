@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–17 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–18 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -11,8 +11,9 @@ stats, resume/JD ingestion with campaign context hydration, the multi-agent
 supervisor graph with its 15 specialized nodes, the chat API with its async
 job queue and SSE streaming, and the remaining public route groups (sessions,
 candidate evaluation/ATS export, PDF reports, analytics, user profile, and
-GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI and
-the Phase 17 health/readiness, request-id and audit-log finalization. The
+GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI, the
+Phase 17 health/readiness, request-id and audit-log finalization, and the Phase
+18 parity matrix, dual-run parity checker and cutover/rollback procedure. The
 Python backend in `../backend/` remains the running service and is untouched
 until cutover.
 
@@ -37,7 +38,8 @@ until cutover.
 | Phase 15 — remaining public API       | ✅ complete                             |
 | Phase 16 — operational retention      | ✅ complete                             |
 | Phase 17 — observability and health   | ✅ complete                             |
-| Phases 18–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 18 — tests, parity, cutover     | ✅ complete                             |
+| Phases 19–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -48,6 +50,7 @@ npm run build        # tsc → dist/
 npm start            # node dist/main.js (production)
 npm run typecheck    # tsc --noEmit (src + tests)
 npm test             # node:test via tsx
+npm run parity:check # read-only FastAPI vs Express comparison
 npm run lint         # eslint .
 npm run format       # prettier --write .
 npm run format:check # prettier --check .
@@ -85,7 +88,9 @@ src/
 ├── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
 │                   #   + retention scheduler        (Phase 16 ✅)
 └── cli/            # operational commands           (Phase 16 ✅)
-tests/              # ported pytest suite            (Phase 18)
+tests/              # ported pytest suite            (Phase 18 ✅)
+                    #   PARITY.md maps every backend/tests module to a suite
+scripts/            # parity-check.mjs (dual-run HTTP comparison)
 ```
 
 ## Environment
@@ -895,6 +900,77 @@ Each record includes `audit_action`, the tenant/user id, and the active
 Phase 17 adds 18 tests (readiness healthy/degraded/unhealthy/auth, request-id
 propagation, error-log fields, metrics Accept/name stability, audit records),
 bringing the suite to 783 tests / 188 suites.
+
+## Verification, parity, and cutover (Phase 18)
+
+Phase 18 closes the migration with behaviour-level verification rather than only
+a green build.
+
+### Parity matrix and focused suites
+
+`tests/PARITY.md` maps all 33 modules in `../backend/tests/` to the Node suites
+that own the same behaviour, and records the three intentional gaps (Python
+span tracing, live network smoke tests, Supabase-REST transport). Every Phase
+18 focus area has a dedicated owner:
+
+| Area                                       | Suite(s)                                                                                      |
+| :----------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| Auth extraction/failures, tenant isolation | `auth.test.ts`, `session-routes.test.ts`, `evaluate-routes.test.ts`                           |
+| Credit consumption, 402, quota edges       | `payment-service.test.ts`, `payments-routes.test.ts`, `quota.test.ts`, `email-routes.test.ts` |
+| Webhook signature verification             | `payment-service.test.ts`, `payments-routes.test.ts`                                          |
+| Outreach persistence/isolation             | `email-routes.test.ts`, `email-tool.test.ts`                                                  |
+| Session CRUD                               | `session-routes.test.ts`, `client-contract.test.ts`                                           |
+| Ingest outcomes and dedupe                 | `ingest-routes.test.ts`, `ingestion-service.test.ts`, `document-parser.test.ts`               |
+| Job/SSE lifecycle                          | `chat-job-manager.test.ts`, `redis-job-manager.test.ts`, `chat-routes.test.ts`                |
+| Privacy cascade and retention              | `privacy-routes.test.ts`, `retention-scheduler.test.ts`, `retention-cli.test.ts`              |
+
+`tests/client-contract.test.ts` pins only the response fields the shipped
+clients read: the mobile `Candidate` / `ChatSession` / `ChatApiResponse` /
+`CandidateEvaluation` shapes, the analytics types in
+`frontend/src/lib/analyticsTypes.ts`, the outreach history/stats shape, the
+pricing/credit ledger fields, and the GDPR export/audit fields. It fails on
+shape drift even when the behaviour still works.
+
+### Dual-run parity checker
+
+`scripts/parity-check.mjs` (`npm run parity:check`) compares a running FastAPI
+backend with a running Express backend, read-only:
+
+```bash
+PYTHON_BASE_URL=http://127.0.0.1:8000 \
+NODE_BASE_URL=http://127.0.0.1:8001 \
+PARITY_BEARER_TOKEN=<token> \
+npm run parity:check
+```
+
+- Compares status codes, JSON content types and key/type shapes across root,
+  health, plans, `users/me`, sessions, all analytics endpoints, billing, email
+  history/stats, bias audit, metrics (JSON and Prometheus), and authenticated
+  readiness.
+- `PARITY_STRICT_DATA=true` adds scalar values and array lengths; use it only
+  when both backends share one database and tenant.
+- Always ignores process-local metric maps (`latencies_ms`,
+  `status_breakdown`) and volatile timestamps. `null`-vs-value differences and
+  open map keys (`preferences`, `evaluations`) are warnings in shape mode.
+- Exit code `0` means parity; `1` means drift or a failed request.
+
+Verified locally: 22/22 checks pass in shape mode for FastAPI-vs-Express and for
+Express-vs-Express. In the mixed run, warnings came from the two processes
+using different databases (Python: Supabase REST; Node: SQLite fallback because
+no `DATABASE_URL` was set) — not from contract drift. Shared-database strict
+mode is part of the cutover procedure.
+
+### Cutover and rollback
+
+`../docs/cutover.md` is the operational procedure: preconditions (same database,
+JWT secret, integrations, CORS, queue mode, retention ownership), dual-run
+validation, representative write flows, client switch order (internal web →
+public web → mobile), post-cutover checks, and a step-by-step rollback with
+in-flight async job handling. `../docs/runbooks.md` links to it from the
+incident index and from the 5xx mitigation path.
+
+Phase 18 adds 11 client-contract tests plus the parity tooling, bringing the
+suite to 794 tests / 194 suites.
 
 ## App wiring and error handling
 

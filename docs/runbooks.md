@@ -2,6 +2,8 @@
 
 This document contains operational procedures for responding to production alerts, system degradations, and high-severity incidents for RecruitAI (OPS-1).
 
+For the FastAPI → Express switchover itself — dual-run validation, client switch order, and the rollback procedure — see [`docs/cutover.md`](./cutover.md). After a cutover rollback, resume here for the incident follow-up.
+
 ---
 
 ## Escalation Matrix & Severity Tiers
@@ -60,6 +62,8 @@ This document contains operational procedures for responding to production alert
    ```bash
    git revert HEAD && git push origin main
    ```
+   If the errors started with the Express cutover, follow the
+   [rollback steps](./cutover.md#6-rollback-plan) instead of reverting code.
 2. If database is unreachable, check Supabase status dashboard or restart the backend pod:
    ```bash
    docker restart recruitai_backend
