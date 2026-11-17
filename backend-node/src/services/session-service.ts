@@ -6,10 +6,8 @@ import {
   type DbRow,
   type WorkspaceQueryStore,
 } from '../db/workspace-query-store.js';
-import { createLogger } from '../telemetry/logger.js';
+import { logWorkspaceReset } from '../telemetry/logging.js';
 import { HttpError } from '../types/errors.js';
-
-const logger = createLogger('recruitai.routes_sessions');
 
 /** Port of `backend/app/api/routes_sessions.py`. */
 
@@ -243,9 +241,7 @@ export class SessionService {
     }
 
     LAST_RESET_REQUESTS.set(userId, now);
-    logger.info(
-      `[AUDIT] [WORKSPACE_RESET] user_id=${userId} timestamp=${now} action=reset_all_data`,
-    );
+    logWorkspaceReset(userId, now);
 
     try {
       await this.getStore().resetWorkspace(userId);

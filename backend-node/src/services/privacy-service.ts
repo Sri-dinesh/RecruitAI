@@ -5,6 +5,7 @@ import {
   type WorkspaceQueryStore,
 } from '../db/workspace-query-store.js';
 import { pythonRound } from './parsing-utils.js';
+import { logAccountErasure, logCandidateErasure } from '../telemetry/logging.js';
 import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
 
@@ -118,9 +119,7 @@ export class PrivacyService {
       await store.deleteResumeChunksForCandidate(userId, candidateId);
       await store.deleteCandidate(userId, candidateId);
 
-      logger.info(
-        `[AUDIT] [GDPR_ERASURE] candidate_id=${candidateId} user_id=${userId} status=purged`,
-      );
+      logCandidateErasure(userId, candidateId);
       return true;
     } catch (error) {
       logger.error(`[retention] Failed to purge candidate ${candidateId}: ${errorMessage(error)}`);
@@ -256,7 +255,7 @@ export class PrivacyService {
   /** GDPR Art. 17 recruiter account erasure. */
   async purgeUserAccount(userId: string): Promise<boolean> {
     await this.getStore().purgeUserAccount(userId);
-    logger.info(`[AUDIT] [GDPR_ACCOUNT_ERASURE] user_id=${userId} status=account_purged`);
+    logAccountErasure(userId);
     return true;
   }
 
