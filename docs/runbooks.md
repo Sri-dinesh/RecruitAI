@@ -22,17 +22,37 @@ This document contains operational procedures for responding to production alert
 - Frontend displaying: *"An unexpected server error occurred. (ref=...)"*
 
 ### Immediate Diagnostics
-1. **Fetch Telemetry Summary**:
+1. **Fetch Telemetry Summary** (the route is authenticated in both backends):
    ```bash
-   curl -s http://localhost:8000/api/metrics | jq .red_metrics
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     http://localhost:8000/api/metrics | jq .red_metrics
    ```
-2. **Inspect Server Logs for Reference ID**:
+2. **Inspect Server Logs for the Reference ID**:
    ```bash
+   # Node/Express (post-cutover): one JSON object per line
+   docker logs recruitai_backend 2>&1 | jq -c 'select(.ref=="<ref>")'
+
+   # FastAPI (current): plain-text logs
    tail -n 100 backend/logs/server.log | grep -E "UNHANDLED_EXCEPTION|ref="
    ```
+   The client-visible error text contains `ref=<id>`; server logs add
+   `request_id`, and `user_id` / `tenant_id` when authentication succeeded.
+   The same `ref` appears as `error_type` plus route/method in structured logs.
 3. **Verify Database Readiness**:
    ```bash
-   curl -s -H "Authorization: Bearer $ADMIN_JWT" http://localhost:8000/api/health/ready | jq .services.database
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     http://localhost:8000/api/health/ready | jq .services.database
+   ```
+   `status: degraded` with `type: sqlite_fallback` means the PostgreSQL
+   connection failed and the process fell back to SQLite; `status: unhealthy`
+   (HTTP 503) means the readiness ping itself failed.
+
+### Correlating a Single Request
+1. Read `X-Request-ID` from the failing response (or from the gateway log). If
+   the client did not send one, the backend generated it and echoed it back.
+2. Search logs by that id:
+   ```bash
+   docker logs recruitai_backend 2>&1 | jq -c 'select(.request_id=="<id>")'
    ```
 
 ### Mitigation
@@ -57,7 +77,8 @@ This document contains operational procedures for responding to production alert
 ### Immediate Diagnostics
 1. Check model circuit breaker states in metrics:
    ```bash
-   curl -s http://localhost:8000/api/metrics | jq .red_metrics.latencies_ms
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     http://localhost:8000/api/metrics | jq .red_metrics.latencies_ms
    ```
 2. Check Google Cloud Gemini Quota console for 429 rate limit spikes.
 
@@ -82,7 +103,8 @@ This document contains operational procedures for responding to production alert
 ### Immediate Diagnostics
 1. Check current queue depth:
    ```bash
-   curl -s http://localhost:8000/api/metrics | jq .use_metrics
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     http://localhost:8000/api/metrics | jq .use_metrics
    ```
 2. Identify slow LangGraph nodes (e.g. `screen_node` vs `candidate_qa_node`):
    ```bash
@@ -90,9 +112,9 @@ This document contains operational procedures for responding to production alert
    ```
 
 ### Mitigation
-1. Increase async worker concurrency in `job_queue.py` (default: 4 workers):
+1. Increase async worker concurrency. Python uses `ASYNC_WORKER_CONCURRENCY`; the Node backend uses `JOB_WORKER_CONCURRENCY` (default `10`):
    ```bash
-   export ASYNC_WORKER_CONCURRENCY="8"
+   export JOB_WORKER_CONCURRENCY="8"
    ```
 2. Check if Tavily search API calls are hanging; verify hermetic fallback is active.
 
@@ -102,7 +124,9 @@ This document contains operational procedures for responding to production alert
 
 ### Symptoms
 - Backend log: `FATAL: remaining connection slots are reserved for non-replication superuser connections`.
-- Readiness check reports `"status": "unhealthy"`.
+- Readiness check reports `"status": "unhealthy"` (HTTP 503) or
+  `"status": "degraded"` with `type: sqlite_fallback` after a failed
+  PostgreSQL connection.
 
 ### Immediate Diagnostics
 1. Check active PostgreSQL connections on Supabase:

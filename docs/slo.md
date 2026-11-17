@@ -9,11 +9,11 @@ RecruitAI is an enterprise autonomous recruitment orchestration platform. High a
 
 | User Journey / Service Area | Service Level Indicator (SLI) | Service Level Objective (SLO) | Window | Measurement Mechanism |
 | :--- | :--- | :--- | :--- | :--- |
-| **API Availability** | Successful non-5xx responses / total requests | **>= 99.9%** availability | 30-Day Rolling | Ingress / Prometheus (`recruitai_requests_total`) |
+| **API Availability** | Successful non-5xx responses / total requests | **>= 99.9%** availability | 30-Day Rolling | In-process RED metrics (`recruitai_requests_total`) exported at `/api/metrics` |
 | **Chat Acknowledgment** | Time between client `POST /api/chat` and `HTTP 202 Accepted` | **p99 < 2.0s** | 7-Day Rolling | API Controller Tracing (`trace_span`) |
 | **Agent Reasoning Turnaround** | Time from job enqueue to final SSE completion | **p95 < 30.0s** | 7-Day Rolling | Async Job Queue telemetry (`job_manager`) |
 | **Resume Ingestion** | End-to-end parsing & embedding per document (<15MB) | **p95 < 5.0s** per resume | 7-Day Rolling | Ingestion pipeline metrics (`routes_ingest`) |
-| **Database Query Ping** | Database health ping latency | **p99 < 50ms** | 24-Hour Rolling | Readiness Probe (`/api/health/ready`) |
+| **Database Query Ping** | Database health ping latency | **p99 < 50ms** | 24-Hour Rolling | Authenticated readiness probe (`/api/health/ready`) |
 | **LLM Provider Availability** | Multi-model failover success rate | **>= 99.95%** | 30-Day Rolling | Circuit Breaker telemetry (`ModelCircuitBreaker`) |
 
 ---
@@ -44,7 +44,51 @@ At **99.9% Availability**, the error budget permits:
 ---
 
 ## 5. Automated Monitoring & Scraping
-Metrics are continuously scraped and aggregated at:
-- Prometheus Scrape Path: `GET /api/metrics` (Header: `Accept: text/plain`)
-- Structured JSON Telemetry: `GET /api/metrics` (Header: `Accept: application/json`)
-- Deep Readiness Probe: `GET /api/health/ready`
+
+The FastAPI and Node/Express backends expose the **same metrics contract**, so
+existing dashboards, alerts and scrape configs keep working through cutover:
+
+- **Prometheus scrape**: `GET /api/metrics` with `Accept: text/plain` and an
+  `Authorization: Bearer <token>` header (the route is authenticated in both
+  backends).
+- **Structured JSON telemetry**: `GET /api/metrics` with any non-`text/plain`
+  `Accept` value.
+- **Deep readiness probe**: `GET /api/health/ready` (alias `GET /health/ready`),
+  authenticated.
+- **Public liveness probe**: `GET /health` (alias `GET /api/health`).
+
+Stable metric names (do not rename without updating alerting):
+
+| Metric | Type | Meaning |
+| :--- | :--- | :--- |
+| `recruitai_requests_total` | counter | Requests by `endpoint` (matched route template) and `status` |
+| `recruitai_queue_depth` | gauge | Pending async chat jobs |
+| `recruitai_tokens_total` | counter | LLM tokens by `type="input"\|"output"` |
+| `recruitai_llm_cost_usd` | counter | Estimated cumulative LLM cost in USD |
+
+### Health and readiness semantics
+
+- Liveness returns `200` with no dependency or topology data; it only proves
+  the process can answer.
+- Readiness checks database connectivity (latency + backend type), LLM provider
+  configuration (model names only, never keys), and authentication mode.
+- `200 healthy`: all checks passed.
+- `200 degraded`: usable but operationally degraded — SQLite fallback in use or
+  the LLM provider is unconfigured. This mirrors the FastAPI probe.
+- `503 unhealthy`: the database ping failed. The response exposes only the
+  exception **type**, never the message, connection string or stack trace.
+
+### Log correlation and audit records
+
+- Every response carries `X-Request-ID`. A short, URL-safe inbound id is reused
+  (gateway/trace propagation); otherwise a UUID is generated.
+- Structured logs (FastAPI `logging` extras, Node JSON lines) carry
+  `request_id`, and `user_id` / `tenant_id` / `session_id` once those are known.
+  Errors before authentication still carry the request id.
+- Sensitive actions emit `[AUDIT]` records with `audit_action`:
+  `GDPR_ERASURE`, `GDPR_ACCOUNT_ERASURE`, and `WORKSPACE_RESET`. Payment changes
+  remain auditable through the `credit_transactions` ledger.
+- Metrics are process-local in both backends (Python parity). With multiple
+  replicas, scrape every pod (or aggregate at the gateway) rather than assuming
+  a single global counter.
+

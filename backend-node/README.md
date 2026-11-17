@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–16 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–17 complete**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -11,7 +11,8 @@ stats, resume/JD ingestion with campaign context hydration, the multi-agent
 supervisor graph with its 15 specialized nodes, the chat API with its async
 job queue and SSE streaming, and the remaining public route groups (sessions,
 candidate evaluation/ATS export, PDF reports, analytics, user profile, and
-GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI. The
+GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI and
+the Phase 17 health/readiness, request-id and audit-log finalization. The
 Python backend in `../backend/` remains the running service and is untouched
 until cutover.
 
@@ -35,7 +36,8 @@ until cutover.
 | Phase 14 — chat + jobs + SSE          | ✅ complete                             |
 | Phase 15 — remaining public API       | ✅ complete                             |
 | Phase 16 — operational retention      | ✅ complete                             |
-| Phases 17–24                          | pending (see `../Backend-Migration.md`) |
+| Phase 17 — observability and health   | ✅ complete                             |
+| Phases 18–24                          | pending (see `../Backend-Migration.md`) |
 
 ## Commands
 
@@ -65,7 +67,7 @@ src/
 ├── types/          # shared contracts + HTTP errors (Phase 2 ✅)
 ├── auth/           # app/core/auth.py + tenancy    (Phase 3 ✅)
 ├── context/        # request-scoped identity (ALS) (Phase 3 ✅)
-├── middleware/     # CORS, auth, errors, uploads, validators (Phase 3/4/5)
+├── middleware/     # CORS, auth, errors, uploads, request ids, validators (Phase 3/4/5/17)
 ├── schemas/        # app/schemas/* + inline models            (Phase 5 ✅)
 ├── db/             # Drizzle + pgvector/SQLite       (Phase 6 ✅)
 ├── telemetry/      # app/core/logging.py/telemetry (Phase 7 ✅)
@@ -84,7 +86,6 @@ src/
 │                   #   + retention scheduler        (Phase 16 ✅)
 └── cli/            # operational commands           (Phase 16 ✅)
 tests/              # ported pytest suite            (Phase 18)
-tests/              # ported pytest suite          (Phase 18)
 ```
 
 ## Environment
@@ -814,38 +815,123 @@ an explicit operational call to `PrivacyService`), never a scheduled sweep.
 Phase 16 adds 17 tests (scheduler behavior, CLI parsing/execution, store count
 helpers and config defaults), bringing the suite to 765 tests / 185 suites.
 
+## Observability, health, readiness, and metrics (Phase 17)
+
+Phase 17 makes the Node backend operably equivalent to FastAPI without changing
+any response contract clients rely on.
+
+### Health and readiness
+
+- `GET /health` and `GET /api/health` remain **public liveness** probes. They
+  return process status, timestamp, uptime and version only — no dependency
+  data.
+- `GET /health/ready` and `GET /api/health/ready` are **authenticated deep
+  readiness** probes with the same JSON shape as Python:
+  - `services.database` — a real round trip through the shared
+    `WorkspaceQueryStore.ping()` (never tenant data), plus `type`
+    (`postgresql` / `sqlite_fallback`) and `latency_ms`.
+  - `services.llm` — `configured` with the rotating model names, or
+    `unconfigured`/`error`. The API key is never returned.
+  - `services.auth` — `local_dev`, `supabase_jwt` or `unconfigured_jwt`.
+- Status semantics match Python: `200 healthy`, `200 degraded` when the SQLite
+  fallback is active or the LLM is unconfigured, `503 unhealthy` when the
+  database ping fails. Error replies expose only the exception **type**, so
+  connection strings, credentials and stack traces never leak.
+- Liveness and readiness routes are registered individually so request metrics
+  use the real path instead of `unmatched`.
+
+### Metrics export
+
+`/api/metrics` keeps the Phase 7 contract: `Accept: text/plain` returns the
+Prometheus exposition format and any other `Accept` returns the JSON summary;
+the route is authenticated. Metric names stay stable for existing alerts and
+scraping:
+
+- `recruitai_requests_total{endpoint,status}`
+- `recruitai_queue_depth`
+- `recruitai_tokens_total{type}`
+- `recruitai_llm_cost_usd`
+
+The request middleware labels requests with the **matched route template**
+(`req.baseUrl + req.route.path`), so cardinality stays bounded; unmatched paths
+share the `unmatched` label. Python defines `record_request` but never calls it,
+so Node is the first runtime to populate these counters.
+
+### Request ids and log correlation
+
+`src/middleware/request-id.ts` runs first, before metrics, CORS and body
+parsing:
+
+- reuses a short, URL-safe inbound `X-Request-ID` or mints a UUID;
+- echoes the id on every response, including 401/404/422/500;
+- opens an AsyncLocalStorage scope so logs emitted _before_ authentication still
+  carry `request_id`;
+- `requireAuth` then builds the full request context with the same id, adding
+  `user_id`, `tenant_id` and (when resolved) `session_id`.
+
+The structured logger injects these identity fields into every record and makes
+them authoritative over caller-supplied values, so a log call cannot spoof
+another tenant.
+
+### Errors and audit trails
+
+Every router throws `HttpError`/`ValidationError` and lets the single terminal
+handler map the response; no route writes its own 5xx. The handler now logs
+`HttpError` 5xx responses as well as unhandled exceptions with `request_id`,
+tenant identity, method/path and duration, while the client still sees only
+`{ detail }` (plus an opaque `ref` for unhandled errors).
+
+Sensitive actions go through `src/telemetry/logging.ts` on the dedicated
+`recruitai.audit` logger:
+
+- `GDPR_ERASURE` (candidate cascade),
+- `GDPR_ACCOUNT_ERASURE` (tenant purge),
+- `WORKSPACE_RESET`.
+
+Each record includes `audit_action`, the tenant/user id, and the active
+`request_id`/`session_id`. Payment changes remain auditable through the
+`credit_transactions` ledger, matching Python.
+
+Phase 17 adds 18 tests (readiness healthy/degraded/unhealthy/auth, request-id
+propagation, error-log fields, metrics Accept/name stability, audit records),
+bringing the suite to 783 tests / 188 suites.
+
 ## App wiring and error handling
 
 `createApp({ config })` assembles the stack in the same order as `app/main.py`:
 
-1. **Request metrics** (outermost): records every finished response, including
-   errors and 404s.
-2. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
+1. **Request id** (outermost): resolves/echoes `X-Request-ID` and opens the
+   correlation scope used by logs for the whole request.
+2. **Request metrics**: records every finished response, including errors and
+   404s.
+3. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-3. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
+4. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
    mounted before the JSON parser so HMAC verification uses the exact bytes.
-4. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
+5. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
    primitive JSON roots reach the validators; interim 25 MB limit).
-5. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+6. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
-6. **Feature routers under `/api`** — each router applies `requireAuth()`
+7. **Authenticated readiness**: `/health/ready`, `/api/health/ready`.
+8. **Feature routers under `/api`** — each router applies `requireAuth()`
    itself, matching FastAPI's per-route dependency. `/api/chat` receives the
    shared `CampaignService` and `ChatJobManager` built by the app factory so
    sync turns, queued turns and SSE all use the same instances. The Phase 15
    routers share one `WorkspaceQueryStore`; `createApp({ workspaceQueryStore })`
    lets tests inject an isolated SQLite store, which is how the Phase 15 suite
    runs without Postgres.
-7. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
-8. **Terminal error handler** (last):
-   - `HttpError` subclasses render their status, headers and `{ detail }`
-     (401 Bearer challenge, 402 quota body, 403 denials).
-   - validation failures render FastAPI's `422` `{ detail: [...] }` shape.
-   - malformed JSON becomes `422 json_invalid` (not body-parser's 400) and an
-     oversized body becomes `413`.
-   - anything unhandled returns `500` with
-     `{ detail: "An unexpected server error occurred. (ref=<8 hex>)", ref }`;
-     the ref and error details are logged server-side only.
+9. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+10. **Terminal error handler** (last):
+
+- `HttpError` subclasses render their status, headers and `{ detail }`
+  (401 Bearer challenge, 402 quota body, 403 denials).
+- validation failures render FastAPI's `422` `{ detail: [...] }` shape.
+- malformed JSON becomes `422 json_invalid` (not body-parser's 400) and an
+  oversized body becomes `413`.
+- anything unhandled returns `500` with
+  `{ detail: "An unexpected server error occurred. (ref=<8 hex>)", ref }`;
+  the ref and error details are logged server-side only.
 
 Multipart uploads are not parsed globally; `src/middleware/upload.ts` exports a
 memory-storage middleware for the ingest routes (Phase 12), along with the
@@ -855,12 +941,10 @@ Bootstrap (`src/main.ts`) also starts the Phase 16 retention scheduler after
 the app is created. `start()` is a no-op unless `RETENTION_JOB_ENABLED=true`,
 and the timer is stopped when the HTTP server closes.
 
-Intentionally absent (the Python backend has no such middleware): request-id,
-security headers, trusted-host checks, and timing middleware. Do not add them
-without marking them as new hardening and keeping response shapes unchanged.
-
-Deep readiness (`/health/ready`, `/api/health/ready`) is authenticated and
-arrives with a later phase. Metrics (`/api/metrics`) were delivered in Phase 7.
+Intentionally absent: security headers, trusted-host checks, and timing
+middleware. Do not add them without marking them as new hardening and keeping
+response shapes unchanged. Request-id propagation _is_ present now (Phase 17);
+metrics moved to Phase 7 and readiness to Phase 17.
 
 ## Validation and API contracts
 
