@@ -9,6 +9,7 @@ import { jsonBodyParser } from './middleware/json-body.js';
 import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
+import { getSharedRedisStore } from './redis/client.js';
 import { createReadinessRouter, healthRouter } from './routes/health.js';
 import { createApiRouter } from './routes/index.js';
 import { createPaymentsWebhookRouter } from './routes/payments.js';
@@ -74,6 +75,8 @@ export function createApp(options: CreateAppOptions = {}): Express {
         campaignService.executeAgentTurn(payload as unknown as ExecuteAgentTurnInput),
     });
   const app = express();
+  // Lifecycle access for `main.ts` graceful shutdown; tests can ignore it.
+  app.locals.chatJobManager = chatJobManager;
 
   // Default Express fingerprint header is not part of the existing contract.
   app.disable('x-powered-by');
@@ -101,6 +104,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
       enabled: config.rateLimit.enabled,
       windowMs: config.rateLimit.windowSeconds * 1000,
       maxRequests: config.rateLimit.maxRequests,
+      store: getSharedRedisStore(),
     }),
   );
 

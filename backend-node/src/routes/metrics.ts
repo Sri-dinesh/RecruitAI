@@ -13,10 +13,10 @@ import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.j
 export function createMetricsRouter(registry: RedMetricsRegistry = metricsRegistry): Router {
   const router = Router();
 
-  router.get('/', (req: Request, res: Response) => {
+  router.get('/', async (req: Request, res: Response) => {
     const accept = req.headers.accept ?? '';
     if (accept.includes('text/plain')) {
-      res.type('text/plain').send(registry.toPrometheusFormat());
+      res.type('text/plain').send(await registry.toPrometheusFormat());
       return;
     }
     res.json(registry.getSummary());

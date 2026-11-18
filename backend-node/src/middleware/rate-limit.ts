@@ -1,14 +1,19 @@
 import type { Request, RequestHandler } from 'express';
 
+import type { RedisStore } from '../redis/client.js';
+import { createLogger } from '../telemetry/logger.js';
+
 /**
- * In-process fixed-window rate limiter (Phase 19).
+ * Fixed-window rate limiter (Phase 19, fleet-wide in Phase 21).
  *
  * Production hardening addition: Python has no global limiter. The limiter is
  * deliberately small and dependency-free so it can run before body parsing and
  * cannot be affected by application code. It is:
  *
- * - **per process**: a coarse abuse guard for one instance, not a distributed
- *   quota. Phase 22 can move fleet-wide limits into Redis.
+ * - **fleet-wide with Redis**: when `REDIS_URL` is configured (and the app
+ *   passes a store), the window is one atomic `INCR` + `PEXPIRE` key shared by
+ *   every replica, so the limit no longer multiplies by the instance count.
+ *   Without Redis it degrades to the original per-process guard.
  * - **keyed by client IP** by default (`req.ip`), and only honours
  *   `X-Forwarded-For` when Express `trust proxy` is configured explicitly.
  * - **fixed window**: cheap, deterministic and good enough for a 429 guard.
@@ -36,7 +41,21 @@ export interface RateLimitOptions {
   readonly key?: (req: Request) => string;
   /** Bound on tracked keys; defaults to 10k. */
   readonly maxTrackedKeys?: number;
+  /** Shared Redis store for a fleet-wide fixed window; `null` stays local. */
+  readonly store?: RedisStore | null;
 }
+
+const logger = createLogger('recruitai.rate_limit');
+
+/** Atomically increment and set the window TTL on the first request. */
+const FIXED_WINDOW_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('PTTL', KEYS[1])
+return {count, ttl}
+`;
 
 interface Window {
   count: number;
@@ -67,8 +86,38 @@ export function createRateLimitMiddleware(options: RateLimitOptions): RequestHan
     }
   };
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const at = now();
+    const key = keyOf(req);
+
+    if (options.store) {
+      try {
+        const result = await options.store.evalScript(
+          FIXED_WINDOW_SCRIPT,
+          [options.store.key('rl', 'http', key)],
+          [options.windowMs],
+        );
+        const [countRaw, ttlRaw] = Array.isArray(result) ? result : [0, 0];
+        const count = Number(countRaw);
+        const ttl = Number(ttlRaw);
+        if (count > options.maxRequests) {
+          const retryAfterSeconds = Math.max(1, Math.ceil(ttl / 1000));
+          res.setHeader('Retry-After', String(retryAfterSeconds));
+          res.status(429).json({ detail: RATE_LIMIT_DETAIL });
+          return;
+        }
+        next();
+        return;
+      } catch (error) {
+        // Fall through to the local window so a Redis outage does not remove
+        // the abuse guard entirely.
+        logger.warn(
+          `[rate_limit] Redis window failed; using local fallback: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     // Keep memory bounded under a spoofed-key flood: drop expired windows,
     // then evict the oldest still-active one if the cap is still reached.
@@ -82,7 +131,6 @@ export function createRateLimitMiddleware(options: RateLimitOptions): RequestHan
       }
     }
 
-    const key = keyOf(req);
     let window = windows.get(key);
     if (window === undefined || window.resetAt <= at) {
       window = { count: 0, resetAt: at + options.windowMs };

@@ -169,7 +169,7 @@ describe('TavilyService.searchLiveJobs', () => {
     });
 
     await service.searchLiveJobs('python');
-    service.clearCache();
+    await service.clearCache();
     await service.searchLiveJobs('python');
 
     assert.equal(calls, 2);

@@ -4,6 +4,7 @@ import {
   verifyProviderCompliance,
   type AppConfig,
 } from '../config/index.js';
+import { getSharedRedisStore, type RedisStore } from '../redis/client.js';
 import { logEvent } from '../telemetry/logging.js';
 import { createLogger } from '../telemetry/logger.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
@@ -53,6 +54,19 @@ export interface ModelCircuitBreakerOptions {
   readonly cooldownSeconds?: number;
   /** Clock in epoch seconds, injectable for tests. */
   readonly now?: () => number;
+}
+
+/**
+ * Async surface shared by the process-local breaker and the fleet-wide Redis
+ * breaker. `callLlm` only uses these methods so both implementations are
+ * interchangeable.
+ */
+export interface AsyncCircuitBreaker {
+  canAttemptAsync(model: string): Promise<boolean>;
+  recordSuccessAsync(model: string): Promise<void>;
+  recordFailureAsync(model: string, isRateLimit?: boolean): Promise<void>;
+  getCircuitStateAsync(model: string): Promise<CircuitStateValue>;
+  resetAsync(): Promise<void>;
 }
 
 /**
@@ -152,6 +166,27 @@ export class ModelCircuitBreaker {
   getLastSuccessTime(model: string): number {
     return this.lastSuccessTimes.get(model) ?? 0;
   }
+
+  // Async surface for `callLlm`; delegates to the synchronous in-process state.
+  async canAttemptAsync(model: string): Promise<boolean> {
+    return this.canAttempt(model);
+  }
+
+  async recordSuccessAsync(model: string): Promise<void> {
+    this.recordSuccess(model);
+  }
+
+  async recordFailureAsync(model: string, isRateLimit = false): Promise<void> {
+    this.recordFailure(model, isRateLimit);
+  }
+
+  async getCircuitStateAsync(model: string): Promise<CircuitStateValue> {
+    return this.getCircuitState(model);
+  }
+
+  async resetAsync(): Promise<void> {
+    this.reset();
+  }
 }
 
 /** Python formats `60.0` as "60.0", not "60". */
@@ -164,6 +199,226 @@ export const circuitBreaker = new ModelCircuitBreaker({
   failureThreshold: 3,
   cooldownSeconds: 60,
 });
+
+const circuitLogger = createLogger('recruitai.circuit_breaker');
+
+/**
+ * Atomically record a failure and trip the circuit when the threshold is hit.
+ * KEYS: failures, last_failure, state
+ * ARGV: failure ttl seconds, now (epoch seconds), rate-limit flag, threshold
+ */
+const RECORD_FAILURE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], ARGV[2])
+redis.call('EXPIRE', KEYS[2], ARGV[1])
+
+local shouldTrip = ARGV[3] == '1' or count >= tonumber(ARGV[4])
+if shouldTrip then
+  local wasOpen = redis.call('GET', KEYS[3]) == 'OPEN'
+  redis.call('SET', KEYS[3], 'OPEN')
+  redis.call('EXPIRE', KEYS[3], ARGV[1])
+  if wasOpen then
+    return {count, 0}
+  end
+  return {count, 1}
+end
+return {count, 0}
+`;
+
+export interface RedisCircuitBreakerOptions extends ModelCircuitBreakerOptions {
+  readonly store: RedisStore;
+}
+
+/**
+ * Fleet-wide circuit breaker backed by Redis counters and TTLs (Phase 21).
+ *
+ * A per-instance breaker lets the remaining replicas stampede into a failing
+ * model. This implementation writes the consecutive-failure counter, last
+ * failure time and OPEN state to Redis in one Lua call, so every instance sees
+ * the same circuit. If Redis is unreachable it falls back to the process-local
+ * breaker rather than failing LLM traffic.
+ */
+export class RedisModelCircuitBreaker implements AsyncCircuitBreaker {
+  readonly failureThreshold: number;
+  readonly cooldownSeconds: number;
+  private readonly models: readonly string[];
+  private readonly store: RedisStore;
+  private readonly now: () => number;
+  private readonly fallback: ModelCircuitBreaker;
+
+  constructor(options: RedisCircuitBreakerOptions) {
+    this.failureThreshold = options.failureThreshold ?? 3;
+    this.cooldownSeconds = options.cooldownSeconds ?? 60;
+    this.models = options.models ?? ROTATING_MODELS;
+    this.store = options.store;
+    this.now = options.now ?? (() => Date.now() / 1000);
+    this.fallback = new ModelCircuitBreaker({
+      models: this.models,
+      failureThreshold: this.failureThreshold,
+      cooldownSeconds: this.cooldownSeconds,
+      now: this.now,
+    });
+  }
+
+  private stateKey(model: string): string {
+    return this.store.key('breaker', model, 'state');
+  }
+
+  private failuresKey(model: string): string {
+    return this.store.key('breaker', model, 'failures');
+  }
+
+  private lastFailureKey(model: string): string {
+    return this.store.key('breaker', model, 'last_failure');
+  }
+
+  private failureTtlSeconds(): number {
+    return Math.max(60, Math.ceil(this.cooldownSeconds * 2));
+  }
+
+  async canAttemptAsync(model: string): Promise<boolean> {
+    try {
+      const state = await this.store.getString(this.stateKey(model));
+      if (state === null || state === 'CLOSED') {
+        return true;
+      }
+      if (state === 'HALF_OPEN') {
+        return true;
+      }
+      const lastFailure = Number((await this.store.getString(this.lastFailureKey(model))) ?? 0);
+      if (this.now() - lastFailure >= this.cooldownSeconds) {
+        await this.store.setString(this.stateKey(model), 'HALF_OPEN', this.failureTtlSeconds());
+        circuitLogger.info(
+          `[circuit_breaker] Model ${model} cooldown elapsed; entering HALF_OPEN state.`,
+          { circuit_state: CircuitState.HALF_OPEN, model },
+        );
+        return true;
+      }
+      return false;
+    } catch (error) {
+      circuitLogger.warn(
+        `[circuit_breaker] Redis read failed; using local breaker: ${errorMessage(error)}`,
+      );
+      return this.fallback.canAttempt(model);
+    }
+  }
+
+  async recordSuccessAsync(model: string): Promise<void> {
+    this.fallback.recordSuccess(model);
+    try {
+      await this.store.setString(this.stateKey(model), 'CLOSED', this.failureTtlSeconds());
+      await this.store.delete(this.failuresKey(model));
+      await this.store.delete(this.lastFailureKey(model));
+    } catch (error) {
+      circuitLogger.warn(
+        `[circuit_breaker] Redis write failed; local state only: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  async recordFailureAsync(model: string, isRateLimit = false): Promise<void> {
+    this.fallback.recordFailure(model, isRateLimit);
+    try {
+      const result = await this.store.evalScript(
+        RECORD_FAILURE_SCRIPT,
+        [this.failuresKey(model), this.lastFailureKey(model), this.stateKey(model)],
+        [
+          this.failureTtlSeconds(),
+          Math.floor(this.now()),
+          isRateLimit ? 1 : 0,
+          this.failureThreshold,
+        ],
+      );
+      const [, tripped] = Array.isArray(result) ? result : [0, 0];
+      if (Number(tripped) === 1) {
+        circuitLogger.warn(
+          isRateLimit
+            ? `[circuit_breaker] Model ${model} hit rate limit. ` +
+                `Circuit tripped to OPEN for ${formatCooldown(this.cooldownSeconds)}s cooldown.`
+            : `[circuit_breaker] Model ${model} reached ${this.failureThreshold} consecutive failures. ` +
+                `Circuit tripped to OPEN for ${formatCooldown(this.cooldownSeconds)}s cooldown.`,
+          {
+            circuit_state: CircuitState.OPEN,
+            model,
+            status: isRateLimit ? 'rate_limit' : 'failure_threshold',
+          },
+        );
+      }
+    } catch (error) {
+      circuitLogger.warn(
+        `[circuit_breaker] Redis write failed; local state only: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  async getCircuitStateAsync(model: string): Promise<CircuitStateValue> {
+    try {
+      const state = await this.store.getString(this.stateKey(model));
+      if (state === 'OPEN' || state === 'HALF_OPEN') {
+        return state;
+      }
+      return CircuitState.CLOSED;
+    } catch (error) {
+      circuitLogger.warn(
+        `[circuit_breaker] Redis read failed; using local state: ${errorMessage(error)}`,
+      );
+      return this.fallback.getCircuitState(model);
+    }
+  }
+
+  async resetAsync(): Promise<void> {
+    this.fallback.reset();
+    try {
+      for (const model of this.models) {
+        await this.store.delete(this.stateKey(model));
+        await this.store.delete(this.failuresKey(model));
+        await this.store.delete(this.lastFailureKey(model));
+      }
+    } catch (error) {
+      circuitLogger.warn(
+        `[circuit_breaker] Redis reset failed; local state cleared: ${errorMessage(error)}`,
+      );
+    }
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+let defaultRedisBreaker: RedisModelCircuitBreaker | undefined;
+let defaultRedisBreakerUrl: string | null = null;
+
+/**
+ * Select the fleet-wide breaker when `REDIS_URL` is configured, otherwise the
+ * Python-equivalent process-local breaker.
+ */
+export function getDefaultCircuitBreaker(config: AppConfig): AsyncCircuitBreaker {
+  if (!config.jobs.redisUrl) {
+    return circuitBreaker;
+  }
+  if (defaultRedisBreaker && defaultRedisBreakerUrl === config.jobs.redisUrl) {
+    return defaultRedisBreaker;
+  }
+  const store = getSharedRedisStore();
+  if (!store) {
+    return circuitBreaker;
+  }
+  defaultRedisBreaker = new RedisModelCircuitBreaker({
+    store,
+    failureThreshold: 3,
+    cooldownSeconds: 60,
+  });
+  defaultRedisBreakerUrl = config.jobs.redisUrl;
+  return defaultRedisBreaker;
+}
+
+/** Test helper: drop the memoised Redis breaker. */
+export function resetDefaultCircuitBreakerForTests(): void {
+  defaultRedisBreaker = undefined;
+  defaultRedisBreakerUrl = null;
+}
 
 /** Round-robin cursor for quota balancing. */
 let modelIndex = 0;
@@ -270,6 +525,30 @@ export function getNextModelOrder(
   return healthy.length > 0 ? [...healthy, ...tripped] : tripped;
 }
 
+/** Fleet-aware variant: awaits every circuit lookup. */
+export async function getNextModelOrderAsync(
+  providerOverride?: string,
+  breaker: AsyncCircuitBreaker = circuitBreaker,
+  models: readonly string[] = ROTATING_MODELS,
+): Promise<string[]> {
+  let baseOrder: string[];
+
+  if (providerOverride && models.includes(providerOverride)) {
+    baseOrder = [providerOverride, ...models.filter((model) => model !== providerOverride)];
+  } else {
+    const startIndex = modelIndex;
+    modelIndex = (modelIndex + 1) % models.length;
+    baseOrder = models.map((_, offset) => models[(startIndex + offset) % models.length] as string);
+  }
+
+  const attempts = await Promise.all(
+    baseOrder.map(async (model) => ({ model, allowed: await breaker.canAttemptAsync(model) })),
+  );
+  const healthy = attempts.filter((entry) => entry.allowed).map((entry) => entry.model);
+  const tripped = attempts.filter((entry) => !entry.allowed).map((entry) => entry.model);
+  return healthy.length > 0 ? [...healthy, ...tripped] : tripped;
+}
+
 export interface LlmCallOptions {
   readonly systemInstruction?: string;
   readonly providerOverride?: string;
@@ -280,7 +559,7 @@ export interface LlmCallOptions {
   /** Transport injection; defaults to the REST Gemini client. */
   readonly invoker?: GeminiInvoker;
   /** Registry injection; defaults to the process-wide collector. */
-  readonly circuitBreaker?: ModelCircuitBreaker;
+  readonly circuitBreaker?: AsyncCircuitBreaker;
   /** Metrics registry injection; defaults to the process-wide collector. */
   readonly metrics?: RedMetricsRegistry;
 }
@@ -352,7 +631,7 @@ export async function callLlm(
   options: LlmCallOptions = {},
 ): Promise<LlmCallResult> {
   const config = options.config ?? getConfig();
-  const breaker = options.circuitBreaker ?? circuitBreaker;
+  const breaker = options.circuitBreaker ?? getDefaultCircuitBreaker(config);
   const metrics = options.metrics ?? metricsRegistry;
   const invoker = options.invoker ?? invokeGemini;
 
@@ -371,7 +650,7 @@ export async function callLlm(
     throw new Error('No valid GEMINI_API_KEY is configured in backend/.env.');
   }
 
-  const order = getNextModelOrder(options.providerOverride, breaker);
+  const order = await getNextModelOrderAsync(options.providerOverride, breaker);
   const errors: string[] = [];
 
   for (const modelName of order) {
@@ -389,7 +668,7 @@ export async function callLlm(
       const latencyMs = performance.now() - startedAt;
       const responseText = extractText(response.content);
 
-      breaker.recordSuccess(modelName);
+      await breaker.recordSuccessAsync(modelName);
 
       const { tokensIn, tokensOut } = extractUsage(response, prompt, responseText);
       const costUsd = estimateCost(tokensIn, tokensOut);
@@ -401,7 +680,7 @@ export async function callLlm(
           tokens_out: tokensOut,
           cost_usd: costUsd,
           latency_ms: roundTo(latencyMs, 2),
-          circuit_state: breaker.getCircuitState(modelName),
+          circuit_state: await breaker.getCircuitStateAsync(modelName),
           status: 'success',
         },
       });
@@ -420,7 +699,7 @@ export async function callLlm(
       const message = error instanceof Error ? error.message : String(error);
       const isRateLimit = isRateLimitMessage(message);
 
-      breaker.recordFailure(modelName, isRateLimit);
+      await breaker.recordFailureAsync(modelName, isRateLimit);
       errors.push(`${modelName}: ${message}`);
 
       if (isRateLimit) {

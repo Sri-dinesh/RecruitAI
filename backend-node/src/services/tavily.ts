@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { createTtlCache, type TtlCache } from '../cache/ttl-cache.js';
 import { getConfig } from '../config/index.js';
+import { getSharedRedisStore } from '../redis/client.js';
 import { createLogger } from '../telemetry/logger.js';
 
 /**
@@ -74,11 +76,8 @@ export interface TavilyServiceOptions {
   readonly baseUrl?: string;
   /** Epoch milliseconds clock, injectable for cache tests. */
   readonly now?: () => number;
-}
-
-interface CacheEntry {
-  readonly data: unknown;
-  readonly expiresAt: number;
+  /** Cache injection (tests); defaults to Redis when configured, else local. */
+  readonly cache?: TtlCache;
 }
 
 interface TavilySearchResponse {
@@ -307,8 +306,123 @@ interface SalaryFallbackEntry {
   period?: string;
 }
 
+interface CachedSalary {
+  readonly kind: 'salary';
+  readonly role: string;
+  readonly location: string;
+  readonly summary: string;
+  readonly experienceLevel: string | null;
+  readonly minSalary: number | null;
+  readonly medianSalary: number | null;
+  readonly maxSalary: number | null;
+  readonly currency: string;
+  readonly experienceBreakdown: Readonly<Record<string, string>>;
+  readonly citations: readonly Citation[];
+  readonly recommendations: readonly string[];
+  readonly isLive: boolean;
+}
+
+interface CachedTrends {
+  readonly kind: 'trends';
+  readonly role: string;
+  readonly summary: string;
+  readonly trendingSkills: readonly string[];
+  readonly emergingTech: readonly string[];
+  readonly decliningOrLegacy: readonly string[];
+  readonly citations: readonly Citation[];
+  readonly isLive: boolean;
+}
+
+interface CachedIntel {
+  readonly kind: 'intel';
+  readonly query: string;
+  readonly answer: string;
+  readonly citations: readonly Citation[];
+  readonly isLive: boolean;
+}
+
+function salaryToCache(value: SalaryBenchmarkResult): CachedSalary {
+  return {
+    kind: 'salary',
+    role: value.role,
+    location: value.location,
+    summary: value.summary,
+    experienceLevel: value.experienceLevel,
+    minSalary: value.minSalary,
+    medianSalary: value.medianSalary,
+    maxSalary: value.maxSalary,
+    currency: value.currency,
+    experienceBreakdown: value.experienceBreakdown,
+    citations: value.citations,
+    recommendations: value.recommendations,
+    isLive: value.isLive,
+  };
+}
+
+function salaryFromCache(value: CachedSalary): SalaryBenchmarkResult {
+  return new SalaryBenchmarkResult(
+    value.role,
+    value.location,
+    value.summary,
+    value.experienceLevel,
+    value.minSalary,
+    value.medianSalary,
+    value.maxSalary,
+    value.currency,
+    value.experienceBreakdown,
+    value.citations,
+    value.recommendations,
+    value.isLive,
+    false,
+  );
+}
+
+function trendsToCache(value: SkillTrendResult): CachedTrends {
+  return {
+    kind: 'trends',
+    role: value.role,
+    summary: value.summary,
+    trendingSkills: value.trendingSkills,
+    emergingTech: value.emergingTech,
+    decliningOrLegacy: value.decliningOrLegacy,
+    citations: value.citations,
+    isLive: value.isLive,
+  };
+}
+
+function trendsFromCache(value: CachedTrends): SkillTrendResult {
+  return new SkillTrendResult(
+    value.role,
+    value.summary,
+    value.trendingSkills,
+    value.emergingTech,
+    value.decliningOrLegacy,
+    value.citations,
+    value.isLive,
+    false,
+  );
+}
+
+function intelToCache(value: WebIntelResult): CachedIntel {
+  return {
+    kind: 'intel',
+    query: value.query,
+    answer: value.answer,
+    citations: value.citations,
+    isLive: value.isLive,
+  };
+}
+
+function intelFromCache(value: CachedIntel): WebIntelResult {
+  return new WebIntelResult(value.query, value.answer, value.citations, value.isLive, false);
+}
+
+function isCachedKind<T extends { kind: string }>(value: unknown, kind: T['kind']): value is T {
+  return typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === kind;
+}
+
 export class TavilyService {
-  private readonly cache = new Map<string, CacheEntry>();
+  private readonly cache: TtlCache;
   private readonly apiKey: string | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
@@ -319,6 +433,13 @@ export class TavilyService {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.baseUrl = (options.baseUrl ?? DEFAULT_TAVILY_BASE_URL).replace(/\/$/, '');
     this.now = options.now ?? Date.now;
+    this.cache =
+      options.cache ??
+      createTtlCache({
+        store: getSharedRedisStore(),
+        namespace: 'tavily',
+        now: this.now,
+      });
   }
 
   /** True when a non-placeholder Tavily key is configured. */
@@ -327,32 +448,16 @@ export class TavilyService {
     return Boolean(key) && !key.includes('your_tavily') && !key.startsWith('placeholder');
   }
 
-  clearCache(): void {
-    this.cache.clear();
+  async clearCache(): Promise<void> {
+    await this.cache.clear();
   }
 
-  private getCache<T>(key: string): T | undefined {
-    const entry = this.cache.get(key);
-    if (!entry) {
-      return undefined;
-    }
-    if (this.now() < entry.expiresAt) {
-      return entry.data as T;
-    }
-    this.cache.delete(key);
-    return undefined;
+  private async getCache<T>(key: string): Promise<T | undefined> {
+    return this.cache.get<T>(key);
   }
 
-  private setCache(key: string, data: unknown, ttlSeconds = 7200): void {
-    if (this.cache.size > 200) {
-      const now = this.now();
-      for (const [cacheKey, entry] of this.cache) {
-        if (entry.expiresAt <= now) {
-          this.cache.delete(cacheKey);
-        }
-      }
-    }
-    this.cache.set(key, { data, expiresAt: this.now() + ttlSeconds * 1000 });
+  private async setCache(key: string, data: unknown, ttlSeconds = 7200): Promise<void> {
+    await this.cache.set(key, data, ttlSeconds);
   }
 
   /** POST to `/search`, attaching the API key the same way TavilyClient does. */
@@ -381,9 +486,9 @@ export class TavilyService {
     const cacheKey = `salary:${role.toLowerCase()}:${location.toLowerCase()}:${String(
       experienceLevel ?? 'none',
     ).toLowerCase()}`;
-    const cached = this.getCache<SalaryBenchmarkResult>(cacheKey);
-    if (cached) {
-      return cached.asCached();
+    const cached = await this.getCache<CachedSalary>(cacheKey);
+    if (isCachedKind<CachedSalary>(cached, 'salary')) {
+      return salaryFromCache(cached).asCached();
     }
 
     if (this.isAvailable()) {
@@ -449,7 +554,7 @@ export class TavilyService {
           false,
         );
 
-        this.setCache(cacheKey, benchmark, 7200);
+        await this.setCache(cacheKey, salaryToCache(benchmark), 7200);
         return benchmark;
       } catch (error) {
         logger.warn(
@@ -663,9 +768,9 @@ export class TavilyService {
   /** Live skill trends for a role, with curated fallbacks. */
   async getSkillTrends(role: string): Promise<SkillTrendResult> {
     const cacheKey = `trends:${role.toLowerCase()}`;
-    const cached = this.getCache<SkillTrendResult>(cacheKey);
-    if (cached) {
-      return cached.asCached();
+    const cached = await this.getCache<CachedTrends>(cacheKey);
+    if (isCachedKind<CachedTrends>(cached, 'trends')) {
+      return trendsFromCache(cached).asCached();
     }
 
     if (this.isAvailable()) {
@@ -713,7 +818,7 @@ export class TavilyService {
           false,
         );
 
-        this.setCache(cacheKey, trendResult, 21600);
+        await this.setCache(cacheKey, trendsToCache(trendResult), 21600);
         return trendResult;
       } catch (error) {
         logger.warn(
@@ -886,8 +991,8 @@ export class TavilyService {
 
     const locationKey = location === undefined ? 'none' : location.toLowerCase();
     const cacheKey = `jobs:${query.toLowerCase()}:${locationKey}`;
-    const cached = this.getCache<LiveJob[]>(cacheKey);
-    if (cached) {
+    const cached = await this.getCache<LiveJob[]>(cacheKey);
+    if (Array.isArray(cached)) {
       return cached;
     }
 
@@ -915,7 +1020,7 @@ export class TavilyService {
       }
 
       if (jobs.length > 0) {
-        this.setCache(cacheKey, jobs, 3600);
+        await this.setCache(cacheKey, jobs, 3600);
       }
       return jobs;
     } catch (error) {
@@ -931,9 +1036,9 @@ export class TavilyService {
   /** General web intelligence for recruiter research. */
   async searchRecruiterIntel(query: string, searchDepth = 'advanced'): Promise<WebIntelResult> {
     const cacheKey = `intel:${query.toLowerCase()}`;
-    const cached = this.getCache<WebIntelResult>(cacheKey);
-    if (cached) {
-      return cached.asCached();
+    const cached = await this.getCache<CachedIntel>(cacheKey);
+    if (isCachedKind<CachedIntel>(cached, 'intel')) {
+      return intelFromCache(cached).asCached();
     }
 
     if (this.isAvailable()) {
@@ -968,7 +1073,7 @@ export class TavilyService {
           false,
         );
 
-        this.setCache(cacheKey, intel, 3600);
+        await this.setCache(cacheKey, intelToCache(intel), 3600);
         return intel;
       } catch (error) {
         logger.warn(`Tavily web intel search failed: ${errorMessage(error)}`, {

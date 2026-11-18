@@ -100,20 +100,20 @@ describe('RED/USE metrics registry', () => {
     assert.equal(summary.token_accounting.cost_usd_total, 0);
   });
 
-  it('exports the Prometheus exposition format', () => {
+  it('exports the Prometheus exposition format', async () => {
     const registry = new RedMetricsRegistry();
     registry.recordRequest('/api/chat', 200, 10);
     registry.recordQueueState(4, 2);
     registry.recordTokens(100, 50, 0.5);
 
-    const text = registry.toPrometheusFormat();
+    const text = await registry.toPrometheusFormat();
     assert.match(text, /# HELP recruitai_requests_total Total HTTP requests handled/);
     assert.match(text, /# TYPE recruitai_requests_total counter/);
     assert.match(text, /recruitai_requests_total\{endpoint="\/api\/chat",status="200"\} 1/);
     assert.match(text, /recruitai_queue_depth 4/);
     assert.match(text, /recruitai_tokens_total\{type="input"\} 100/);
     assert.match(text, /recruitai_tokens_total\{type="output"\} 50/);
-    assert.match(text, /recruitai_llm_cost_usd 0\.500000/);
+    assert.match(text, /recruitai_llm_cost_usd 0\.5/);
     assert.ok(text.endsWith('\n'));
   });
 });

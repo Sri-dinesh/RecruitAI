@@ -9,6 +9,7 @@ import {
   RATE_LIMIT_DETAIL,
   createRateLimitMiddleware,
 } from '../src/middleware/rate-limit.js';
+import type { RedisStore } from '../src/redis/client.js';
 
 /**
  * Phase 19 limiter tests.
@@ -121,5 +122,64 @@ describe('rate limit middleware', () => {
 
   it('exposes a documented default bound', () => {
     assert.equal(DEFAULT_MAX_TRACKED_KEYS, 10_000);
+  });
+});
+
+describe('fleet-wide rate limiting through Redis', () => {
+  function fakeRedisWindow(): {
+    store: RedisStore;
+    windows: Map<string, { count: number; expiresAt: number }>;
+    clock: { now: number };
+  } {
+    const windows = new Map<string, { count: number; expiresAt: number }>();
+    const clock = { now: 1_000_000 };
+    const store = {
+      key: (...parts: Array<string | number>) => parts.join(':'),
+      evalScript: async (
+        _script: string,
+        keys: readonly string[],
+        args: readonly (string | number)[],
+      ) => {
+        const key = keys[0] ?? '';
+        const ttl = Number(args[0]);
+        let entry = windows.get(key);
+        if (!entry || entry.expiresAt <= clock.now) {
+          entry = { count: 0, expiresAt: clock.now + ttl };
+          windows.set(key, entry);
+        }
+        entry.count += 1;
+        return [entry.count, Math.max(0, entry.expiresAt - clock.now)];
+      },
+    } as unknown as RedisStore;
+    return { store, windows, clock };
+  }
+
+  it('shares one window across replicas', async () => {
+    const { store, windows, clock } = fakeRedisWindow();
+    const first = buildApp({ store });
+    const second = buildApp({ store });
+
+    await request(first.app).get('/ping').set('x-key', 'shared').expect(200);
+    await request(second.app).get('/ping').set('x-key', 'shared').expect(200);
+    const blocked = await request(second.app).get('/ping').set('x-key', 'shared').expect(429);
+    assert.equal(blocked.headers['retry-after'], '60');
+
+    clock.now += 60_000;
+    await request(first.app).get('/ping').set('x-key', 'shared').expect(200);
+    assert.equal(windows.size, 1);
+  });
+
+  it('falls back to the local window when Redis fails', async () => {
+    const store = {
+      key: (...parts: Array<string | number>) => parts.join(':'),
+      evalScript: async () => {
+        throw new Error('down');
+      },
+    } as unknown as RedisStore;
+    const { app } = buildApp({ store });
+
+    await request(app).get('/ping').expect(200);
+    await request(app).get('/ping').expect(200);
+    await request(app).get('/ping').expect(429);
   });
 });

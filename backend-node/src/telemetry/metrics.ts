@@ -1,10 +1,13 @@
+import { Counter, Gauge, Registry } from 'prom-client';
+
 /**
  * Port of `backend/app/core/telemetry.py` (OPS-1).
  *
- * In-memory RED (Rate, Errors, Duration) and USE (Utilization, Saturation,
- * Errors) metrics with Prometheus-compatible export. Node is single-threaded,
- * so the Python `threading.Lock` is unnecessary; the data structures and the
- * exported shapes are unchanged.
+ * The JSON summary keeps Python's in-memory RED/USE shapes. The Prometheus
+ * exposition is backed by a per-process `prom-client` registry (Phase 21), so
+ * Prometheus scrapes and aggregates counters with the same metric names across
+ * every replica; the Python process-local registry is no longer the export
+ * source.
  */
 
 export interface LatencyPercentiles {
@@ -50,6 +53,40 @@ function roundTo(value: number, digits: number): number {
 }
 
 export class RedMetricsRegistry {
+  /** Per-process prom-client registry exported at `/api/metrics`. */
+  readonly prometheus = new Registry();
+
+  private readonly requestsCounter = new Counter({
+    name: 'recruitai_requests_total',
+    help: 'Total HTTP requests handled',
+    labelNames: ['endpoint', 'status'],
+    registers: [this.prometheus],
+  });
+  private readonly queueDepthGauge = new Gauge({
+    name: 'recruitai_queue_depth',
+    help: 'Current asynchronous job queue depth',
+    registers: [this.prometheus],
+  });
+  private readonly tokensCounter = new Counter({
+    name: 'recruitai_tokens_total',
+    help: 'Cumulative tokens processed by AI models',
+    labelNames: ['type'],
+    registers: [this.prometheus],
+  });
+  private readonly costCounter = new Counter({
+    name: 'recruitai_llm_cost_usd',
+    help: 'Cumulative estimated AI cost in USD',
+    registers: [this.prometheus],
+  });
+
+  constructor(private readonly now: () => number = () => Date.now() / 1000) {
+    // Emit zero-valued token series before the first LLM call, matching the
+    // Python exposition shape that dashboards key on.
+    this.tokensCounter.labels('input').inc(0);
+    this.tokensCounter.labels('output').inc(0);
+    this.startTime = this.now();
+  }
+
   private readonly requestsTotal = new Map<string, number>();
   private readonly errorsTotal = new Map<string, number>();
   private readonly latenciesMs = new Map<string, number[]>();
@@ -61,9 +98,7 @@ export class RedMetricsRegistry {
   private startTime: number;
 
   /** `now` returns seconds since epoch, like Python's `time.time()`. */
-  constructor(private readonly now: () => number = () => Date.now() / 1000) {
-    this.startTime = this.now();
-  }
+  // (constructor above initializes the prom-client series and clock)
 
   /**
    * Record one completed request. `_tenantId` is accepted for signature parity
@@ -72,6 +107,7 @@ export class RedMetricsRegistry {
   recordRequest(endpoint: string, statusCode: number, latencyMs: number, _tenantId?: string): void {
     const key = `${endpoint}:${statusCode}`;
     this.requestsTotal.set(key, (this.requestsTotal.get(key) ?? 0) + 1);
+    this.requestsCounter.labels(endpoint, String(statusCode)).inc();
 
     if (statusCode >= 400) {
       const errorKey = `${endpoint}:${statusCode >= 500 ? '5xx' : '4xx'}`;
@@ -89,12 +125,16 @@ export class RedMetricsRegistry {
   recordQueueState(depth: number, activeWorkers = 0): void {
     this.queueDepth = depth;
     this.activeWorkers = activeWorkers;
+    this.queueDepthGauge.set(depth);
   }
 
   recordTokens(tokensIn: number, tokensOut: number, costUsd: number): void {
     this.tokensInTotal += tokensIn;
     this.tokensOutTotal += tokensOut;
     this.costUsdTotal += costUsd;
+    this.tokensCounter.labels('input').inc(tokensIn);
+    this.tokensCounter.labels('output').inc(tokensOut);
+    this.costCounter.inc(costUsd);
   }
 
   private computePercentiles(samples: readonly number[]): LatencyPercentiles {
@@ -151,32 +191,9 @@ export class RedMetricsRegistry {
     };
   }
 
-  toPrometheusFormat(): string {
-    const lines: string[] = [
-      '# HELP recruitai_requests_total Total HTTP requests handled',
-      '# TYPE recruitai_requests_total counter',
-    ];
-    for (const [key, count] of this.requestsTotal) {
-      const separator = key.lastIndexOf(':');
-      const endpoint = separator === -1 ? key : key.slice(0, separator);
-      const status = separator === -1 ? '' : key.slice(separator + 1);
-      lines.push(`recruitai_requests_total{endpoint="${endpoint}",status="${status}"} ${count}`);
-    }
-
-    lines.push(
-      '# HELP recruitai_queue_depth Current asynchronous job queue depth',
-      '# TYPE recruitai_queue_depth gauge',
-      `recruitai_queue_depth ${this.queueDepth}`,
-      '# HELP recruitai_tokens_total Cumulative tokens processed by AI models',
-      '# TYPE recruitai_tokens_total counter',
-      `recruitai_tokens_total{type="input"} ${this.tokensInTotal}`,
-      `recruitai_tokens_total{type="output"} ${this.tokensOutTotal}`,
-      '# HELP recruitai_llm_cost_usd Cumulative estimated AI cost in USD',
-      '# TYPE recruitai_llm_cost_usd counter',
-      `recruitai_llm_cost_usd ${this.costUsdTotal.toFixed(6)}`,
-    );
-
-    return `${lines.join('\n')}\n`;
+  /** Prometheus exposition from this process's prom-client registry. */
+  async toPrometheusFormat(): Promise<string> {
+    return this.prometheus.metrics();
   }
 
   /** Test helper: clear every counter and restart the uptime clock. */
@@ -190,6 +207,7 @@ export class RedMetricsRegistry {
     this.tokensOutTotal = 0;
     this.costUsdTotal = 0;
     this.startTime = this.now();
+    this.prometheus.resetMetrics();
   }
 }
 

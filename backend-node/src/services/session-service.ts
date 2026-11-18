@@ -7,6 +7,7 @@ import {
   type WorkspaceQueryStore,
 } from '../db/workspace-query-store.js';
 import { logWorkspaceReset } from '../telemetry/logging.js';
+import { defaultResetThrottle, type ResetThrottle } from './reset-throttle.js';
 import { HttpError } from '../types/errors.js';
 
 /** Port of `backend/app/api/routes_sessions.py`. */
@@ -14,13 +15,14 @@ import { HttpError } from '../types/errors.js';
 export const RESET_RATE_LIMIT_SECONDS = 30;
 
 /**
- * SEC-3/SEC-4 destructive-reset rate limit. Module scope mirrors Python's
- * `_LAST_RESET_REQUESTS`; tests clear it with `clearResetRateLimits()`.
+ * SEC-3/SEC-4 destructive-reset rate limit.
+ *
+ * With Redis configured the throttle is fleet-wide; otherwise it mirrors
+ * Python's module-level `_LAST_RESET_REQUESTS`. Tests clear it with
+ * `clearResetRateLimits()`.
  */
-const LAST_RESET_REQUESTS = new Map<string, number>();
-
 export function clearResetRateLimits(): void {
-  LAST_RESET_REQUESTS.clear();
+  defaultResetThrottle.clear();
 }
 
 export interface SessionServiceOptions {
@@ -28,6 +30,8 @@ export interface SessionServiceOptions {
   readonly queryStore?: WorkspaceQueryStore;
   /** Seconds clock, for deterministic rate-limit tests. */
   readonly now?: () => number;
+  /** Explicit throttle (tests or a shared app-wide instance). */
+  readonly resetThrottle?: ResetThrottle;
 }
 
 function errorMessage(error: unknown): string {
@@ -87,11 +91,13 @@ export class SessionService {
   private readonly config: AppConfig | undefined;
   private store: WorkspaceQueryStore | undefined;
   private readonly clock: () => number;
+  private readonly resetThrottle: ResetThrottle;
 
   constructor(options: SessionServiceOptions = {}) {
     this.config = options.config;
     this.store = options.queryStore;
     this.clock = options.now ?? (() => Date.now() / 1000);
+    this.resetThrottle = options.resetThrottle ?? defaultResetThrottle;
   }
 
   private getStore(): WorkspaceQueryStore {
@@ -227,9 +233,8 @@ export class SessionService {
 
   async resetAll(userId: string): Promise<{ success: true; message: string }> {
     const now = this.clock();
-    const lastReset = LAST_RESET_REQUESTS.get(userId) ?? 0;
-    if (now - lastReset < RESET_RATE_LIMIT_SECONDS) {
-      const retryAfter = Math.trunc(RESET_RATE_LIMIT_SECONDS - (now - lastReset));
+    const retryAfter = await this.resetThrottle.claim(userId, RESET_RATE_LIMIT_SECONDS);
+    if (retryAfter > 0) {
       throw new HttpError(
         429,
         `Reset rate limit exceeded. You may only reset your workspace once every ${Math.trunc(
@@ -240,7 +245,6 @@ export class SessionService {
       );
     }
 
-    LAST_RESET_REQUESTS.set(userId, now);
     logWorkspaceReset(userId, now);
 
     try {

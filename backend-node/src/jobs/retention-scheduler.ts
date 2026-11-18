@@ -8,6 +8,7 @@ import {
   type PrivacyService,
   type RetentionSummary,
 } from '../services/privacy-service.js';
+import { getSharedRedisStore, type RedisStore } from '../redis/client.js';
 import { createLogger, type Logger } from '../telemetry/logger.js';
 
 const defaultLogger = createLogger('recruitai.retention_scheduler');
@@ -41,6 +42,10 @@ export interface RetentionSchedulerOptions {
   readonly logger?: Logger;
   /** Overrides `config.retention.intervalSeconds` (tests). */
   readonly intervalSeconds?: number;
+  /** Shared Redis store for the scheduler lock; `null` disables locking. */
+  readonly redisStore?: RedisStore | null;
+  /** Lock lifetime; defaults to the sweep interval bounded to 5–60 minutes. */
+  readonly lockTtlSeconds?: number;
 }
 
 export interface RetentionRunOptions {
@@ -73,6 +78,8 @@ export class RetentionScheduler {
   private readonly logger: Logger;
   private readonly service: PrivacyService;
   private readonly queryStore: WorkspaceQueryStore | undefined;
+  private readonly redisStore: RedisStore | null;
+  private readonly lockTtlSeconds: number;
   readonly intervalSeconds: number;
 
   private timer: NodeJS.Timeout | undefined;
@@ -84,6 +91,9 @@ export class RetentionScheduler {
     this.logger = options.logger ?? defaultLogger;
     this.intervalSeconds = options.intervalSeconds ?? options.config.retention.intervalSeconds;
     this.queryStore = options.queryStore;
+    this.redisStore = options.redisStore === undefined ? getSharedRedisStore() : options.redisStore;
+    this.lockTtlSeconds =
+      options.lockTtlSeconds ?? Math.max(300, Math.min(this.intervalSeconds, 3600));
     this.service =
       options.privacyService ??
       createPrivacyService({
@@ -150,17 +160,42 @@ export class RetentionScheduler {
    */
   async runOnce(options: RetentionRunOptions = {}): Promise<RetentionRunResult> {
     const dryRun = options.dryRun === true;
+    const skipped = (): RetentionRunResult => ({
+      status: 'skipped',
+      dry_run: dryRun,
+      tenant_scoped: options.userId !== undefined,
+      tenants_processed: 0,
+      tenants_failed: 0,
+      summary: { raw_resumes_cleared: 0, chat_messages_purged: 0 },
+      duration_ms: 0,
+    });
+
     if (this.inFlight) {
       this.logger.warn('[retention] previous sweep is still running; skipping this tick.');
-      return {
-        status: 'skipped',
-        dry_run: dryRun,
-        tenant_scoped: options.userId !== undefined,
-        tenants_processed: 0,
-        tenants_failed: 0,
-        summary: { raw_resumes_cleared: 0, chat_messages_purged: 0 },
-        duration_ms: 0,
-      };
+      return skipped();
+    }
+
+    // Exactly one instance may run a destructive sweep per tick. Dry runs are
+    // read-only and intentionally bypass the lock.
+    let lockToken: string | null = null;
+    let lockKey: string | null = null;
+    if (!dryRun && this.redisStore) {
+      lockKey = this.redisStore.key('lock', 'retention');
+      try {
+        lockToken = await this.redisStore.acquireLock(lockKey, this.lockTtlSeconds * 1000);
+      } catch (error) {
+        // Redis is the coordination point: without it, running every replica's
+        // sweep would violate the exactly-one guarantee. Skip this tick and
+        // retry on the next interval instead.
+        this.logger.error(`[retention] could not acquire the Redis lock: ${errorMessage(error)}`, {
+          error_type: errorType(error),
+        });
+        return skipped();
+      }
+      if (!lockToken) {
+        this.logger.info('[retention] another instance owns the sweep lock; skipping this tick.');
+        return skipped();
+      }
     }
 
     const startedAt = Date.now();
@@ -199,6 +234,16 @@ export class RetentionScheduler {
       }
     } finally {
       this.inFlight = false;
+      if (lockKey && lockToken && this.redisStore) {
+        try {
+          await this.redisStore.releaseLock(lockKey, lockToken);
+        } catch (error) {
+          // The TTL releases the lock; log so a stuck key is visible.
+          this.logger.warn(`[retention] failed to release the sweep lock: ${errorMessage(error)}`, {
+            error_type: errorType(error),
+          });
+        }
+      }
     }
 
     const durationMs = Date.now() - startedAt;
