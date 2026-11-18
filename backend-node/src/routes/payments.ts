@@ -18,7 +18,10 @@ import {
   PaymentValidationError,
   type PaymentService,
 } from '../services/payment-service.js';
+import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
+
+const logger = createLogger('recruitai.payments.webhook');
 
 /**
  * Port of `backend/app/api/routes_payments.py`.
@@ -172,6 +175,16 @@ export function createPaymentsWebhookRouter(options: PaymentsWebhookRouterOption
       }
 
       const result = await service.processWebhookEvent(eventPayload);
+      // Phase 20: webhook outcomes are otherwise only visible in Razorpay's
+      // dashboard. Log the classified result (no payload, PII or amounts) so
+      // stabilization can distinguish processed/skipped/ignored deliveries.
+      logger.info(
+        `[payments.webhook] action=${String(result.event)} outcome=${String(result.status)}`,
+        {
+          action: result.event,
+          outcome: result.status,
+        },
+      );
       res.json({ status: 'ok', received: true, result });
     })().catch(next);
   });

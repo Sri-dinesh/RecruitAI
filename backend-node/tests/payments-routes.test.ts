@@ -412,4 +412,42 @@ describe('POST /api/payments/webhook', () => {
       assert.equal(status.body.status, 'canceled');
     });
   });
+
+  it('logs one classified outcome without echoing payload data', async () => {
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (line?: unknown, ...rest: unknown[]) => {
+      if (typeof line === 'string') lines.push(line);
+      else original(line, ...rest);
+    };
+
+    try {
+      await withApp(async ({ app }) => {
+        await request(app)
+          .post('/api/payments/webhook')
+          .send(capturedEvent({ user_id: 'e6cca9b2-49b8-4812-ac3a-3dfb770ea5a3' }))
+          .expect(200);
+      });
+    } finally {
+      console.log = original;
+    }
+
+    const record = lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .find((entry) => entry?.logger === 'recruitai.payments.webhook');
+
+    assert.ok(record, 'missing webhook outcome log');
+    assert.equal(record.action, 'payment.captured');
+    assert.equal(record.outcome, 'processed');
+    // The event carries a candidate/email-free Razorpay payload; the log must
+    // still not copy the body or the notes map.
+    assert.ok(!JSON.stringify(record).includes('pay_route_1'));
+    assert.ok(!JSON.stringify(record).includes('notes'));
+  });
 });
