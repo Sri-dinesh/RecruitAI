@@ -1,6 +1,6 @@
 # RecruitAI Backend — Node.js / Express / TypeScript
 
-Target backend for the FastAPI → Node.js migration. **Phases 1–19 complete**:
+Target backend for the FastAPI → Node.js migration. **Phases 1–20 implemented**:
 scaffold, tooling, boot, typed configuration with production gates, the
 auth/request-identity foundation, Express app wiring with CORS and global error
 handling, the shared validation/types contract layer, the Drizzle database
@@ -13,35 +13,37 @@ job queue and SSE streaming, and the remaining public route groups (sessions,
 candidate evaluation/ATS export, PDF reports, analytics, user profile, and
 GDPR/privacy), plus the Phase 16 operational retention scheduler and CLI, the
 Phase 17 health/readiness, request-id and audit-log finalization, the Phase 18
-parity matrix, dual-run parity checker and cutover/rollback procedure, and the
+parity matrix, dual-run parity checker and cutover/rollback procedure, the
 Phase 19 deployment artifact, production preflight, request limiter and
-log/metric export contract. The Python backend in `../backend/` remains the
+log/metric export contract, and the Phase 20 stabilization probe, watch
+thresholds and triage runbook. The Python backend in `../backend/` remains the
 running service and is untouched until cutover.
 
 ## Status
 
-| Area                                  | Status                                  |
-| ------------------------------------- | --------------------------------------- |
-| Phase 1 — scaffold, tooling, boot     | ✅ complete                             |
-| Phase 2 — config + production gates   | ✅ complete                             |
-| Phase 3 — auth + request identity     | ✅ complete                             |
-| Phase 4 — app wiring + error handling | ✅ complete                             |
-| Phase 5 — validation + API contracts  | ✅ complete                             |
-| Phase 6 — database access layer       | ✅ complete                             |
-| Phase 7 — logging, context, telemetry | ✅ complete                             |
-| Phase 8 — LLM routing + safety gates  | ✅ complete                             |
-| Phase 9 — parsing + matching services | ✅ complete                             |
-| Phase 10 — payments + credits         | ✅ complete                             |
-| Phase 11 — email + outreach           | ✅ complete                             |
-| Phase 12 — ingest + campaign context  | ✅ complete                             |
-| Phase 13 — multi-agent graph + nodes  | ✅ complete                             |
-| Phase 14 — chat + jobs + SSE          | ✅ complete                             |
-| Phase 15 — remaining public API       | ✅ complete                             |
-| Phase 16 — operational retention      | ✅ complete                             |
-| Phase 17 — observability and health   | ✅ complete                             |
-| Phase 18 — tests, parity, cutover     | ✅ complete                             |
-| Phase 19 — deploy + hardening         | ✅ complete                             |
-| Phases 20–24                          | pending (see `../Backend-Migration.md`) |
+| Area                                  | Status                                   |
+| ------------------------------------- | ---------------------------------------- |
+| Phase 1 — scaffold, tooling, boot     | ✅ complete                              |
+| Phase 2 — config + production gates   | ✅ complete                              |
+| Phase 3 — auth + request identity     | ✅ complete                              |
+| Phase 4 — app wiring + error handling | ✅ complete                              |
+| Phase 5 — validation + API contracts  | ✅ complete                              |
+| Phase 6 — database access layer       | ✅ complete                              |
+| Phase 7 — logging, context, telemetry | ✅ complete                              |
+| Phase 8 — LLM routing + safety gates  | ✅ complete                              |
+| Phase 9 — parsing + matching services | ✅ complete                              |
+| Phase 10 — payments + credits         | ✅ complete                              |
+| Phase 11 — email + outreach           | ✅ complete                              |
+| Phase 12 — ingest + campaign context  | ✅ complete                              |
+| Phase 13 — multi-agent graph + nodes  | ✅ complete                              |
+| Phase 14 — chat + jobs + SSE          | ✅ complete                              |
+| Phase 15 — remaining public API       | ✅ complete                              |
+| Phase 16 — operational retention      | ✅ complete                              |
+| Phase 17 — observability and health   | ✅ complete                              |
+| Phase 18 — tests, parity, cutover     | ✅ complete                              |
+| Phase 19 — deploy + hardening         | ✅ complete                              |
+| Phase 20 — stabilization probe        | ✅ tooling complete (soak after cutover) |
+| Phases 21–24                          | pending (see `../Backend-Migration.md`)  |
 
 ## Commands
 
@@ -51,6 +53,7 @@ npm run dev          # tsx watch src/main.ts (development)
 npm run build        # tsc → dist/
 npm start            # node dist/main.js (production)
 npm run preflight    # validate a production deployment environment
+npm run stabilize    # read-only post-cutover error/auth/payment/queue check
 npm run typecheck    # tsc --noEmit (src + tests)
 npm test             # node:test via tsx
 npm run parity:check # read-only FastAPI vs Express comparison
@@ -90,7 +93,7 @@ src/
 ├── tools/          # app/tools/*                   (Phase 11 ✅ + Phase 13 ✅)
 ├── jobs/           # app/services/job_queue.py     (Phase 14 ✅)
 │                   #   + retention scheduler        (Phase 16 ✅)
-└── cli/            # operational commands (retention, preflight) (Phases 16/19 ✅)
+└── cli/            # operational commands (retention, preflight, stabilize) (Phases 16/19/20 ✅)
 tests/              # ported pytest suite            (Phase 18 ✅)
                     #   PARITY.md maps every backend/tests module to a suite
 scripts/            # parity-check.mjs (dual-run HTTP comparison)
@@ -1090,6 +1093,91 @@ Phase 19 adds focused tests for the limiter, preflight report and dynamic log
 level, bringing the suite to **823 tests / 198 suites**, and the Node job in
 `.github/workflows/ci.yml` gates lint, formatting, typecheck, tests, build and
 preflight.
+
+## Post-cutover stabilization (Phase 20)
+
+Phase 20 is the live-traffic phase: some regressions only appear under real
+data, real tokens and real payment traffic. The repository cannot prove
+production stability without a cutover, so this phase ships the verification
+harness and the operating procedure, then the soak itself runs against the
+deployed Node service.
+
+### Stabilization probe
+
+`npm run stabilize` (`src/cli/stabilization.ts`) is read-only and safe against
+production. It probes:
+
+| Probe                             | What it proves                                                      |
+| :-------------------------------- | :------------------------------------------------------------------ |
+| `GET /health`                     | Process is serving and reports healthy.                             |
+| `GET /api/health/ready`           | Database round trip, backend type, auth mode and LLM configuration. |
+| `GET /api/metrics` (JSON)         | Status buckets, queue depth, reported SLO fields.                   |
+| `GET /api/metrics` (`text/plain`) | All four stable metric names are exported.                          |
+
+It then evaluates the cutover watch list:
+
+| Signal              | Default   | Behaviour                                       |
+| :------------------ | :-------- | :---------------------------------------------- |
+| 5xx rate            | `<= 0.1%` | Fail (availability SLO budget).                 |
+| Queue depth         | `<= 50`   | Fail (Runbook 3 threshold).                     |
+| SQLite fallback     | `0`       | Fail in production.                             |
+| Local dev auth      | `0`       | Fail in production.                             |
+| Readiness           | `healthy` | `degraded` warns; `503`/unhealthy fails.        |
+| 401 rate            | `<= 2%`   | Warn, or fail with `STABILIZATION_STRICT=true`. |
+| 402 rate            | `<= 5%`   | Warn, or fail in strict mode.                   |
+| 422 rate            | `<= 2%`   | Warn, or fail in strict mode.                   |
+| Webhook 5xx         | `0`       | Fail.                                           |
+| Webhook 4xx         | `0`       | Warn (invalid signature/payload).               |
+| Python 5xx baseline | no drift  | Warn; optional canary comparison.               |
+
+Below `STABILIZATION_MIN_REQUESTS` (default 100), rate checks are skipped
+because one request would look like a spike.
+
+```bash
+cd backend-node
+STABILIZATION_BASE_URL=https://<node-host> \
+STABILIZATION_BEARER_TOKEN=<service token> \
+npm run stabilize
+
+# Optional Python canary during the soak
+STABILIZATION_BASE_URL=https://<node-host> \
+STABILIZATION_PYTHON_BASE_URL=https://<python-host> \
+STABILIZATION_BEARER_TOKEN=<service token> \
+npm run stabilize
+```
+
+Exit `0` means no hard failures; `1` means an outage-level signal or strict-mode
+warning; `2` is a usage error. `--json` emits a machine-readable report for a
+dashboard or incident record.
+
+For local verification against a development server, the opt-in flags
+`STABILIZATION_ALLOW_DEGRADED=true`, `STABILIZATION_ALLOW_SQLITE=true` and
+`STABILIZATION_ALLOW_LOCAL_AUTH=true` prevent expected dev-only warnings from
+failing the probe. Never set those against a production cutover.
+
+### Webhook outcome logging
+
+The Razorpay webhook now logs one classified outcome per accepted delivery
+(`processed`, `skipped` or `ignored`) on `recruitai.payments.webhook`. It logs
+the event/action and outcome only — no payload, amount, email or candidate
+data — so stabilization can distinguish a handled event from a rejected
+signature or a 5xx.
+
+### Operating procedure
+
+The cadence, client verification matrix, behavior-difference register and exit
+criteria live in [`../docs/cutover.md`](../docs/cutover.md) §7. Incident
+diagnostics, ledger reconciliation SQL and the rollback path live in
+[`../docs/runbooks.md`](../docs/runbooks.md) Runbook 8. Watch thresholds and the
+known `slo_health` accounting caveat are in
+[`../docs/slo.md`](../docs/slo.md).
+
+This phase does not change contracts: the probe consumes the Phase 7/17 metrics
+and Phase 17 readiness shapes, and the client smoke checks reuse the Phase 18
+contract suite.
+
+Phase 20 adds focused tests for the probe evaluation, thresholds and
+configuration, bringing the suite to **840 tests / 202 suites**.
 
 ## App wiring and error handling
 

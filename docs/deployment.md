@@ -319,6 +319,7 @@ env matrix above as the checklist. Render sets `PORT`; do not hard-code it.
 | Command                                     | Use                                                                    |
 | :------------------------------------------ | :--------------------------------------------------------------------- |
 | `npm run preflight`                         | Validate the deployment environment (also runs at production startup). |
+| `npm run stabilize`                         | Read-only post-cutover health/error/auth/payment/queue check.          |
 | `npm run retention:run -- --dry-run`        | Manual tenant-scoped retention preview.                                |
 | `npm run retention:run -- --user-id <uuid>` | Manual sweep for one tenant.                                           |
 | `npm run parity:check`                      | Read-only comparison against a running FastAPI backend.                |

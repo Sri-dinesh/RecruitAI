@@ -22,17 +22,17 @@ Related documents:
 
 Do not start the cutover until every row is true.
 
-| Requirement | Check |
-| :--- | :--- |
-| Node phase gate is green | `cd backend-node && npm test && npm run lint && npm run typecheck && npm run build && npm run format:check` |
-| Node reaches the same database | `DATABASE_URL` or `SUPABASE_DB_URL` points at the production PostgreSQL instance (direct TCP, not the PostgREST URL) |
-| Auth material matches Python | Same `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and `USE_LOCAL_AUTH` policy |
-| Product integrations match | Same `GEMINI_API_KEY`, `TAVILY_API_KEY`, SMTP settings, Razorpay keys/webhook secret |
-| CORS knows the clients | `ALLOWED_ORIGINS` includes every web origin that currently calls Python |
-| Queue mode is decided | Either `REDIS_URL` unset (in-memory jobs) or a Redis instance both acceptable to keep and able to drain |
-| Retention ownership is explicit | `RETENTION_JOB_ENABLED` stays `false` on Node while Python still runs its own job; never let two schedulers sweep |
-| Python is warm and pinned | The Python deployment stays running at its current image for the whole soak |
-| No DDL is planned | Node performs no schema migrations at cutover; it reads/writes the existing schema |
+| Requirement                     | Check                                                                                                                |
+| :------------------------------ | :------------------------------------------------------------------------------------------------------------------- |
+| Node phase gate is green        | `cd backend-node && npm test && npm run lint && npm run typecheck && npm run build && npm run format:check`          |
+| Node reaches the same database  | `DATABASE_URL` or `SUPABASE_DB_URL` points at the production PostgreSQL instance (direct TCP, not the PostgREST URL) |
+| Auth material matches Python    | Same `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and `USE_LOCAL_AUTH` policy                                     |
+| Product integrations match      | Same `GEMINI_API_KEY`, `TAVILY_API_KEY`, SMTP settings, Razorpay keys/webhook secret                                 |
+| CORS knows the clients          | `ALLOWED_ORIGINS` includes every web origin that currently calls Python                                              |
+| Queue mode is decided           | Either `REDIS_URL` unset (in-memory jobs) or a Redis instance both acceptable to keep and able to drain              |
+| Retention ownership is explicit | `RETENTION_JOB_ENABLED` stays `false` on Node while Python still runs its own job; never let two schedulers sweep    |
+| Python is warm and pinned       | The Python deployment stays running at its current image for the whole soak                                          |
+| No DDL is planned               | Node performs no schema migrations at cutover; it reads/writes the existing schema                                   |
 
 Node needs a direct Postgres connection string. Python's `SUPABASE_URL` is not
 enough: Drizzle uses `drizzle-orm/node-postgres` over TCP. If only the
@@ -105,16 +105,16 @@ ids on both sides. Shape mode alone does not prove data-dependent branches
 On the staging tenant, exercise each write path against Node and compare the
 response with Python for the same inputs:
 
-| Flow | Endpoint(s) | What must match |
-| :--- | :--- | :--- |
-| Session lifecycle | `POST/GET/PATCH/DELETE /api/sessions`, `GET /api/sessions/:id` | ids, titles, `conversation_history`, `resumes`, `last_shortlist`, `scheduled_interviews` |
-| Chat (sync + async) | `POST /api/chat`, `GET /api/chat/jobs/:id`, `.../stream` | response fields, 202 envelope, job status transitions, SSE event framing and terminal event |
-| Ingest | `POST /api/ingest/upload`, `POST /api/ingest/upload-jd` | per-file results, deterministic dedupe, job/session binding, 207 on partial failure |
-| Evaluation + ATS | `POST /api/candidates/evaluate`, `POST /api/candidates/:id/status`, `POST /api/export/ats` | rubric persistence, `new_status`, JSON map and CSV header |
-| Email + credits | `POST /api/email/send`, `GET /api/email/history`, `GET /api/email/stats` | simulated/sent status, credit deduction, 402 on insufficient balance, isolation |
-| Billing | `POST /api/payments/order`, `POST /api/payments/verify`, `POST /api/payments/webhook` | order envelope, signature acceptance/rejection, subscription activation, ledger rows |
-| Privacy | `GET /api/privacy/export/:id`, `DELETE /api/privacy/candidates/:id`, `GET /api/privacy/user/export`, `GET /api/privacy/bias-audit` | export shape, cascade deletion, audit fields |
-| Users | `GET/PATCH /api/users/me` | eight preference defaults, profile fields |
+| Flow                | Endpoint(s)                                                                                                                        | What must match                                                                             |
+| :------------------ | :--------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
+| Session lifecycle   | `POST/GET/PATCH/DELETE /api/sessions`, `GET /api/sessions/:id`                                                                     | ids, titles, `conversation_history`, `resumes`, `last_shortlist`, `scheduled_interviews`    |
+| Chat (sync + async) | `POST /api/chat`, `GET /api/chat/jobs/:id`, `.../stream`                                                                           | response fields, 202 envelope, job status transitions, SSE event framing and terminal event |
+| Ingest              | `POST /api/ingest/upload`, `POST /api/ingest/upload-jd`                                                                            | per-file results, deterministic dedupe, job/session binding, 207 on partial failure         |
+| Evaluation + ATS    | `POST /api/candidates/evaluate`, `POST /api/candidates/:id/status`, `POST /api/export/ats`                                         | rubric persistence, `new_status`, JSON map and CSV header                                   |
+| Email + credits     | `POST /api/email/send`, `GET /api/email/history`, `GET /api/email/stats`                                                           | simulated/sent status, credit deduction, 402 on insufficient balance, isolation             |
+| Billing             | `POST /api/payments/order`, `POST /api/payments/verify`, `POST /api/payments/webhook`                                              | order envelope, signature acceptance/rejection, subscription activation, ledger rows        |
+| Privacy             | `GET /api/privacy/export/:id`, `DELETE /api/privacy/candidates/:id`, `GET /api/privacy/user/export`, `GET /api/privacy/bias-audit` | export shape, cascade deletion, audit fields                                                |
+| Users               | `GET/PATCH /api/users/me`                                                                                                          | eight preference defaults, profile fields                                                   |
 
 Test-mode payments only. Use Razorpay test keys or the documented simulated
 orders; never drive a live charge during validation.
@@ -164,6 +164,16 @@ appears, the blast radius must be one surface.
 - Outbound email: sends are `sent` or `simulated` as configured, no increase in
   `failed`.
 - Database: no connection-pool exhaustion (Runbook 4), no lock contention.
+- Run the stabilization probe every 15 minutes for the first hour:
+  ```bash
+  cd backend-node
+  STABILIZATION_BASE_URL=https://<node-host> \
+  STABILIZATION_BEARER_TOKEN=<<service token> \
+  npm run stabilize
+  ```
+  It checks liveness, readiness (database type, auth mode, LLM), the four
+  stable metrics, 5xx budget, 401/402/422 mix, webhook outcomes and queue depth.
+  Exit `1` is a rollback trigger when the failure is attributable to Node.
 
 ### First 24 hours
 
@@ -177,6 +187,9 @@ appears, the blast radius must be one surface.
   branches.
 - Verify the retention scheduler remains disabled, or enable it on Node only
   after Python's scheduler is disabled.
+- Re-run `npm run stabilize` hourly. Re-run `npm run parity:check` with a Python
+  canary URL (or a saved baseline snapshot) to confirm runtime configuration did
+  not change contract behavior.
 
 ### Soak before decommission
 
@@ -234,7 +247,80 @@ fresh parity run. Do not resume at the client-switch step.
 
 ---
 
-## 7. Decommissioning Python (after soak)
+## 7. Stabilization window (Phase 20)
+
+Stabilization starts when Node receives its first production traffic and ends
+only after the soak below. The goal is to find real-traffic regressions without
+widening scope: fix contract, auth, money and data-integrity defects; record
+everything else for later phases.
+
+### Cadence
+
+| Window                 | What to run                                                           | Owner            |
+| :--------------------- | :-------------------------------------------------------------------- | :--------------- |
+| First hour             | `npm run stabilize` every 15 minutes; follow Runbook 8 on any failure | On-call engineer |
+| First 24 hours         | `npm run stabilize` hourly; review 401/402/422 and webhook deltas     | On-call engineer |
+| Through the 7-day soak | Daily `npm run stabilize` and `npm run parity:check`; review SLO burn | Backend on-call  |
+
+The probe is read-only. It exits `1` on hard failures and `0` with warnings for
+signals that need judgement. Use `STABILIZATION_STRICT=true` only when the team
+agrees that any warning blocks the rollout.
+
+### Client verification
+
+Exercise these once per client surface after switching it. Mobile is a separate
+row because `EXPO_PUBLIC_BACKEND_URL` ships in the binary.
+
+| Check                                                                 | Web | Mobile |
+| :-------------------------------------------------------------------- | :-- | :----- |
+| Sign-in / valid token accepted                                        | ☐   | ☐      |
+| Session list loads and a session opens                                | ☐   | ☐      |
+| Sync chat turn completes                                              | ☐   | ☐      |
+| Async chat turn reaches `completed`; SSE closes with a terminal event | ☐   | ☐      |
+| Resume/JD upload returns per-file results                             | ☐   | ☐      |
+| Candidate evaluation and ATS export                                   | ☐   | ☐      |
+| Analytics pages match the Python baseline                             | ☐   | ☐      |
+| Billing/credit balance and 402 message                                | ☐   | ☐      |
+| Outreach history/stats and send status                                | ☐   | ☐      |
+| Privacy export, bias audit, deletion cascade                          | ☐   | ☐      |
+
+Record the client build/version next to each row. A blank row is not a pass.
+
+### Triage and fix policy
+
+1. **Contract or money first.** Auth/401-403 spikes, 402/quota changes, webhook
+   rejection, ledger divergence and missing response fields take priority over
+   latency or cosmetic differences.
+2. **Reproduce before changing code.** Add the failing input to the owning
+   suite in `backend-node/tests/`; a fix without a regression test is incomplete.
+3. **Fix only the migration regression.** Do not fold in refactors, dependency
+   upgrades or new features during stabilization. If the defect is a genuine
+   product bug that also exists in Python, record it and schedule it separately.
+4. **Document the difference.** Every intentional divergence (or Python bug
+   preserved for parity) goes in the register below and, if it changes a
+   contract expectation, in `backend-node/tests/PARITY.md`.
+5. **Roll back on the documented triggers.** Do not debug a money/auth incident
+   in the serving path; switch traffic back first, then fix forward.
+
+### Behavior-difference register
+
+| Date | Area | Observed | Expected | Resolution | Owner |
+| :--- | :--- | :------- | :------- | :--------- | :---- |
+|      |      |          |          |            |       |
+
+### Exit criteria
+
+- Seven days of normal traffic with Python still warm and deployable.
+- No unexplained SEV-1/SEV-2 incident and no open contract/money defect.
+- `npm run stabilize` has no hard failures and every warning is explained.
+- A final parity run against the same database is clean.
+- Retention has exactly one owner (Node scheduler or manual CLI, never Python
+  and Node together).
+- Rollback remains a config change, not a redeploy, until the soak ends.
+
+---
+
+## 8. Decommissioning Python (after soak)
 
 Only after the soak and a clean parity record:
 

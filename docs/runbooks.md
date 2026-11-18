@@ -258,7 +258,134 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
 
 ---
 
-## Runbook 7: Incident Post-Mortem Template
+## Runbook 8: Post-Cutover Stabilization Triage
+
+Use this runbook during the Phase 20 soak, when Node is serving traffic but
+Python is still warm for rollback. For an active outage, use the matching
+runbook above first; stabilization is for drift that is not yet an outage.
+
+### Symptoms
+
+- `npm run stabilize` reports a warning: 401/402/422 rate above the watch
+  threshold, 5xx drift above the Python canary, or webhook 4xx.
+- `npm run stabilize` reports a hard failure: 5xx above budget, queue depth
+  above 50, SQLite fallback, local auth, unreadable metrics/readiness.
+- Users report a flow that works but differs from Python (analytics numbers,
+  outreach status, privacy export fields).
+- Client smoke checks fail on one surface while the other is healthy.
+
+### Immediate Diagnostics
+
+1. Run the read-only probe against the affected host:
+   ```bash
+   cd backend-node
+   STABILIZATION_BASE_URL=https://<node-host> \
+   STABILIZATION_BEARER_TOKEN=$ADMIN_JWT \
+   npm run stabilize
+   ```
+   Add `--python-url https://<python-host>` to compare 5xx rates with the
+   still-warm Python canary. Use `STABILIZATION_STRICT=true` only when the team
+   has agreed warnings block the rollout.
+2. Inspect the status mix directly:
+   ```bash
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     https://<node-host>/api/metrics \
+     | jq '{total: .red_metrics.requests_total, status: .red_metrics.status_breakdown, errors: .red_metrics.error_breakdown, queue: .use_metrics.queue_depth, slo: .slo_health}'
+   ```
+   `slo_health.error_rate` includes 4xx in both backends; use the `:5xx` keys
+   for availability questions.
+3. Check readiness detail before blaming a route:
+   ```bash
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     https://<node-host>/api/health/ready | jq .services
+   ```
+4. Read the relevant structured logs:
+   ```bash
+   # Webhook outcome classification (processed / skipped / ignored)
+   docker logs recruitai_backend 2>&1 | jq -c 'select(.logger=="recruitai.payments.webhook")'
+
+   # Async chat job failures
+   docker logs recruitai_backend 2>&1 | jq -c 'select(.message | test("Job .* failed"))'
+
+   # 401/402/422/500 by request id
+   docker logs recruitai_backend 2>&1 | jq -c 'select(.status_code==401 or .status_code==402 or .status_code==500)'
+   ```
+
+### Data Reconciliation
+
+1. Credit ledger vs. user balance (must return zero rows outside known
+   in-flight transactions):
+   ```sql
+   WITH latest AS (
+     SELECT user_id, balance_after,
+            ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC, id DESC) AS rn
+     FROM credit_transactions
+   )
+   SELECT u.id, u.credits_balance, l.balance_after
+   FROM users u
+   JOIN latest l ON l.user_id = u.id AND l.rn = 1
+   WHERE u.credits_balance <> l.balance_after;
+   ```
+2. Outreach outcomes in the cutover window:
+   ```sql
+   SELECT status, COUNT(*)
+   FROM outreach_logs
+   WHERE created_at > now() - interval '24 hours'
+   GROUP BY status
+   ORDER BY status;
+   ```
+   `failed` should not rise after the switch; `simulated` is expected when SMTP
+   is intentionally unconfigured.
+3. Duplicate sends/charges for one candidate or payment in the cutover window:
+   ```sql
+   SELECT user_id, candidate_id, template_id, COUNT(*)
+   FROM outreach_logs
+   WHERE created_at > now() - interval '24 hours'
+   GROUP BY user_id, candidate_id, template_id
+   HAVING COUNT(*) > 1;
+   ```
+4. Analytics/privacy/outreach contract comparison:
+   ```bash
+   PYTHON_BASE_URL=https://<python-host> \
+   NODE_BASE_URL=https://<node-host> \
+   PARITY_BEARER_TOKEN=$ADMIN_JWT \
+   npm run parity:check
+   ```
+   The checker covers analytics, email history/stats, bias audit and metrics.
+   Privacy export/delete need a seeded candidate and are exercised manually per
+   `docs/cutover.md` §3.
+
+### Mitigation
+
+1. **Auth (401 spike):** confirm both backends use the same
+   `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and that `USE_LOCAL_AUTH` is
+   unset/false on Node. Compare a failing token across both hosts before
+   changing anything.
+2. **Payments (402 spike or webhook 4xx):** confirm the Razorpay webhook secret
+   and plan metadata; check the `credit_transactions` ledger and that
+   `processWebhookEvent` logged `processed`/`skipped` rather than a 5xx. Do not
+   re-drive payments until duplicates are ruled out.
+3. **Chat jobs (queue depth):** follow Runbook 3. In-memory mode cannot survive
+   a restart; Redis/BullMQ mode must not be deleted before draining.
+4. **Analytics/outreach drift:** run the parity checker. If shapes match and
+   values differ, verify both backends read the same database and tenant before
+   calling it a regression.
+5. **Any auth/money/data-integrity failure:** switch traffic back using
+   `docs/cutover.md` §6, then fix forward with a regression test. Do not debug
+   on the serving path.
+
+### Regression Fix
+
+- Reproduce in the owning suite under `backend-node/tests/`, then fix.
+- Do not include refactors or unrelated improvements in the stabilization fix.
+- Record every intentional difference or Python bug preserved for parity in the
+  behavior-difference register in `docs/cutover.md` §7.
+- Re-run `npm run stabilize`, `npm run parity:check` and the full gate before
+  resuming the rollout.
+
+---
+
+## Runbook 9: Incident Post-Mortem Template
 
 Following resolution of any SEV-1 or SEV-2 incident, an RCA (Root Cause Analysis) document must be filed within 48 hours containing:
 

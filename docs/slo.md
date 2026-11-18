@@ -1,41 +1,45 @@
 # RecruitAI Service Level Objectives (SLOs) & Reliability Targets
 
 ## 1. Executive Summary & Philosophy
+
 RecruitAI is an enterprise autonomous recruitment orchestration platform. High availability, deterministic low-latency interactions, and zero-loss resume ingestion are mission-critical. This document defines our formal Service Level Indicators (SLIs), Service Level Objectives (SLOs), and Error Budgets for production operations (OPS-1).
 
 ---
 
 ## 2. Core Service Level Indicators & Objectives
 
-| User Journey / Service Area | Service Level Indicator (SLI) | Service Level Objective (SLO) | Window | Measurement Mechanism |
-| :--- | :--- | :--- | :--- | :--- |
-| **API Availability** | Successful non-5xx responses / total requests | **>= 99.9%** availability | 30-Day Rolling | In-process RED metrics (`recruitai_requests_total`) exported at `/api/metrics` |
-| **Chat Acknowledgment** | Time between client `POST /api/chat` and `HTTP 202 Accepted` | **p99 < 2.0s** | 7-Day Rolling | API Controller Tracing (`trace_span`) |
-| **Agent Reasoning Turnaround** | Time from job enqueue to final SSE completion | **p95 < 30.0s** | 7-Day Rolling | Async Job Queue telemetry (`job_manager`) |
-| **Resume Ingestion** | End-to-end parsing & embedding per document (<15MB) | **p95 < 5.0s** per resume | 7-Day Rolling | Ingestion pipeline metrics (`routes_ingest`) |
-| **Database Query Ping** | Database health ping latency | **p99 < 50ms** | 24-Hour Rolling | Authenticated readiness probe (`/api/health/ready`) |
-| **LLM Provider Availability** | Multi-model failover success rate | **>= 99.95%** | 30-Day Rolling | Circuit Breaker telemetry (`ModelCircuitBreaker`) |
+| User Journey / Service Area    | Service Level Indicator (SLI)                                | Service Level Objective (SLO) | Window          | Measurement Mechanism                                                                                                                                        |
+| :----------------------------- | :----------------------------------------------------------- | :---------------------------- | :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **API Availability**           | Successful non-5xx responses / total requests                | **>= 99.9%** availability     | 30-Day Rolling  | In-process RED metrics (`recruitai_requests_total`); derive 5xx from `status_breakdown` (the `slo_health.error_rate` field also counts 4xx in both backends) |
+| **Chat Acknowledgment**        | Time between client `POST /api/chat` and `HTTP 202 Accepted` | **p99 < 2.0s**                | 7-Day Rolling   | API Controller Tracing (`trace_span`)                                                                                                                        |
+| **Agent Reasoning Turnaround** | Time from job enqueue to final SSE completion                | **p95 < 30.0s**               | 7-Day Rolling   | Async Job Queue telemetry (`job_manager`)                                                                                                                    |
+| **Resume Ingestion**           | End-to-end parsing & embedding per document (<15MB)          | **p95 < 5.0s** per resume     | 7-Day Rolling   | Ingestion pipeline metrics (`routes_ingest`)                                                                                                                 |
+| **Database Query Ping**        | Database health ping latency                                 | **p99 < 50ms**                | 24-Hour Rolling | Authenticated readiness probe (`/api/health/ready`)                                                                                                          |
+| **LLM Provider Availability**  | Multi-model failover success rate                            | **>= 99.95%**                 | 30-Day Rolling  | Circuit Breaker telemetry (`ModelCircuitBreaker`)                                                                                                            |
 
 ---
 
 ## 3. Error Budget & Burn Rate Alerting
 
 ### Error Budget Allocation (30-Day Window)
+
 At **99.9% Availability**, the error budget permits:
+
 - **0.1%** non-transient server errors.
 - Maximum allowable unplanned downtime: **43.2 minutes per month** (or 10.1 minutes per week).
 
 ### Multi-Window Multi-Burn Rate Alert Policy
 
-| Severity | Burn Rate | Budget Consumed | Short Window (1h) | Long Window (6h) | Notification Channel | Pager Protocol |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **P1 - Critical** | **14.4x** | 2% in 1 hour | 1 Hour Error Rate > 1.44% | 6 Hour Error Rate > 1.44% | PagerDuty + Call Tree | Immediate page on-call engineer |
-| **P2 - High** | **6.0x** | 5% in 6 hours | 1 Hour Error Rate > 0.60% | 6 Hour Error Rate > 0.60% | Slack #alerts-critical | Page on-call if unacknowledged in 15m |
-| **P3 - Elevated** | **1.0x** | 10% in 3 days | 6 Hour Error Rate > 0.10% | 24 Hour Error Rate > 0.10% | Slack #alerts-dev | Next business day review |
+| Severity          | Burn Rate | Budget Consumed | Short Window (1h)         | Long Window (6h)           | Notification Channel   | Pager Protocol                        |
+| :---------------- | :-------- | :-------------- | :------------------------ | :------------------------- | :--------------------- | :------------------------------------ |
+| **P1 - Critical** | **14.4x** | 2% in 1 hour    | 1 Hour Error Rate > 1.44% | 6 Hour Error Rate > 1.44%  | PagerDuty + Call Tree  | Immediate page on-call engineer       |
+| **P2 - High**     | **6.0x**  | 5% in 6 hours   | 1 Hour Error Rate > 0.60% | 6 Hour Error Rate > 0.60%  | Slack #alerts-critical | Page on-call if unacknowledged in 15m |
+| **P3 - Elevated** | **1.0x**  | 10% in 3 days   | 6 Hour Error Rate > 0.10% | 24 Hour Error Rate > 0.10% | Slack #alerts-dev      | Next business day review              |
 
 ---
 
 ## 4. Tenant Isolation & Fair-Use Limits
+
 1. **Chat Ingestion Limits**: 60 requests / minute per recruiter workspace.
 2. **Batch Upload Limits**: Max 10 resumes per batch, max 15MB per file.
 3. **Workspace Reset**: 1 reset per 30 seconds per tenant (`_LAST_RESET_REQUESTS`).
@@ -59,12 +63,12 @@ existing dashboards, alerts and scrape configs keep working through cutover:
 
 Stable metric names (do not rename without updating alerting):
 
-| Metric | Type | Meaning |
-| :--- | :--- | :--- |
+| Metric                     | Type    | Meaning                                                      |
+| :------------------------- | :------ | :----------------------------------------------------------- |
 | `recruitai_requests_total` | counter | Requests by `endpoint` (matched route template) and `status` |
-| `recruitai_queue_depth` | gauge | Pending async chat jobs |
-| `recruitai_tokens_total` | counter | LLM tokens by `type="input"\|"output"` |
-| `recruitai_llm_cost_usd` | counter | Estimated cumulative LLM cost in USD |
+| `recruitai_queue_depth`    | gauge   | Pending async chat jobs                                      |
+| `recruitai_tokens_total`   | counter | LLM tokens by `type="input"\|"output"`                       |
+| `recruitai_llm_cost_usd`   | counter | Estimated cumulative LLM cost in USD                         |
 
 ### Health and readiness semantics
 
@@ -92,3 +96,34 @@ Stable metric names (do not rename without updating alerting):
   replicas, scrape every pod (or aggregate at the gateway) rather than assuming
   a single global counter.
 
+### Migration stabilization watchlist (Phase 20)
+
+During the cutover soak, `npm run stabilize` evaluates these signals from the
+same metrics contract. Only the 5xx budget is a formal SLO; the rest are
+migration watch thresholds that need judgement rather than automatic rollback.
+
+| Signal           | Watch threshold | Hard failure?     | Notes                                                                    |
+| :--------------- | :-------------- | :---------------- | :----------------------------------------------------------------------- |
+| 5xx rate         | `<= 0.1%`       | Yes               | Availability SLO budget; derived from `status_breakdown`                 |
+| 401 rate         | `<= 2%`         | No, unless strict | Bad/expired tokens are normal; a sustained spike means auth config drift |
+| 402 rate         | `<= 5%`         | No, unless strict | Normal quota response; a spike means credits/pricing regressed           |
+| 422 rate         | `<= 2%`         | No, unless strict | Normal client input; a spike means a validation contract mismatch        |
+| Webhook 5xx      | `0`             | Yes               | Handler failure or unreadable payload path                               |
+| Webhook 4xx      | `0`             | No                | Invalid signatures/payloads; confirm Razorpay and secret alignment       |
+| Queue depth      | `<= 50`         | Yes               | Runbook 3 page threshold for chat backlog                                |
+| SQLite fallback  | `0`             | Yes               | Production must be on PostgreSQL                                         |
+| Local auth       | `0`             | Yes               | Development-only identity bypass                                         |
+| Unconfigured LLM | `0`             | Warning           | Agent turns degrade; production preflight already requires a key         |
+
+`npm run stabilize` also compares the Node 5xx rate with an optional Python
+canary (`--python-url` / `STABILIZATION_PYTHON_BASE_URL`) and warns on drift.
+Rates are compared, never absolute counters: each process has its own uptime
+window. Below `STABILIZATION_MIN_REQUESTS` (default 100), rate checks are
+skipped because a single request would look like a spike.
+
+The reported `slo_health` object is preserved from Python and counts **4xx**
+responses as errors, so `slo_compliant` can be false on a perfectly healthy
+window that served 401/404/422 responses. Availability alerts and the
+stabilization check use status buckets (`>= 500`) instead. Do not change the
+`slo_health` shape during the migration; fix the accounting separately if the
+product wants it.
