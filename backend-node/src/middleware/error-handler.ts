@@ -6,6 +6,7 @@ import { getRequestContext } from '../context/request-context.js';
 import type { FastApiValidationError } from '../schemas/validation.js';
 import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
+import { WorkerPoolOverloadedError } from '../workers/pool.js';
 
 const logger = createLogger('recruitai.server');
 
@@ -121,6 +122,14 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
 
   if (bodyParserError?.type === 'entity.too.large') {
     res.status(413).json({ detail: 'Request body too large.' });
+    return;
+  }
+
+  // Worker-pool backpressure: CPU work is bounded, so overload is a transient
+  // capacity error rather than a bug. Tell the client to retry shortly.
+  if (error instanceof WorkerPoolOverloadedError) {
+    res.setHeader('Retry-After', '5');
+    res.status(503).json({ detail: error.message });
     return;
   }
 

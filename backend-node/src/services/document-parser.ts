@@ -11,8 +11,9 @@ import {
 
 import { getConfig, type AppConfig } from '../config/index.js';
 import { invokeGemini, type GeminiInvoker } from '../llm/gemini.js';
-import { getNextModelOrder, extractText } from '../llm/router.js';
+import { getDefaultCircuitBreaker, getNextModelOrderAsync, extractText } from '../llm/router.js';
 import { createLogger } from '../telemetry/logger.js';
+import { getWorkerPool } from '../workers/pool.js';
 import { cleanControlChars } from './parsing-utils.js';
 
 /**
@@ -430,7 +431,7 @@ export async function parseImage(
     const invoker = options.invoker ?? invokeGemini;
     const data = imageBytes.toString('base64');
 
-    for (const model of getNextModelOrder()) {
+    for (const model of await getNextModelOrderAsync(undefined, getDefaultCircuitBreaker(config))) {
       try {
         const response = await invoker({
           model,
@@ -460,6 +461,30 @@ export async function parseImage(
 
 /** Unified entry point for `.pdf`, `.docx`/`.doc`, `.txt`, `.png`, `.jpg`, `.jpeg`. */
 export async function parseDocument(
+  fileInput: DocumentInput,
+  filename = '',
+  options: ImageParseOptions = {},
+): Promise<string> {
+  const config = options.config ?? getConfig();
+  const extension = filename ? extname(filename).toLowerCase() : '';
+  const isImage = extension === '.png' || extension === '.jpg' || extension === '.jpeg';
+  // Vision extraction is an upstream call, not CPU work; keep it on the request
+  // thread so it cannot occupy a worker slot.
+  if (options.invoker === undefined && !isImage && config.workers.enabled) {
+    const pool = getWorkerPool(config.workers);
+    if (pool) {
+      const input = typeof fileInput === 'string' ? fileInput : new Uint8Array(fileInput);
+      return pool.run<string>('parseDocument', { input, filename });
+    }
+  }
+  return parseDocumentInline(fileInput, filename, options);
+}
+
+/**
+ * Inline implementation used by the worker (and by tests/local development).
+ * Keeping it separate avoids recursive worker dispatch.
+ */
+export async function parseDocumentInline(
   fileInput: DocumentInput,
   filename = '',
   options: ImageParseOptions = {},

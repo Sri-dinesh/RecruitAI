@@ -144,6 +144,35 @@ export interface CorsConfig {
 export interface TelemetryConfig {
   /** Python has no telemetry env toggles; metrics are always enabled. */
   readonly enabled: true;
+  /** Warn when the event-loop delay p99 exceeds this many milliseconds. */
+  readonly eventLoopLagWarnMs: number;
+}
+
+/**
+ * CPU offloading (Phase 21).
+ *
+ * PDF/DOCX extraction, deterministic resume parsing and PDF report generation
+ * run in a bounded `worker_threads` pool when enabled. Production turns this on
+ * by default; tests and local development keep inline execution unless
+ * `WORKER_POOL_ENABLED=true` is set, so the same code paths stay deterministic.
+ */
+export interface WorkersConfig {
+  readonly enabled: boolean;
+  /** Maximum concurrent worker threads. */
+  readonly size: number;
+  /** Maximum queued tasks before admission is rejected with 503. */
+  readonly maxQueue: number;
+}
+
+/**
+ * Chat streaming admission control (Phase 21).
+ *
+ * The cap is per instance: each replica may hold this many concurrent SSE
+ * responses. Once reached the route returns `429` with `Retry-After` instead of
+ * letting long-lived streams exhaust file descriptors.
+ */
+export interface ChatConfig {
+  readonly maxSseConnections: number;
 }
 
 /** Structured log verbosity (Phase 19). */
@@ -226,6 +255,8 @@ export interface AppConfig {
   readonly cors: CorsConfig;
   readonly jobs: JobsConfig;
   readonly retention: RetentionConfig;
+  readonly workers: WorkersConfig;
+  readonly chat: ChatConfig;
   readonly telemetry: TelemetryConfig;
   readonly logging: LoggingConfig;
   readonly rateLimit: RateLimitConfig;
@@ -341,7 +372,18 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       rawResumeTtlDays: readNonNegativeIntStrict(env, 'RETENTION_RAW_RESUME_TTL_DAYS', 90),
       chatTtlDays: readNonNegativeIntStrict(env, 'RETENTION_CHAT_TTL_DAYS', 365),
     },
-    telemetry: { enabled: true },
+    workers: {
+      enabled: readBoolean(env, 'WORKER_POOL_ENABLED', isProduction),
+      size: readPositiveIntStrict(env, 'WORKER_POOL_SIZE', 2),
+      maxQueue: readPositiveIntStrict(env, 'WORKER_POOL_MAX_QUEUE', 100),
+    },
+    chat: {
+      maxSseConnections: readPositiveIntStrict(env, 'CHAT_MAX_SSE_CONNECTIONS', 200),
+    },
+    telemetry: {
+      enabled: true,
+      eventLoopLagWarnMs: readPositiveIntStrict(env, 'EVENT_LOOP_LAG_WARN_MS', 200),
+    },
     logging: {
       level: readEnumStrict(env, 'LOG_LEVEL', LOG_LEVELS, 'info'),
     },

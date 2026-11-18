@@ -91,6 +91,9 @@ describe('config defaults (development)', () => {
       chatTtlDays: 365,
     });
     assert.equal(config.telemetry.enabled, true);
+    assert.equal(config.telemetry.eventLoopLagWarnMs, 200);
+    assert.deepEqual(config.workers, { enabled: false, size: 2, maxQueue: 100 });
+    assert.deepEqual(config.chat, { maxSseConnections: 200 });
     assert.equal(config.logging.level, 'info');
     assert.deepEqual(config.rateLimit, {
       enabled: false,
@@ -325,6 +328,37 @@ describe('parsing quirks', () => {
       'non-negative integer',
     );
     assertThrowsWith(() => loadConfig({ RETENTION_JOB_INTERVAL_SECONDS: '0' }), 'positive integer');
+  });
+
+  it('enables the worker pool by default only in production', () => {
+    assert.equal(loadConfig({}).workers.enabled, false);
+    assert.equal(loadConfig(productionEnv()).workers.enabled, true);
+    assert.equal(
+      loadConfig(productionEnv({ WORKER_POOL_ENABLED: 'false' })).workers.enabled,
+      false,
+    );
+    assert.equal(loadConfig({ WORKER_POOL_ENABLED: 'true' }).workers.enabled, true);
+  });
+
+  it('parses worker, SSE and event-loop bounds', () => {
+    const config = loadConfig({
+      WORKER_POOL_SIZE: '4',
+      WORKER_POOL_MAX_QUEUE: '25',
+      CHAT_MAX_SSE_CONNECTIONS: '50',
+      EVENT_LOOP_LAG_WARN_MS: '500',
+    });
+    assert.deepEqual(config.workers, { enabled: false, size: 4, maxQueue: 25 });
+    assert.equal(config.chat.maxSseConnections, 50);
+    assert.equal(config.telemetry.eventLoopLagWarnMs, 500);
+
+    for (const key of [
+      'WORKER_POOL_SIZE',
+      'WORKER_POOL_MAX_QUEUE',
+      'CHAT_MAX_SSE_CONNECTIONS',
+      'EVENT_LOOP_LAG_WARN_MS',
+    ]) {
+      assertThrowsWith(() => loadConfig({ [key]: '0' }), 'positive integer');
+    }
   });
 });
 

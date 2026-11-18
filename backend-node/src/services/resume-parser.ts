@@ -1,5 +1,7 @@
+import { getConfig } from '../config/index.js';
 import type { Candidate } from '../schemas/candidate.js';
 import { parseJsonSafely } from '../llm/router.js';
+import { getWorkerPool } from '../workers/pool.js';
 import { extractContactInfo } from './document-parser.js';
 import {
   dedupe,
@@ -103,6 +105,25 @@ const RESUME_SYSTEM_INSTRUCTION =
 
 /** Parse raw resume text into a populated `Candidate`. */
 export async function parseStructuredResume(
+  rawText: string,
+  filename = '',
+  llmFunc?: ResumeLlmFunc,
+): Promise<Candidate> {
+  const config = getConfig();
+  if (llmFunc === undefined && config.workers.enabled) {
+    const pool = getWorkerPool(config.workers);
+    if (pool) {
+      return pool.run<Candidate>('parseStructuredResume', { rawText, filename });
+    }
+  }
+  return parseStructuredResumeInline(rawText, filename, llmFunc);
+}
+
+/**
+ * Deterministic implementation used by the worker and by callers that supply an
+ * LLM refinement function (which is not structured-cloneable).
+ */
+export async function parseStructuredResumeInline(
   rawText: string,
   filename = '',
   llmFunc?: ResumeLlmFunc,

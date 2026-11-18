@@ -1,5 +1,8 @@
 import PDFDocument from 'pdfkit';
 
+import { getConfig } from '../config/index.js';
+import { getWorkerPool } from '../workers/pool.js';
+
 /**
  * Port of `backend/app/services/report_generator.py`.
  *
@@ -298,6 +301,23 @@ function formatMoney(value: unknown): string {
 
 /** Compile the executive dossier. Resolves with the complete PDF bytes. */
 export async function generateRecruitmentReport(
+  options: RecruitmentReportOptions = {},
+): Promise<Buffer> {
+  const config = getConfig();
+  if (config.workers.enabled) {
+    const pool = getWorkerPool(config.workers);
+    if (pool) {
+      const bytes = await pool.run<Uint8Array>('renderReport', options);
+      return Buffer.from(bytes);
+    }
+  }
+  return renderRecruitmentReport(options);
+}
+
+/**
+ * Inline PDF renderer used by the worker and by local development/test runs.
+ */
+export async function renderRecruitmentReport(
   options: RecruitmentReportOptions = {},
 ): Promise<Buffer> {
   const jd = asRecord(options.jd);
