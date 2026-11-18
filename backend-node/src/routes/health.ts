@@ -6,6 +6,8 @@ import {
   type WorkspaceQueryStore,
 } from '../db/workspace-query-store.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isDraining } from '../lifecycle.js';
+import { getSharedRedisStore } from '../redis/client.js';
 
 /**
  * Public liveness and authenticated readiness probes, ported from
@@ -115,6 +117,9 @@ export function createReadinessRouter(options: ReadinessRouterOptions): Router {
   const readiness: RequestHandler = async (_req, res) => {
     let overallHealthy = true;
     let degraded = false;
+    if (isDraining()) {
+      overallHealthy = false;
+    }
     const services: {
       database: DatabaseService;
       llm: LlmService;
@@ -149,6 +154,15 @@ export function createReadinessRouter(options: ReadinessRouterOptions): Router {
         error_type: errorType(error),
         latency_ms: roundMs(performance.now() - dbStarted),
       };
+    }
+
+    // 2. Fleet state (Redis). The response shape stays identical; a failed
+    // ping makes the whole probe unhealthy so traffic drains away.
+    if (options.config.jobs.redisUrl) {
+      const store = getSharedRedisStore();
+      if (!store || !(await store.ping())) {
+        overallHealthy = false;
+      }
     }
 
     // 2. LLM provider configuration. The key itself is never returned.

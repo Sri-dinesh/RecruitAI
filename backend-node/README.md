@@ -43,7 +43,8 @@ running service and is untouched until cutover.
 | Phase 18 — tests, parity, cutover     | ✅ complete                              |
 | Phase 19 — deploy + hardening         | ✅ complete                              |
 | Phase 20 — stabilization probe        | ✅ tooling complete (soak after cutover) |
-| Phases 21–24                          | pending (see `../Backend-Migration.md`)  |
+| Phase 21 — stateless core             | ✅ complete                              |
+| Phases 22–24                          | pending (see `../Backend-Migration.md`)  |
 
 ## Commands
 
@@ -177,6 +178,56 @@ Production gates (fail-fast at boot, before the server listens):
 Credit-exhaustion responses use the frozen 402 contract in
 `src/types/errors.ts` (`INSUFFICIENT_CREDITS`, message, `upgrade_url:
 "/pricing"`), including the route-specific evaluation/outreach variants.
+
+## Stateless application core (Phase 21)
+
+Every piece of process-local state that affected visible behavior moved into
+Redis, so N identical replicas can sit behind a load balancer:
+
+| State                    | Module                                       | Redis layout                                                               |
+| :----------------------- | :------------------------------------------- | :------------------------------------------------------------------------- |
+| Async chat jobs / SSE    | `jobs/redis-job-manager.ts`                  | TTL'd job hashes, capped event list, per-job pub/sub, per-user Lua counter |
+| Tavily / salary / trends | `cache/ttl-cache.ts` + `services/tavily`     | JSON DTOs under `recruitai:cache:*` with the same TTLs                     |
+| LLM circuit breakers     | `llm/router.ts` (`RedisModelCircuitBreaker`) | `recruitai:breaker:<model>` counters/state with a Lua transition script    |
+| HTTP rate limit          | `middleware/rate-limit.ts`                   | `recruitai:rl:http:*` atomic `INCR` + `PEXPIRE` fixed window               |
+| Reset throttle           | `services/reset-throttle.ts`                 | `recruitai:rl:reset:*` one `SET NX PX` claim per tenant                    |
+| Retention sweeps         | `jobs/retention-scheduler.ts`                | `recruitai:lock:retention` distributed lock; non-owners skip the tick      |
+
+`src/redis/client.ts` is the single client module: namespaced `key()`, raw and
+JSON accessors, `ping()`, `increment()`, `claimTtl()`, and token-checked locks.
+`getSharedRedisStore()` returns `null` when `REDIS_URL` is unset, and every
+consumer then uses its in-memory implementation. Those fallbacks exist for
+local development and tests only; they are not a multi-replica mode.
+
+New configuration (all strict):
+
+- `WORKER_POOL_ENABLED` defaults to `true` when `ENVIRONMENT=production` and
+  `false` otherwise. `WORKER_POOL_SIZE` defaults to `2` and
+  `WORKER_POOL_MAX_QUEUE` to `100`.
+- `CHAT_MAX_SSE_CONNECTIONS` defaults to `200` per instance.
+- `EVENT_LOOP_LAG_WARN_MS` defaults to `200`; the monitor samples every 10 s
+  and warns when the event-loop p99 exceeds it.
+- `SHUTDOWN_DRAIN_MS` (default `10000`) and `SHUTDOWN_SSE_GRACE_MS` (default
+  `2000`) bound graceful shutdown.
+
+Behavior changes are additive only:
+
+- PDF/DOCX extraction, deterministic resume parsing and PDF report generation
+  run in a bounded `worker_threads` pool when enabled. LLM refinement callbacks
+  stay on the request thread, so inline execution is still used whenever a
+  test or caller injects one.
+- Worker queue overflow returns `503` with `Retry-After: 5`. SSE admission
+  overflow returns `429` with `Retry-After: 5` and the existing `{ detail }`
+  error shape. Success payloads and SSE frames are unchanged.
+- `/api/metrics` keeps the same JSON body; the `text/plain` Accept variant now
+  comes from a `prom-client` registry with the same `recruitai_*` names.
+- With `REDIS_URL` configured, readiness fails (`503`) when Redis cannot be
+  pinged. The response shape does not change.
+- `SIGTERM`/`SIGINT` switches to draining: readiness reports unhealthy,
+  retention and the event-loop monitor stop, SSE streams get a short grace
+  period, remaining sockets are force-closed at the drain deadline, BullMQ is
+  paused/closed, worker threads and Redis connections are released, then the
+  process exits `0`.
 
 ## Auth and request identity
 
@@ -1061,8 +1112,9 @@ deploy.
   after CORS so browsers can read it and before parsing so abuse is cheap;
 - bounded memory: expired windows are pruned and the oldest is evicted at
   10,000 tracked keys;
-- per process, not a distributed quota. Phase 22 can move fleet-wide limits to
-  Redis if needed.
+- fleet-wide when `REDIS_URL` is configured (one atomic `INCR` + `PEXPIRE`
+  key); without Redis the same fixed window is enforced per process and is a
+  development fallback only.
 
 ### Log and metric export
 
@@ -1190,9 +1242,9 @@ configuration, bringing the suite to **840 tests / 202 suites**.
 3. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-4. **Rate limit**: per-process fixed-window limiter (Phase 19), enabled by
-   default only in production. Runs after CORS so a browser can read the 429,
-   and before parsing so rejected requests are cheap.
+4. **Rate limit**: fixed-window limiter (Phase 19), fleet-wide through Redis
+   when configured, enabled by default only in production. Runs after CORS so a
+   browser can read the 429, and before parsing so rejected requests are cheap.
 5. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
    mounted before the JSON parser so HMAC verification uses the exact bytes.
 6. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
@@ -1225,7 +1277,9 @@ existing 15 MB per-file / 10 files-per-batch limits.
 
 Bootstrap (`src/main.ts`) also starts the Phase 16 retention scheduler after
 the app is created. `start()` is a no-op unless `RETENTION_JOB_ENABLED=true`,
-and the timer is stopped when the HTTP server closes.
+and the timer is stopped on shutdown. Phase 21 adds the event-loop monitor,
+worker-pool lifecycle and the `SIGTERM`/`SIGINT` drain described in
+[Stateless application core](#stateless-application-core-phase-21).
 
 Intentionally absent: security headers, trusted-host checks, and timing
 middleware. Do not add them without marking them as new hardening and keeping
@@ -1317,6 +1371,7 @@ intentionally differs from the FastAPI contracts; changes require explicit revie
 - No commits are made automatically; branch: `feat/backend-express-migration`.
 - Python backend stays runnable during the whole migration for parity checks.
 - Scale architecture (Redis jobs/SSE, pooling, rate limits) is specified in
-  Phases 21–24 of `../Backend-Migration.md`. Phase 14 already ships the
-  Redis/BullMQ job path; `ChatJobManager.close()` exists so Phase 21's graceful
-  shutdown can drain workers and streams on `SIGTERM`.
+  Phases 21–24 of `../Backend-Migration.md`. Phase 21 ships the stateless core:
+  Redis-backed jobs/SSE, caches, breakers, limits and locks, plus worker-thread
+  offloading and `SIGTERM` drain; in-memory implementations remain for local
+  development and tests.

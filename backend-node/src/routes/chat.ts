@@ -22,6 +22,7 @@ import {
 } from '../services/campaign-service.js';
 import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
+import { sseRegistry, type SseRegistry } from './sse-registry.js';
 
 const logger = createLogger('recruitai.routes_chat');
 
@@ -47,7 +48,13 @@ export interface ChatRouterOptions {
   readonly jobManager?: ChatJobManager;
   /** Pre-built auth middleware (the API router shares one instance). */
   readonly auth?: RequestHandler;
+  /** Per-instance SSE admission registry (tests). */
+  readonly sseRegistry?: SseRegistry;
 }
+
+/** `Retry-After` for admission rejection; short enough for a stream to finish. */
+export const SSE_RETRY_AFTER_SECONDS = 5;
+export const SSE_CAPACITY_DETAIL = 'Too many active chat streams. Please retry shortly.';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -166,6 +173,13 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
       throw new HttpError(404, 'Agent job not found.');
     }
 
+    const lease = (options.sseRegistry ?? sseRegistry).acquire(config.chat.maxSseConnections);
+    if (!lease) {
+      res.setHeader('Retry-After', String(SSE_RETRY_AFTER_SECONDS));
+      res.status(429).json({ detail: SSE_CAPACITY_DETAIL });
+      return;
+    }
+
     res.status(200);
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -173,8 +187,11 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const controller = new AbortController();
-    const onClose = (): void => controller.abort();
+    const controller = lease.controller;
+    const onClose = (): void => {
+      controller.abort();
+      lease.release();
+    };
     req.on('close', onClose);
 
     try {
@@ -190,6 +207,7 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
       );
     } finally {
       req.off('close', onClose);
+      lease.release();
       if (!res.writableEnded) {
         res.end();
       }

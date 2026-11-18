@@ -231,10 +231,12 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    curl -s -H "Authorization: Bearer $ADMIN_JWT" \
      https://<backend-host>/api/metrics | jq '.red_metrics.requests_total // .red_metrics'
    ```
-2. Determine the client key. The limiter is per process and per client IP
-   (`req.ip`). If `TRUST_PROXY=true`, the key comes from `X-Forwarded-For`;
-   if the proxy does not overwrite that header, every client shares the proxy
-   address and legitimate traffic will be throttled together.
+2. Determine the client key. The limiter key is the client IP (`req.ip`). When
+   `REDIS_URL` is configured the fixed window is shared by every replica, so a
+   `429` means the fleet-wide ceiling was reached, not the local process. If
+   `TRUST_PROXY=true`, the key comes from `X-Forwarded-For`; if the proxy does
+   not overwrite that header, every client shares the proxy address and
+   legitimate traffic will be throttled together.
 3. Compare `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` against the
    observed request rate for the window. A page load with several parallel
    calls counts once per request, not once per session.
@@ -255,6 +257,78 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
 4. `RATE_LIMIT_ENABLED=false` is an emergency-only change; it removes the
    global abuse guard and preflight reports it as a warning. Re-enable after
    the incident.
+
+---
+
+## Runbook 7: Redis Outage, Worker Overload, SSE Capacity and Shutdown Drain
+
+Phase 21 moved fleet-wide state into Redis and CPU-heavy work onto worker
+threads. These are the operational failure modes that look different from a
+plain HTTP 5xx.
+
+### Symptoms
+
+- Readiness returns `503` with `services.redis` missing (the payload shape is
+  unchanged) while `/api/health` still answers `200`.
+- Logs repeat `[redis] ping failed` or `Redis window failed; using local
+  fallback`; rate limits, Tavily cache hits and circuit state become
+  per-instance.
+- `[event_loop] p99 delay ... exceeds ...ms` appears while request latency
+  climbs and CPU sits on the request thread.
+- Chat stream requests return `429` with
+  `{"detail":"Too many active chat streams. Please retry shortly."}` and
+  `Retry-After: 5`.
+- During a deploy, `SIGTERM` logs a drain message and readiness flips to `503`
+  before the process exits.
+
+### Immediate Diagnostics
+
+1. Check Redis reachability and readiness detail:
+   ```bash
+   redis-cli -u "$REDIS_URL" ping
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     https://<backend-host>/api/health/ready | jq '{status, services}'
+   ```
+   A configured `REDIS_URL` that fails `PING` makes readiness unhealthy on
+   purpose, so the load balancer drains the instance instead of serving with
+   split state.
+2. Inspect key families and TTLs (never delete `recruitai:jobs*` while jobs are
+   running):
+   ```bash
+   redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:*' | head -50
+   redis-cli -u "$REDIS_URL" pttl recruitai:lock:retention
+   ```
+3. Confirm worker offloading is active:
+   ```bash
+   grep '\[worker_pool\] started' <platform-logs>
+   grep '\[event_loop\]' <platform-logs> | tail
+   ```
+   If `WORKER_POOL_ENABLED=false` in production, a large upload can block the
+   event loop for every request on that instance.
+4. Count active SSE streams per instance from the logs or a process metric;
+   the cap is `CHAT_MAX_SSE_CONNECTIONS` (default `200`) per replica.
+
+### Mitigation
+
+1. **Redis outage:** restore Redis first. The process keeps serving with local
+   fallbacks, but retention sweeps skip (the lock cannot be acquired), the
+   reset throttle and HTTP limiter become per-instance, and jobs stay in
+   whichever instance accepted them unless BullMQ mode was already configured.
+   Do not scale out during the outage; scale-in or hold traffic until Redis is
+   healthy again.
+2. **Worker overload:** raise `WORKER_POOL_SIZE` (bounded by CPU) or
+   `WORKER_POOL_MAX_QUEUE`, and scale replicas. Overflow is a deliberate `503`
+   + `Retry-After: 5`, not a crash; check whether a single large document is
+   monopolising a worker before raising limits.
+3. **SSE capacity:** treat a sustained `429` as a capacity signal. Add replicas
+   or raise `CHAT_MAX_SSE_CONNECTIONS` only after confirming file-descriptor
+   headroom. Stale streams are released on client disconnect and aborted after
+   the shutdown grace period.
+4. **Slow drain / stuck deploy:** `SHUTDOWN_DRAIN_MS` (default `10000`) forces
+   remaining sockets closed; `SHUTDOWN_SSE_GRACE_MS` (default `2000`) aborts
+   streams first. If a deploy exceeds the orchestrator's termination grace,
+   lower the drain values rather than killing the process, so BullMQ can
+   release active jobs to another replica.
 
 ---
 

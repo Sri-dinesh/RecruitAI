@@ -92,9 +92,14 @@ Stable metric names (do not rename without updating alerting):
 - Sensitive actions emit `[AUDIT]` records with `audit_action`:
   `GDPR_ERASURE`, `GDPR_ACCOUNT_ERASURE`, and `WORKSPACE_RESET`. Payment changes
   remain auditable through the `credit_transactions` ledger.
-- Metrics are process-local in both backends (Python parity). With multiple
-  replicas, scrape every pod (or aggregate at the gateway) rather than assuming
-  a single global counter.
+- Metrics are exported per instance through a `prom-client` registry (Phase 21)
+  with the same metric names as Python, so Prometheus can sum/rate across
+  replicas without a contract change. The JSON `/api/metrics` summary remains
+  the in-process view used by `npm run stabilize`; aggregate at the gateway
+  when you need fleet totals. Fleet-wide state (jobs, Tavily cache, circuit
+  breakers, rate limits, reset throttle, retention lock) lives in Redis when
+  `REDIS_URL` is configured; the in-memory implementations are development
+  fallbacks only.
 
 ### Migration stabilization watchlist (Phase 20)
 

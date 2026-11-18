@@ -66,7 +66,8 @@ export interface RedisQueuePort {
 
 export interface RedisWorkerPort {
   onError(listener: (error: unknown) => void): void;
-  close(): Promise<void>;
+  pause?(doNotWaitActive?: boolean): Promise<void>;
+  close(force?: boolean): Promise<void>;
 }
 
 export interface RedisJob {
@@ -188,7 +189,8 @@ export function createBullMqBackend(options: RedisJobBackendOptions): RedisJobBa
       onError: (listener) => {
         worker.on('error', listener);
       },
-      close: () => worker.close(),
+      pause: (doNotWaitActive) => worker.pause(doNotWaitActive),
+      close: (force) => worker.close(force),
     },
   };
 }
@@ -594,6 +596,39 @@ export class RedisChatJobManager implements ChatJobManager {
     const errors: unknown[] = [];
     for (const close of [
       () => this.backend.worker.close(),
+      () => this.backend.queue.close(),
+      () => this.backend.subscriber.quit(),
+      () => this.backend.redis.quit(),
+    ]) {
+      try {
+        await close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) {
+      logger.warn(`[ChatJobManager] Failed to close Redis resources: ${errors.length} error(s)`);
+    }
+  }
+
+  /**
+   * Graceful shutdown. Pausing first stops the worker from taking new jobs;
+   * active jobs finish before the worker closes. With `force`, BullMQ releases
+   * active jobs so its stalled checker re-queues them on another instance.
+   */
+  async shutdown(options: { readonly force?: boolean } = {}): Promise<void> {
+    try {
+      await this.backend.worker.pause?.();
+    } catch (error) {
+      logger.warn(`[ChatJobManager] Failed to pause the BullMQ worker: ${errorMessage(error)}`);
+    }
+    try {
+      await this.backend.worker.close(options.force === true);
+    } catch (error) {
+      logger.warn(`[ChatJobManager] Failed to close the BullMQ worker: ${errorMessage(error)}`);
+    }
+    const errors: unknown[] = [];
+    for (const close of [
       () => this.backend.queue.close(),
       () => this.backend.subscriber.quit(),
       () => this.backend.redis.quit(),

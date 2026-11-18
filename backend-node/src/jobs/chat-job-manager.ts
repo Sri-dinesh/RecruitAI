@@ -49,7 +49,13 @@ export interface ChatJobManager {
     userId: string,
     signal?: AbortSignal,
   ): AsyncGenerator<string, void, void>;
+  /** Normal close (tests/CLI); production uses `shutdown` for draining. */
   close(): Promise<void>;
+  /**
+   * Graceful drain: stop fetching new work, let active jobs finish (or force
+   * close so BullMQ's stalled check re-queues them), then release connections.
+   */
+  shutdown?(options?: { readonly force?: boolean }): Promise<void>;
 }
 
 /** Raised when a job id is missing or belongs to another tenant. */

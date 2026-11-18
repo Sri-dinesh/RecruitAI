@@ -198,6 +198,10 @@ export class InMemoryChatJobManager implements ChatJobManager {
     this.jobs.clear();
   }
 
+  async shutdown(): Promise<void> {
+    await this.close();
+  }
+
   /** Resolve when a new event is appended, the job terminates or the client leaves. */
   private waitForEvent(job: InternalJob, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
