@@ -176,8 +176,9 @@ export class AnalyticsService {
   }
 
   private getStore(): WorkspaceQueryStore {
+    // Analytics is the heavy read surface: use the replica when configured.
     this.store ??= createWorkspaceQueryStore(
-      this.config === undefined ? {} : { config: this.config },
+      this.config === undefined ? { readOnly: true } : { config: this.config, readOnly: true },
     );
     return this.store;
   }

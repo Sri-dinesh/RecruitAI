@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gte, inArray, lt, or, type SQL } from 'drizzle-orm';
 
 import { getConfig, type AppConfig } from '../config/index.js';
-import { getDb, type Database } from './client.js';
+import { getDb, getReadDb, type Database } from './client.js';
 import { getFallbackDatabase, type FallbackDatabase } from './fallback.js';
 import {
   applications,
@@ -1383,6 +1383,12 @@ export interface WorkspaceQueryStoreOptions {
   readonly db?: Database;
   /** Explicit SQLite fallback handle (tests). */
   readonly fallback?: FallbackDatabase;
+  /**
+   * Route PostgreSQL reads to `DATABASE_READ_URL` when configured. Only
+   * analytics and report generation set this; any store that writes must use
+   * the primary.
+   */
+  readonly readOnly?: boolean;
 }
 
 /**
@@ -1401,7 +1407,7 @@ export function createWorkspaceQueryStore(
   }
   const config = options.config ?? getConfig();
   return config.database.url
-    ? createDrizzleWorkspaceQueryStore(getDb())
+    ? createDrizzleWorkspaceQueryStore(options.readOnly ? getReadDb() : getDb())
     : createSqliteWorkspaceQueryStore(getFallbackDatabase());
 }
 

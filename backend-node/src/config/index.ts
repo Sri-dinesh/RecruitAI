@@ -109,17 +109,61 @@ export interface SupabaseConfig {
  * PostgREST. `url` must therefore be a Postgres connection string
  * (`postgresql://user:pass@host:port/db`), not the Supabase project URL.
  *
- * Pool math (expanded in Phase 22): every Node instance opens at most
- * `poolMax` connections, so `poolMax × instance count` must stay below the
- * Supabase Supavisor/PgBouncer transaction-pool ceiling. Default 10.
+ * Pool math (Phase 22):
+ *
+ *   (poolMax + readPoolMax) × instance count + non-HTTP workers <= DB ceiling
+ *
+ * Every Node instance opens at most `poolMax` primary connections and
+ * `readPoolMax` replica connections. Both must stay below the Supabase
+ * Supavisor/PgBouncer transaction-pool ceiling for the project plan (the
+ * pooler's `default_pool_size` per user/database pair), leaving headroom for
+ * migrations, `psql` sessions and the retention CLI. Defaults: 10 primary and
+ * 10 read; for example 4 instances × (10 + 10) = 80 connections.
  */
 export interface DatabaseConfig {
   readonly url: string | undefined;
   readonly poolMax: number;
   readonly idleTimeoutMs: number;
   readonly connectionTimeoutMs: number;
+  /** Optional read-replica/pooler URL for analytics reads. */
+  readonly readUrl: string | undefined;
+  /** Bounded pool size for the read replica; defaults to `poolMax`. */
+  readonly readPoolMax: number;
+  /** `statement_timeout` applied to every session (milliseconds). */
+  readonly statementTimeoutMs: number;
+  /** `idle_in_transaction_session_timeout` applied to every session (milliseconds). */
+  readonly idleInTransactionTimeoutMs: number;
+  /** Upper bound for a single explicit transaction (milliseconds). */
+  readonly transactionTimeoutMs: number;
+  /** Keyset batch size for retention/erasure/administrative sweeps. */
+  readonly sweepBatchSize: number;
+  /** Maximum rows per multi-row INSERT round trip. */
+  readonly insertBatchSize: number;
+  /** Hard cap applied to every list query, even when a caller asks for more. */
+  readonly listMaxLimit: number;
   /** SQLite fallback file used only outside production, as in Python. */
   readonly fallbackPath: string;
+}
+
+/**
+ * Fleet-wide hot-read caching (Phase 22).
+ *
+ * Only derived/read-optimisation state is cached: subscription status, credits
+ * balance and analytics snapshots. The credit ledger is never served from
+ * cache — deduct/verify/webhook paths read and write the primary directly, then
+ * invalidate. TTLs are deliberately short so a missed invalidation self-heals.
+ */
+export interface CacheConfig {
+  readonly hotReadsEnabled: boolean;
+  readonly creditsTtlSeconds: number;
+  readonly subscriptionTtlSeconds: number;
+  readonly analyticsTtlSeconds: number;
+}
+
+/** Payment idempotency window (Phase 22). */
+export interface PaymentsConfig {
+  /** How long a processed verify/webhook key blocks a replay. Default 24 h. */
+  readonly idempotencyTtlSeconds: number;
 }
 
 export interface SmtpConfig {
@@ -257,6 +301,8 @@ export interface AppConfig {
   readonly retention: RetentionConfig;
   readonly workers: WorkersConfig;
   readonly chat: ChatConfig;
+  readonly cache: CacheConfig;
+  readonly payments: PaymentsConfig;
   readonly telemetry: TelemetryConfig;
   readonly logging: LoggingConfig;
   readonly rateLimit: RateLimitConfig;
@@ -300,6 +346,9 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
   const username = readString(env, 'SMTP_USERNAME');
   const port = readIntStrict(env, 'PORT', 8000);
 
+  // Parsed first so the read pool can default to the primary pool size.
+  const poolMax = readPositiveIntStrict(env, 'PG_POOL_MAX', 10);
+
   const allowedOrigins = readCsvList(env, 'ALLOWED_ORIGINS') ?? [...DEFAULT_ALLOWED_ORIGINS];
 
   const config: AppConfig = {
@@ -337,9 +386,23 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       // Direct Postgres connection string. `SUPABASE_DB_URL` is accepted as a
       // fallback because that is the name Supabase's dashboard exposes.
       url: readString(env, 'DATABASE_URL') ?? readString(env, 'SUPABASE_DB_URL'),
-      poolMax: readPositiveIntStrict(env, 'PG_POOL_MAX', 10),
+      poolMax,
       idleTimeoutMs: readNonNegativeIntStrict(env, 'PG_IDLE_TIMEOUT_MS', 30_000),
       connectionTimeoutMs: readNonNegativeIntStrict(env, 'PG_CONNECTION_TIMEOUT_MS', 5_000),
+      // `DATABASE_READ_URL` points at a read replica or a replica pooler. When
+      // unset every read stays on the primary, so the code path is identical.
+      readUrl: readString(env, 'DATABASE_READ_URL'),
+      readPoolMax: readPositiveIntStrict(env, 'PG_READ_POOL_MAX', poolMax),
+      statementTimeoutMs: readPositiveIntStrict(env, 'PG_STATEMENT_TIMEOUT_MS', 15_000),
+      idleInTransactionTimeoutMs: readPositiveIntStrict(
+        env,
+        'PG_IDLE_IN_TRANSACTION_TIMEOUT_MS',
+        30_000,
+      ),
+      transactionTimeoutMs: readPositiveIntStrict(env, 'PG_TRANSACTION_TIMEOUT_MS', 10_000),
+      sweepBatchSize: readPositiveIntStrict(env, 'DB_SWEEP_BATCH_SIZE', 500),
+      insertBatchSize: readPositiveIntStrict(env, 'DB_INSERT_BATCH_SIZE', 500),
+      listMaxLimit: readPositiveIntStrict(env, 'DB_LIST_MAX_LIMIT', 1_000),
       fallbackPath: readStringOr(env, 'SQLITE_FALLBACK_PATH', 'recruitai_fallback.db'),
     },
     smtp: {
@@ -379,6 +442,17 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
     },
     chat: {
       maxSseConnections: readPositiveIntStrict(env, 'CHAT_MAX_SSE_CONNECTIONS', 200),
+    },
+    cache: {
+      // Enabled by default; the Redis store is the fleet-wide backend and the
+      // in-memory TTL cache keeps local development dependency-free.
+      hotReadsEnabled: readBoolean(env, 'CACHE_HOT_READS_ENABLED', true),
+      creditsTtlSeconds: readPositiveIntStrict(env, 'CACHE_CREDITS_TTL_SECONDS', 15),
+      subscriptionTtlSeconds: readPositiveIntStrict(env, 'CACHE_SUBSCRIPTION_TTL_SECONDS', 30),
+      analyticsTtlSeconds: readPositiveIntStrict(env, 'CACHE_ANALYTICS_TTL_SECONDS', 30),
+    },
+    payments: {
+      idempotencyTtlSeconds: readPositiveIntStrict(env, 'PAYMENT_IDEMPOTENCY_TTL_SECONDS', 86_400),
     },
     telemetry: {
       enabled: true,
