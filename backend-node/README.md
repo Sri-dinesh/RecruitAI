@@ -147,6 +147,20 @@ Operational retention settings (Phase 16) live under `config.retention` and are
   accept `0` (purge at boot/run time) and are strict non-negative integers;
   invalid values fail at boot.
 
+Data-layer and payment settings (Phase 22):
+
+- `DB_LIST_MAX_LIMIT` defaults to `1000` and clamps every tenant list page
+  (matching PostgREST's implicit cap). `DB_SWEEP_BATCH_SIZE` and
+  `DB_INSERT_BATCH_SIZE` default to `500` for retention sweeps and multi-row
+  inserts.
+- `CACHE_HOT_READS_ENABLED` defaults to `true`;
+  `CACHE_CREDITS_TTL_SECONDS` (15), `CACHE_SUBSCRIPTION_TTL_SECONDS` (30) and
+  `CACHE_ANALYTICS_TTL_SECONDS` (30) bound read staleness. Redis is the
+  fleet-wide cache, memory is the local fallback, and ledger writes never use
+  cached reads.
+- `PAYMENT_IDEMPOTENCY_TTL_SECONDS` defaults to `86400`; verify and webhook
+  claims are stored in `processed_events` for that window.
+
 Logging and hardening settings (Phase 19):
 
 - `LOG_LEVEL` (`debug`/`info`/`warn`/`error`) defaults to `info` and is
@@ -312,22 +326,34 @@ database-side only.
 
 ### PostgreSQL client and pooling
 
-`src/db/client.ts` owns one `pg.Pool` and one Drizzle instance per process:
+`src/db/client.ts` owns one primary `pg.Pool`, an optional read-replica pool and
+one Drizzle instance per pool:
 
-| Env                        | Default | Meaning                                 |
-| -------------------------- | ------- | --------------------------------------- |
-| `DATABASE_URL`             | —       | direct TCP Postgres connection string   |
-| `SUPABASE_DB_URL`          | —       | fallback name when `DATABASE_URL` unset |
-| `PG_POOL_MAX`              | `10`    | max connections per Node instance       |
-| `PG_IDLE_TIMEOUT_MS`       | `30000` | idle connection reaping                 |
-| `PG_CONNECTION_TIMEOUT_MS` | `5000`  | acquire timeout                         |
+| Env                                 | Default       | Meaning                                    |
+| ----------------------------------- | ------------- | ------------------------------------------ |
+| `DATABASE_URL`                      | —             | direct TCP Postgres connection string      |
+| `SUPABASE_DB_URL`                   | —             | fallback name when `DATABASE_URL` unset    |
+| `DATABASE_READ_URL`                 | —             | optional replica for analytics reads       |
+| `PG_POOL_MAX`                       | `10`          | max primary connections per Node instance  |
+| `PG_READ_POOL_MAX`                  | `PG_POOL_MAX` | max replica connections per Node instance  |
+| `PG_IDLE_TIMEOUT_MS`                | `30000`       | idle connection reaping                    |
+| `PG_CONNECTION_TIMEOUT_MS`          | `5000`        | acquire timeout                            |
+| `PG_STATEMENT_TIMEOUT_MS`           | `15000`       | per-session statement cap                  |
+| `PG_IDLE_IN_TRANSACTION_TIMEOUT_MS` | `30000`       | abort sessions idling inside a transaction |
+| `PG_TRANSACTION_TIMEOUT_MS`         | `10000`       | per-session transaction cap                |
 
 `DATABASE_URL` must be a Postgres connection string, not the Supabase project
 URL (that is the PostgREST endpoint). Connections are created lazily on first
 query and reused; nothing opens a connection per request. Pool math:
-`PG_POOL_MAX × instance count` must stay below the Supavisor/PgBouncer
-transaction-pool ceiling (Phase 22 expands this). Invalid pool values fail at
-boot instead of silently changing the connection budget.
+`(PG_POOL_MAX + PG_READ_POOL_MAX) × instance count + worker connections` must
+stay below the Supavisor/PgBouncer transaction-pool ceiling, with 20% headroom.
+Invalid pool values fail at boot instead of silently changing the budget.
+
+Session timeouts are set as libpq startup `options` and re-applied with
+`SET LOCAL` inside `withTransaction()`, so transaction-pooling poolers cannot
+leak a previous tenant's settings. Unset `DATABASE_READ_URL` means analytics
+reads share the primary; an unusable read URL fails readiness rather than
+silently falling back. Payment and ledger paths always use the primary.
 
 Call `closeDatabase()` during graceful shutdown. Missing configuration raises
 the Python-compatible 503 (`Database service configuration missing in production

@@ -156,6 +156,19 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    WHERE state != 'idle'
    ORDER BY duration DESC LIMIT 10;
    ```
+3. Confirm the Phase 22 session settings are applied; every backend connection
+   should show the bounded values and a distinguishable application name:
+   ```sql
+   SELECT application_name, state, count(*)
+   FROM pg_stat_activity
+   WHERE application_name LIKE 'recruitai-backend-node:%'
+   GROUP BY application_name, state;
+   ```
+   `statement_timeout` should read `15s` (or `PG_STATEMENT_TIMEOUT_MS`), and no
+   session should sit in `idle in transaction` past 30 s.
+4. Check the connection budget before scaling: `(PG_POOL_MAX +
+   PG_READ_POOL_MAX) × instances + worker connections` must stay under the
+   Supabase pooler ceiling. `PG_READ_POOL_MAX` defaults to `PG_POOL_MAX`.
 
 ### Mitigation
 
@@ -164,6 +177,13 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle' AND state_change < now() - interval '5 minutes';
    ```
 2. Ensure connection pooling (PgBouncer/Supabase Pooler on port 6543) is enabled.
+3. If analytics scans are saturating the primary, set `DATABASE_READ_URL` and
+   deploy; heavy analytics reads then use the replica pool. Do not point the
+   read URL at a lagging replica during a payment incident — credits always use
+   the primary, but dashboards will show stale totals.
+4. If a lower pool size caused timeouts, prefer raising `PG_POOL_MAX` within the
+   budget above over removing `PG_STATEMENT_TIMEOUT_MS`. Long statements should
+   be fixed (index or keyset sweep), not uncapped.
 
 ---
 
@@ -297,7 +317,11 @@ plain HTTP 5xx.
    ```bash
    redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:*' | head -50
    redis-cli -u "$REDIS_URL" pttl recruitai:lock:retention
+   redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:cache:hot-reads:*' | head
    ```
+   `recruitai:cache:hot-reads:*` holds only credits/subscription/analytics
+   copies with 15–30 s TTLs. Deleting them is safe; payments never read them
+   before a ledger write, so the cost is a cold cache, not a wrong balance.
 3. Confirm worker offloading is active:
    ```bash
    grep '\[worker_pool\] started' <platform-logs>
@@ -418,6 +442,17 @@ runbook above first; stabilization is for drift that is not yet an outage.
    GROUP BY user_id, candidate_id, template_id
    HAVING COUNT(*) > 1;
    ```
+   For payments, confirm the idempotency fence is present and that replays were
+   classified as duplicates:
+   ```sql
+   SELECT kind, COUNT(*)
+   FROM processed_events
+   WHERE created_at > now() - interval '24 hours'
+   GROUP BY kind;
+   ```
+   A redelivered webhook appears once in `processed_events` and the handler
+   returns `"status": "duplicate"`; more than one activation row/ledger entry
+   for the same `razorpay_payment_id` means the fence was bypassed.
 4. Analytics/privacy/outreach contract comparison:
    ```bash
    PYTHON_BASE_URL=https://<python-host> \

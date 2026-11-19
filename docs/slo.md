@@ -101,7 +101,40 @@ Stable metric names (do not rename without updating alerting):
   `REDIS_URL` is configured; the in-memory implementations are development
   fallbacks only.
 
-### Migration stabilization watchlist (Phase 20)
+### Data-layer budgets (Phase 22)
+
+- **Connection math.** Each instance opens one primary pool of `PG_POOL_MAX`
+  (default `10`) and one read pool of `PG_READ_POOL_MAX` (defaults to the
+  primary size). Size the fleet so `(PG_POOL_MAX + PG_READ_POOL_MAX) ×
+  instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
+  least 20% headroom for migrations and operator sessions.
+- **Session timeouts.** Every pooled session starts with
+  `statement_timeout=15000ms`, `idle_in_transaction_session_timeout=30000ms`
+  and `transaction_timeout=10000ms`; `withTransaction()` re-applies the same
+  values with `SET LOCAL` so transaction-pooling poolers cannot leak them.
+  Transactions intentionally exclude LLM, Tavily, SMTP and Razorpay calls.
+- **Read replica.** Set `DATABASE_READ_URL` to route heavy analytics scans to a
+  replica. Unset means reads share the primary; an unusable read URL fails
+  readiness rather than silently falling back. Ledger and payment paths always
+  use the primary.
+- **List bounds.** Tenant list endpoints accept `limit`/`offset` but clamp to
+  `DB_LIST_MAX_LIMIT` (default `1000`), matching the implicit PostgREST cap
+  Python ran under. Retention and tenant sweeps page with keyset cursors and
+  process `DB_SWEEP_BATCH_SIZE` rows per round trip; multi-row inserts chunk at
+  `DB_INSERT_BATCH_SIZE`. Both defaults are `500`.
+- **Hot-read cache.** With `CACHE_HOT_READS_ENABLED=true`, credits
+  (`CACHE_CREDITS_TTL_SECONDS`, default 15), subscription summaries
+  (`CACHE_SUBSCRIPTION_TTL_SECONDS`, default 30) and analytics payloads
+  (`CACHE_ANALYTICS_TTL_SECONDS`, default 30) may be served from Redis. Writes
+  invalidate the tenant's credit/subscription keys after the primary commits.
+  The cache is never consulted before a spend, top-up or ledger insert.
+- **Payment idempotency.** `processed_events` claims one key per Razorpay
+  payment id and one per webhook event id, retained for
+  `PAYMENT_IDEMPOTENCY_TTL_SECONDS` (default 24 h). A duplicate verify or
+  redelivery returns the stored subscription and balance without granting
+  credits again.
+
+
 
 During the cutover soak, `npm run stabilize` evaluates these signals from the
 same metrics contract. Only the 5xx budget is a formal SLO; the rest are
