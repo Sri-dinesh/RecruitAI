@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { WorkspaceStore } from '../db/workspace-store.js';
+import type { ApplicationUpsert, InterviewInsert, WorkspaceStore } from '../db/workspace-store.js';
 import type { Candidate } from '../schemas/candidate.js';
 import type { JobDescription } from '../schemas/jd.js';
 import { createLogger } from '../telemetry/logger.js';
@@ -119,29 +119,48 @@ export async function persistApplications(
     return;
   }
 
+  const records: ApplicationUpsert[] = [];
   for (const candidate of shortlist) {
     const candidateId = candidate.candidate_id;
     if (!candidateId || candidateId.length !== 36) {
       continue;
     }
-    try {
-      await store.upsertApplication({
-        jobId,
-        candidateId,
-        userId,
-        matchScore: candidate.match_score || 0,
-        matchReasoning: {
-          matched_skills: candidate.matched_skills ?? [],
-          gaps: candidate.gaps ?? [],
-          summary: candidate.summary,
-        },
-        status: 'shortlisted',
-      });
-    } catch (error) {
-      logger.warn(
-        `[persistence_service] Failed to persist application for candidate ${candidateId}: ${errorMessage(error)}`,
-        { error_type: errorType(error), candidate_id: candidateId },
-      );
+    records.push({
+      jobId,
+      candidateId,
+      userId,
+      matchScore: candidate.match_score || 0,
+      matchReasoning: {
+        matched_skills: candidate.matched_skills ?? [],
+        gaps: candidate.gaps ?? [],
+        summary: candidate.summary,
+      },
+      status: 'shortlisted',
+    });
+  }
+
+  if (records.length === 0) {
+    return;
+  }
+
+  try {
+    // One multi-row upsert instead of one round trip per candidate.
+    await store.upsertApplications(records);
+  } catch (error) {
+    logger.warn(
+      `[persistence_service] Batched application upsert failed; retrying one by one: ${errorMessage(error)}`,
+      { error_type: errorType(error), candidate_count: records.length },
+    );
+    // Preserve Python's per-candidate best-effort semantics on fallback.
+    for (const record of records) {
+      try {
+        await store.upsertApplication(record);
+      } catch (recordError) {
+        logger.warn(
+          `[persistence_service] Failed to persist application for candidate ${record.candidateId}: ${errorMessage(recordError)}`,
+          { error_type: errorType(recordError), candidate_id: record.candidateId },
+        );
+      }
     }
   }
 }
@@ -163,42 +182,89 @@ export async function persistInterviews(
     return;
   }
 
-  for (const interview of scheduledInterviews) {
+  // Phase 22: resolve names and applications with one IN query each instead
+  // of two lookups per interview, then insert the whole batch in one call.
+  const unresolvedNames = scheduledInterviews
+    .filter((interview) => !asString(interview.candidate_id))
+    .map((interview) => asString(interview.candidate_name) ?? '')
+    .filter((name) => name.length > 0);
+  let nameToId = new Map<string, string>();
+  if (unresolvedNames.length > 0) {
     try {
-      const candidateName = asString(interview.candidate_name) ?? '';
-      let candidateId = asString(interview.candidate_id);
-      if (!candidateId && candidateName) {
-        candidateId = await store.findCandidateIdByName(userId, candidateName);
-      }
-
-      const rawSlot = interview.slot;
-      const slot = typeof rawSlot === 'string' && rawSlot.trim().length > 0 ? rawSlot.trim() : null;
-
-      const duration = asNumber(interview.duration_minutes) || asNumber(interview.duration) || 30;
-      const mode = asString(interview.mode) ?? 'video';
-
-      let applicationId = asString(interview.application_id);
-      if (!applicationId && candidateId && jobId) {
-        applicationId = await store.findApplicationId(userId, candidateId, jobId);
-      }
-
-      await store.insertInterview({
-        candidateId: candidateId ?? null,
-        userId,
-        applicationId: applicationId ?? null,
-        scheduledAt: parseSlot(slot),
-        durationMinutes: duration,
-        mode,
-        status: 'scheduled',
-        feedback: {
-          candidate_name: candidateName,
-          booked_at: interview.booked_at ?? null,
-        },
-      });
+      nameToId = await store.findCandidateIdsByNames(userId, unresolvedNames);
     } catch (error) {
-      logger.warn(`[persistence_service] Failed to persist interview: ${errorMessage(error)}`, {
-        error_type: errorType(error),
-      });
+      logger.warn(
+        `[persistence_service] Failed to resolve interview candidate names: ${errorMessage(error)}`,
+        { error_type: errorType(error) },
+      );
+    }
+  }
+
+  const resolved = scheduledInterviews.map((interview) => {
+    const candidateName = asString(interview.candidate_name) ?? '';
+    const candidateId =
+      asString(interview.candidate_id) ??
+      (candidateName.length > 0 ? nameToId.get(candidateName) : undefined);
+    const rawSlot = interview.slot;
+    const slot = typeof rawSlot === 'string' && rawSlot.trim().length > 0 ? rawSlot.trim() : null;
+    return {
+      candidateName,
+      candidateId,
+      applicationId: asString(interview.application_id),
+      bookedAt: interview.booked_at ?? null,
+      slot,
+      duration: asNumber(interview.duration_minutes) || asNumber(interview.duration) || 30,
+      mode: asString(interview.mode) ?? 'video',
+    };
+  });
+
+  const appLookupIds = resolved
+    .filter((item) => !item.applicationId && item.candidateId && jobId)
+    .map((item) => item.candidateId as string);
+  let appByCandidate = new Map<string, string>();
+  if (appLookupIds.length > 0 && jobId) {
+    try {
+      appByCandidate = await store.findApplicationIds(userId, appLookupIds, jobId);
+    } catch (error) {
+      logger.warn(
+        `[persistence_service] Failed to resolve interview applications: ${errorMessage(error)}`,
+        { error_type: errorType(error) },
+      );
+    }
+  }
+
+  const records: InterviewInsert[] = resolved.map((item) => ({
+    candidateId: item.candidateId ?? null,
+    userId,
+    applicationId:
+      item.applicationId ??
+      (item.candidateId ? (appByCandidate.get(item.candidateId) ?? null) : null),
+    scheduledAt: parseSlot(item.slot),
+    durationMinutes: item.duration,
+    mode: item.mode,
+    status: 'scheduled',
+    feedback: {
+      candidate_name: item.candidateName,
+      booked_at: item.bookedAt,
+    },
+  }));
+
+  try {
+    await store.insertInterviews(records);
+  } catch (error) {
+    logger.warn(
+      `[persistence_service] Batched interview insert failed; retrying one by one: ${errorMessage(error)}`,
+      { error_type: errorType(error), interview_count: records.length },
+    );
+    for (const record of records) {
+      try {
+        await store.insertInterview(record);
+      } catch (recordError) {
+        logger.warn(
+          `[persistence_service] Failed to persist interview: ${errorMessage(recordError)}`,
+          { error_type: errorType(recordError) },
+        );
+      }
     }
   }
 }

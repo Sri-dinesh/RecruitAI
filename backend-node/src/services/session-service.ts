@@ -154,6 +154,7 @@ export class SessionService {
 
       // Expand/contract backfill for legacy candidates that only have metadata
       // links. Python performs the same opportunistic upsert during list.
+      const backfillLinks: Array<{ sessionId: string; candidateId: string }> = [];
       for (const candidate of candidates) {
         const candidateId = candidate['id'];
         if (typeof candidateId !== 'string') {
@@ -168,11 +169,15 @@ export class SessionService {
           const set = existing ?? new Set<string>();
           set.add(candidateId);
           sessionCandidatesMap.set(sessionId, set);
-          try {
-            await store.upsertSessionCandidate(sessionId, candidateId);
-          } catch {
-            // Python swallows backfill failures too; the response still counts it.
-          }
+          backfillLinks.push({ sessionId, candidateId });
+        }
+      }
+      if (backfillLinks.length > 0) {
+        try {
+          // One multi-row insert instead of a round trip per metadata link.
+          await store.upsertSessionCandidates(backfillLinks);
+        } catch {
+          // Python swallows backfill failures too; the response still counts it.
         }
       }
 

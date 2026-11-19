@@ -380,6 +380,7 @@ export class IngestionService {
 
         // Score candidates already belonging to this campaign session.
         const rows = await store.listCandidates(tenantId);
+        const applicationBatch: Array<Parameters<typeof store.upsertApplication>[0]> = [];
         for (const row of rows) {
           const metadata = row.metadata;
           const sessionIds = stringList(metadata.session_ids);
@@ -388,7 +389,7 @@ export class IngestionService {
           }
 
           const scored = evaluateCandidateAgainstJd(candidateFromRecord(row), jd);
-          await store.upsertApplication({
+          applicationBatch.push({
             jobId,
             candidateId: row.id,
             userId: tenantId,
@@ -414,6 +415,8 @@ export class IngestionService {
             metadata,
           });
         }
+        // One multi-row upsert for every scored candidate in the session.
+        await store.upsertApplications(applicationBatch);
       }
     } catch (error) {
       logger.warn(`[ingestion] Warning: Error saving job to DB: ${errorMessage(error)}`);

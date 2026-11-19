@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, type Database } from './client.js';
@@ -125,14 +125,29 @@ export interface WorkspaceStore {
   updateJob(userId: string, jobId: string, patch: JobPatch): Promise<void>;
   insertJob(record: NewJobRecord): Promise<void>;
   upsertApplication(record: ApplicationUpsert): Promise<void>;
+  /** Multi-row upsert over `(job_id, candidate_id)`; one round trip per batch. */
+  upsertApplications(records: readonly ApplicationUpsert[]): Promise<void>;
   findCandidateIdByName(userId: string, fullName: string): Promise<string | undefined>;
+  /** Resolve several names with one `WHERE full_name IN (...)` query. */
+  findCandidateIdsByNames(
+    userId: string,
+    fullNames: readonly string[],
+  ): Promise<Map<string, string>>;
   findApplicationId(
     userId: string,
     candidateId: string,
     jobId: string,
   ): Promise<string | undefined>;
+  /** Resolve application ids for a candidate set with one IN query. */
+  findApplicationIds(
+    userId: string,
+    candidateIds: readonly string[],
+    jobId?: string,
+  ): Promise<Map<string, string>>;
   insertInterview(record: InterviewInsert): Promise<void>;
+  insertInterviews(records: readonly InterviewInsert[]): Promise<void>;
   insertChatMessage(record: ChatMessageInsert): Promise<void>;
+  insertChatMessages(records: readonly ChatMessageInsert[]): Promise<void>;
   updateSession(userId: string, sessionId: string, patch: SessionPatch): Promise<void>;
   /**
    * Link a candidate to a session, but only when both rows belong to the
@@ -191,7 +206,10 @@ function candidateRecord(row: {
 }
 
 /** Primary path: Drizzle queries against PostgreSQL. */
-export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
+export function createDrizzleWorkspaceStore(
+  db: Database,
+  config: AppConfig = getConfig(),
+): WorkspaceStore {
   return {
     async findJobIdByTitle(userId, title) {
       const rows = await db
@@ -242,6 +260,33 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
         });
     },
 
+    async upsertApplications(records) {
+      if (records.length === 0) {
+        return;
+      }
+      await db
+        .insert(applications)
+        .values(
+          records.map((record) => ({
+            jobId: record.jobId,
+            candidateId: record.candidateId,
+            userId: record.userId,
+            matchScore: record.matchScore,
+            matchReasoning: record.matchReasoning,
+            status: record.status,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [applications.jobId, applications.candidateId],
+          set: {
+            userId: sql`excluded.user_id`,
+            matchScore: sql`excluded.match_score`,
+            matchReasoning: sql`excluded.match_reasoning`,
+            status: sql`excluded.status`,
+          },
+        });
+    },
+
     async findCandidateIdByName(userId, fullName) {
       const rows = await db
         .select({ id: candidates.id })
@@ -249,6 +294,24 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
         .where(and(eq(candidates.userId, userId), eq(candidates.fullName, fullName)))
         .limit(1);
       return rows[0]?.id;
+    },
+
+    async findCandidateIdsByNames(userId, fullNames) {
+      const names = [...new Set(fullNames.filter((name) => name.length > 0))];
+      if (names.length === 0) {
+        return new Map();
+      }
+      const rows = await db
+        .select({ id: candidates.id, fullName: candidates.fullName })
+        .from(candidates)
+        .where(and(eq(candidates.userId, userId), inArray(candidates.fullName, names)));
+      const byName = new Map<string, string>();
+      for (const row of rows) {
+        if (!byName.has(row.fullName)) {
+          byName.set(row.fullName, row.id);
+        }
+      }
+      return byName;
     },
 
     async findApplicationId(userId, candidateId, jobId) {
@@ -266,6 +329,28 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
       return rows[0]?.id;
     },
 
+    async findApplicationIds(userId, candidateIds, jobId) {
+      const ids = [...new Set(candidateIds.filter((id) => id.length > 0))];
+      if (ids.length === 0) {
+        return new Map();
+      }
+      const filters = [eq(applications.userId, userId), inArray(applications.candidateId, ids)];
+      if (jobId !== undefined) {
+        filters.push(eq(applications.jobId, jobId));
+      }
+      const rows = await db
+        .select({ id: applications.id, candidateId: applications.candidateId })
+        .from(applications)
+        .where(and(...filters));
+      const byCandidate = new Map<string, string>();
+      for (const row of rows) {
+        if (!byCandidate.has(row.candidateId)) {
+          byCandidate.set(row.candidateId, row.id);
+        }
+      }
+      return byCandidate;
+    },
+
     async insertInterview(record) {
       await db.insert(interviews).values({
         applicationId: record.applicationId,
@@ -279,6 +364,24 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
       });
     },
 
+    async insertInterviews(records) {
+      if (records.length === 0) {
+        return;
+      }
+      await db.insert(interviews).values(
+        records.map((record) => ({
+          applicationId: record.applicationId,
+          candidateId: record.candidateId,
+          userId: record.userId,
+          scheduledAt: record.scheduledAt,
+          durationMinutes: record.durationMinutes,
+          mode: record.mode,
+          status: record.status,
+          feedback: record.feedback,
+        })),
+      );
+    },
+
     async insertChatMessage(record) {
       await db.insert(chatMessages).values({
         sessionId: record.sessionId,
@@ -287,6 +390,21 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
         content: record.content,
         ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
       });
+    },
+
+    async insertChatMessages(records) {
+      if (records.length === 0) {
+        return;
+      }
+      await db.insert(chatMessages).values(
+        records.map((record) => ({
+          sessionId: record.sessionId,
+          userId: record.userId,
+          role: record.role,
+          content: record.content,
+          ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
+        })),
+      );
     },
 
     async updateSession(userId, sessionId, patch) {
@@ -458,22 +576,31 @@ export function createDrizzleWorkspaceStore(db: Database): WorkspaceStore {
       if (records.length === 0) {
         return;
       }
-      await db.insert(resumeChunks).values(
-        records.map((record) => ({
-          id: randomUUID(),
-          candidateId: record.candidateId,
-          userId: record.userId,
-          chunkText: record.chunkText,
-          chunkIndex: record.chunkIndex,
-          embedding: [...record.embedding],
-        })),
-      );
+      // Micro-batch: one multi-row INSERT per `DB_INSERT_BATCH_SIZE` rows so a
+      // large resume cannot exceed the parameter limit or hold a long statement.
+      const batchSize = config.database.insertBatchSize;
+      for (let offset = 0; offset < records.length; offset += batchSize) {
+        const batch = records.slice(offset, offset + batchSize);
+        await db.insert(resumeChunks).values(
+          batch.map((record) => ({
+            id: randomUUID(),
+            candidateId: record.candidateId,
+            userId: record.userId,
+            chunkText: record.chunkText,
+            chunkIndex: record.chunkIndex,
+            embedding: [...record.embedding],
+          })),
+        );
+      }
     },
   };
 }
 
 /** Fallback path: the same contract over the local SQLite database. */
-export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore {
+export function createSqliteWorkspaceStore(
+  db: FallbackDatabase,
+  config: AppConfig = getConfig(),
+): WorkspaceStore {
   return {
     async findJobIdByTitle(userId, title) {
       const response = db
@@ -527,6 +654,25 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
         .execute();
     },
 
+    async upsertApplications(records) {
+      if (records.length === 0) {
+        return;
+      }
+      db.table('applications')
+        .upsert(
+          records.map((record) => ({
+            job_id: record.jobId,
+            candidate_id: record.candidateId,
+            user_id: record.userId,
+            match_score: record.matchScore,
+            match_reasoning: record.matchReasoning,
+            status: record.status,
+          })),
+          'job_id,candidate_id',
+        )
+        .execute();
+    },
+
     async findCandidateIdByName(userId, fullName) {
       const response = db
         .table('candidates')
@@ -536,6 +682,27 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
         .limit(1)
         .execute();
       return response.data[0]?.id as string | undefined;
+    },
+
+    async findCandidateIdsByNames(userId, fullNames) {
+      const names = [...new Set(fullNames.filter((name) => name.length > 0))];
+      if (names.length === 0) {
+        return new Map();
+      }
+      const rows = db
+        .table('candidates')
+        .select('id, full_name')
+        .eq('user_id', userId)
+        .in('full_name', names)
+        .execute().data as Record<string, unknown>[];
+      const byName = new Map<string, string>();
+      for (const row of rows) {
+        const name = String(row['full_name']);
+        if (!byName.has(name)) {
+          byName.set(name, String(row['id']));
+        }
+      }
+      return byName;
     },
 
     async findApplicationId(userId, candidateId, jobId) {
@@ -548,6 +715,30 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
         .limit(1)
         .execute();
       return response.data[0]?.id as string | undefined;
+    },
+
+    async findApplicationIds(userId, candidateIds, jobId) {
+      const ids = [...new Set(candidateIds.filter((id) => id.length > 0))];
+      if (ids.length === 0) {
+        return new Map();
+      }
+      let builder = db
+        .table('applications')
+        .select('id, candidate_id')
+        .eq('user_id', userId)
+        .in('candidate_id', ids);
+      if (jobId !== undefined) {
+        builder = builder.eq('job_id', jobId);
+      }
+      const rows = builder.execute().data as Record<string, unknown>[];
+      const byCandidate = new Map<string, string>();
+      for (const row of rows) {
+        const candidateId = String(row['candidate_id']);
+        if (!byCandidate.has(candidateId)) {
+          byCandidate.set(candidateId, String(row['id']));
+        }
+      }
+      return byCandidate;
     },
 
     async insertInterview(record) {
@@ -565,6 +756,26 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
         .execute();
     },
 
+    async insertInterviews(records) {
+      if (records.length === 0) {
+        return;
+      }
+      db.table('interviews')
+        .insert(
+          records.map((record) => ({
+            application_id: record.applicationId,
+            candidate_id: record.candidateId,
+            user_id: record.userId,
+            scheduled_at: record.scheduledAt?.toISOString() ?? null,
+            duration_minutes: record.durationMinutes,
+            mode: record.mode,
+            status: record.status,
+            feedback: record.feedback,
+          })),
+        )
+        .execute();
+    },
+
     async insertChatMessage(record) {
       db.table('chat_messages')
         .insert({
@@ -574,6 +785,23 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
           content: record.content,
           ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
         })
+        .execute();
+    },
+
+    async insertChatMessages(records) {
+      if (records.length === 0) {
+        return;
+      }
+      db.table('chat_messages')
+        .insert(
+          records.map((record) => ({
+            session_id: record.sessionId,
+            user_id: record.userId,
+            role: record.role,
+            content: record.content,
+            ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
+          })),
+        )
         .execute();
     },
 
@@ -781,16 +1009,23 @@ export function createSqliteWorkspaceStore(db: FallbackDatabase): WorkspaceStore
     },
 
     async insertResumeChunks(records) {
-      for (const record of records) {
+      const batchSize = config.database.insertBatchSize;
+      for (let offset = 0; offset < records.length; offset += batchSize) {
+        const batch = records.slice(offset, offset + batchSize);
+        if (batch.length === 0) {
+          continue;
+        }
         db.table('resume_chunks')
-          .insert({
-            id: randomUUID(),
-            candidate_id: record.candidateId,
-            user_id: record.userId,
-            chunk_text: record.chunkText,
-            chunk_index: record.chunkIndex,
-            embedding: [...record.embedding],
-          })
+          .insert(
+            batch.map((record) => ({
+              id: randomUUID(),
+              candidate_id: record.candidateId,
+              user_id: record.userId,
+              chunk_text: record.chunkText,
+              chunk_index: record.chunkIndex,
+              embedding: [...record.embedding],
+            })),
+          )
           .execute();
       }
     },
@@ -811,14 +1046,14 @@ export interface WorkspaceStoreOptions {
  * opens a connection.
  */
 export function createWorkspaceStore(options: WorkspaceStoreOptions = {}): WorkspaceStore {
+  const config = options.config ?? getConfig();
   if (options.db) {
-    return createDrizzleWorkspaceStore(options.db);
+    return createDrizzleWorkspaceStore(options.db, config);
   }
   if (options.fallback) {
-    return createSqliteWorkspaceStore(options.fallback);
+    return createSqliteWorkspaceStore(options.fallback, config);
   }
-  const config = options.config ?? getConfig();
   return config.database.url
-    ? createDrizzleWorkspaceStore(getDb())
-    : createSqliteWorkspaceStore(getFallbackDatabase());
+    ? createDrizzleWorkspaceStore(getDb(), config)
+    : createSqliteWorkspaceStore(getFallbackDatabase(), config);
 }
