@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { optionalString, pydanticDict } from './common.js';
+import { optionalString, pydanticDict, pydanticInt } from './common.js';
 
 /**
  * `PatchSessionRequest` exists in `routes_sessions.py` but the live
@@ -17,6 +17,14 @@ export const sessionPatchPayloadSchema = pydanticDict();
 
 export type PatchSessionRequest = z.infer<typeof patchSessionRequestSchema>;
 export type SessionPatchPayload = z.infer<typeof sessionPatchPayloadSchema>;
+
+/** `GET /api/sessions` pagination (Phase 22). Omitted values keep Python's full page. */
+export const sessionListQuerySchema = z.object({
+  limit: pydanticInt({ ge: 1, le: 1_000 }).optional(),
+  offset: pydanticInt({ ge: 0 }).optional(),
+});
+
+export type SessionListQuery = z.infer<typeof sessionListQuerySchema>;
 
 /** `GET /api/sessions` rows (ad-hoc dicts in Python, no response_model). */
 export interface SessionSummary {

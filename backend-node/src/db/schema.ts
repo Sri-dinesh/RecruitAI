@@ -105,6 +105,7 @@ export const jobs = pgTable(
   (table) => [
     index('idx_jobs_user_id').on(table.userId),
     index('idx_jobs_status').on(table.status),
+    index('idx_jobs_user_status').on(table.userId, table.status),
     check('jobs_status_check', sql`${table.status} in ('draft', 'active', 'closed', 'archived')`),
   ],
 );
@@ -125,6 +126,7 @@ export const candidates = pgTable(
   (table) => [
     index('idx_candidates_user_id').on(table.userId),
     index('idx_candidates_email').on(table.email),
+    index('idx_candidates_user_created').on(table.userId, table.createdAt),
     unique('candidates_user_id_email_key').on(table.userId, table.email),
   ],
 );
@@ -143,9 +145,15 @@ export const resumeChunks = pgTable(
   (table) => [
     index('idx_resume_chunks_candidate_id').on(table.candidateId),
     index('idx_resume_chunks_user_id').on(table.userId),
+    index('idx_resume_chunks_user_candidate').on(table.userId, table.candidateId),
     index('idx_resume_chunks_embedding')
       .using('ivfflat', table.embedding.op('vector_cosine_ops'))
       .with({ lists: 100 }),
+    // Phase 22: HNSW has better recall/latency under concurrent reads than
+    // IVFFlat and needs no training pass before the first query.
+    index('idx_resume_chunks_embedding_hnsw')
+      .using('hnsw', table.embedding.op('vector_cosine_ops'))
+      .with({ m: 16, ef_construction: 64 }),
     foreignKey({
       name: 'resume_chunks_candidate_id_fkey',
       columns: [table.candidateId],
@@ -171,6 +179,8 @@ export const applications = pgTable(
     index('idx_applications_candidate_id').on(table.candidateId),
     index('idx_applications_user_id').on(table.userId),
     index('idx_applications_status').on(table.status),
+    index('idx_applications_user_status').on(table.userId, table.status),
+    index('idx_applications_user_created').on(table.userId, table.createdAt),
     unique('applications_job_id_candidate_id_key').on(table.jobId, table.candidateId),
     check(
       'applications_status_check',
@@ -213,6 +223,7 @@ export const interviews = pgTable(
     index('idx_interviews_candidate_id').on(table.candidateId),
     index('idx_interviews_user_id').on(table.userId),
     index('idx_interviews_scheduled_at').on(table.scheduledAt),
+    index('idx_interviews_user_scheduled').on(table.userId, table.scheduledAt),
     check('interviews_mode_check', sql`${table.mode} in ('phone', 'video', 'onsite')`),
     check(
       'interviews_status_check',
@@ -245,6 +256,7 @@ export const chatSessions = pgTable(
   (table) => [
     index('idx_chat_sessions_user_id').on(table.userId),
     index('idx_chat_sessions_job_id').on(table.jobId),
+    index('idx_chat_sessions_user_updated').on(table.userId, table.updatedAt.desc()),
     foreignKey({
       name: 'chat_sessions_job_id_fkey',
       columns: [table.jobId],
@@ -268,6 +280,11 @@ export const chatMessages = pgTable(
     index('idx_chat_messages_session_id').on(table.sessionId),
     index('idx_chat_messages_created_at').on(table.createdAt),
     index('idx_chat_messages_user_id').on(table.userId),
+    index('idx_chat_messages_user_session_created').on(
+      table.userId,
+      table.sessionId,
+      table.createdAt,
+    ),
     check('chat_messages_role_check', sql`${table.role} in ('user', 'assistant', 'system')`),
     foreignKey({
       name: 'chat_messages_session_id_fkey',
@@ -339,6 +356,7 @@ export const creditTransactions = pgTable(
   (table) => [
     index('idx_credit_transactions_user_id').on(table.userId),
     index('idx_credit_transactions_created_at').on(table.createdAt.desc()),
+    index('idx_credit_transactions_user_created').on(table.userId, table.createdAt.desc()),
     foreignKey({
       name: 'credit_transactions_user_id_fkey',
       columns: [table.userId],
@@ -367,11 +385,36 @@ export const outreachLogs = pgTable(
     index('idx_outreach_logs_user_id').on(table.userId),
     index('idx_outreach_logs_candidate_id').on(table.candidateId),
     index('idx_outreach_logs_created_at').on(table.createdAt.desc()),
+    index('idx_outreach_logs_user_created').on(table.userId, table.createdAt.desc()),
     foreignKey({
       name: 'outreach_logs_candidate_id_fkey',
       columns: [table.candidateId],
       foreignColumns: [candidates.id],
     }).onDelete('set null'),
+  ],
+);
+
+/**
+ * Idempotency ledger for payment verify/webhook handling (Phase 22).
+ *
+ * A row is claimed before any credit is granted; the primary-key insert is the
+ * fence that makes a client retry or a Razorpay redelivery a no-op. `kind`
+ * separates verify keys (`verify:<payment_id>`) from webhook keys
+ * (`webhook:<event_id>`), and `expires_at` lets a maintenance sweep prune old
+ * keys without scanning the whole table.
+ */
+export const processedEvents = pgTable(
+  'processed_events',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    userId: uuid('user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_processed_events_expires_at').on(table.expiresAt),
+    index('idx_processed_events_user_id').on(table.userId),
   ],
 );
 
@@ -389,6 +432,7 @@ export const schema = {
   subscriptions,
   creditTransactions,
   outreachLogs,
+  processedEvents,
 };
 
 export type User = typeof users.$inferSelect;

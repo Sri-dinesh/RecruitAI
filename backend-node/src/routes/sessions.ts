@@ -4,8 +4,8 @@ import type { AppConfig } from '../config/index.js';
 import { getCurrentUserId } from '../context/request-context.js';
 import type { WorkspaceQueryStore } from '../db/workspace-query-store.js';
 import { requireAuth } from '../middleware/auth.js';
-import { validateBody } from '../middleware/validate.js';
-import { sessionPatchPayloadSchema } from '../schemas/sessions.js';
+import { validateBody, validateQuery } from '../middleware/validate.js';
+import { sessionListQuerySchema, sessionPatchPayloadSchema } from '../schemas/sessions.js';
 import { createSessionService, type SessionService } from '../services/session-service.js';
 
 /**
@@ -42,8 +42,14 @@ export function createSessionsRouter(options: SessionsRouterOptions = {}): Route
   const auth =
     options.auth ?? (options.config ? requireAuth({ config: options.config }) : requireAuth());
 
-  router.get('/', auth, async (_req, res) => {
-    res.json(await service.listSessions(getCurrentUserId()));
+  router.get('/', auth, validateQuery(sessionListQuerySchema), async (req, res) => {
+    const query = req.query as { limit?: number; offset?: number };
+    res.json(
+      await service.listSessions(getCurrentUserId(), {
+        ...(query.limit === undefined ? {} : { limit: Number(query.limit) }),
+        ...(query.offset === undefined ? {} : { offset: Number(query.offset) }),
+      }),
+    );
   });
 
   router.post('/', auth, async (_req, res) => {

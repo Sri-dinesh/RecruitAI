@@ -205,31 +205,30 @@ export class RetentionScheduler {
     let failed = 0;
 
     try {
-      const tenantIds =
-        options.userId === undefined ? await this.getStore().listUserIds() : [options.userId];
-
-      for (const tenantId of tenantIds) {
-        try {
-          const result = dryRun
-            ? await this.service.previewRetentionPolicy(
-                tenantId,
-                this.config.retention.rawResumeTtlDays,
-                this.config.retention.chatTtlDays,
-              )
-            : await this.service.enforceRetentionPolicy(
-                tenantId,
-                this.config.retention.rawResumeTtlDays,
-                this.config.retention.chatTtlDays,
-              );
-          summary.raw_resumes_cleared += result.raw_resumes_cleared;
-          summary.chat_messages_purged += result.chat_messages_purged;
-          processed += 1;
-        } catch (error) {
-          failed += 1;
-          this.logger.error(`[retention] tenant sweep failed: ${errorMessage(error)}`, {
-            tenant_id: tenantId,
-            error_type: errorType(error),
+      if (options.userId !== undefined) {
+        await this.sweepTenant(options.userId, dryRun, summary, (processedDelta, failedDelta) => {
+          processed += processedDelta;
+          failed += failedDelta;
+        });
+      } else {
+        // Enumerate tenants in keyset pages instead of loading every user id.
+        const batchSize = this.config.database.sweepBatchSize;
+        let after: string | undefined;
+        for (;;) {
+          const tenantIds = await this.getStore().listUserIds({
+            limit: batchSize,
+            ...(after === undefined ? {} : { after }),
           });
+          for (const tenantId of tenantIds) {
+            await this.sweepTenant(tenantId, dryRun, summary, (processedDelta, failedDelta) => {
+              processed += processedDelta;
+              failed += failedDelta;
+            });
+          }
+          if (tenantIds.length < batchSize) {
+            break;
+          }
+          after = tenantIds[tenantIds.length - 1];
         }
       }
     } finally {
@@ -264,6 +263,36 @@ export class RetentionScheduler {
       { status: result.status, duration_ms: durationMs },
     );
     return result;
+  }
+
+  private async sweepTenant(
+    tenantId: string,
+    dryRun: boolean,
+    summary: RetentionSummary,
+    count: (processed: number, failed: number) => void,
+  ): Promise<void> {
+    try {
+      const result = dryRun
+        ? await this.service.previewRetentionPolicy(
+            tenantId,
+            this.config.retention.rawResumeTtlDays,
+            this.config.retention.chatTtlDays,
+          )
+        : await this.service.enforceRetentionPolicy(
+            tenantId,
+            this.config.retention.rawResumeTtlDays,
+            this.config.retention.chatTtlDays,
+          );
+      summary.raw_resumes_cleared += result.raw_resumes_cleared;
+      summary.chat_messages_purged += result.chat_messages_purged;
+      count(1, 0);
+    } catch (error) {
+      count(0, 1);
+      this.logger.error(`[retention] tenant sweep failed: ${errorMessage(error)}`, {
+        tenant_id: tenantId,
+        error_type: errorType(error),
+      });
+    }
   }
 
   private getStore(): WorkspaceQueryStore {

@@ -193,8 +193,23 @@ export class PrivacyService {
     );
 
     try {
-      summary.raw_resumes_cleared = await store.clearRawResumeTextBefore(userId, resumeCutoff);
-      summary.chat_messages_purged = await store.deleteChatMessagesBefore(userId, chatCutoff);
+      // Keyset batches keep each statement short: a multi-million-row tenant
+      // is purged over several round trips instead of one long lock.
+      const batchSize = this.config?.database.sweepBatchSize ?? 500;
+      for (;;) {
+        const cleared = await store.clearRawResumeTextBefore(userId, resumeCutoff, batchSize);
+        summary.raw_resumes_cleared += cleared;
+        if (cleared < batchSize) {
+          break;
+        }
+      }
+      for (;;) {
+        const purged = await store.deleteChatMessagesBefore(userId, chatCutoff, batchSize);
+        summary.chat_messages_purged += purged;
+        if (purged < batchSize) {
+          break;
+        }
+      }
       logger.info(`[retention] Automated retention run complete: ${JSON.stringify(summary)}`);
     } catch (error) {
       logger.warn(

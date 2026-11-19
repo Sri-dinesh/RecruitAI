@@ -145,9 +145,11 @@ export class TableBuilder {
   private readonly neqFilters: Array<[string, unknown]> = [];
   private readonly comparisonFilters: Array<['<' | '<=' | '>' | '>=', string, unknown]> = [];
   private readonly inFilters: Array<[string, readonly unknown[]]> = [];
+  private readonly nullFilters: Array<[string, 'IS NOT NULL']> = [];
   private orderBy: string | undefined;
   private orderDesc = false;
   private limitValue: number | undefined;
+  private offsetValue: number | undefined;
 
   constructor(
     private readonly tableName: string,
@@ -214,6 +216,12 @@ export class TableBuilder {
     return this;
   }
 
+  /** PostgREST-style `column=not.is.null`; used by bounded purge sweeps. */
+  notNull(column: string): this {
+    this.nullFilters.push([column, 'IS NOT NULL']);
+    return this;
+  }
+
   /** PostgREST `in` filter (`column=in.(a,b)`). An empty list matches nothing. */
   in(column: string, values: readonly unknown[]): this {
     this.inFilters.push([column, values]);
@@ -229,6 +237,24 @@ export class TableBuilder {
   limit(value: number): this {
     this.limitValue = value;
     return this;
+  }
+
+  /** PostgREST `offset` / SQL `OFFSET` for bounded list pages. */
+  offset(value: number): this {
+    this.offsetValue = value;
+    return this;
+  }
+
+  /**
+   * Aggregate count for the current filters. Used by retention previews so a
+   * "how many rows would be deleted" answer never materialises the rows.
+   */
+  count(): number {
+    const where = this.whereClause();
+    const row = this.conn
+      .prepare(`SELECT COUNT(*) AS count FROM ${this.tableName}${where.sql}`)
+      .get(...where.params) as { count?: number | bigint } | undefined;
+    return Number(row?.count ?? 0);
   }
 
   private whereClause(): { sql: string; params: SqliteValue[] } {
@@ -253,6 +279,9 @@ export class TableBuilder {
       }
       clauses.push(`${column} IN (${values.map(() => '?').join(', ')})`);
       params.push(...asParams(values));
+    }
+    for (const [column, operator] of this.nullFilters) {
+      clauses.push(`${column} ${operator}`);
     }
     return {
       sql: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
@@ -365,8 +394,11 @@ export class TableBuilder {
     if (this.orderBy) {
       query += ` ORDER BY ${this.orderBy} ${this.orderDesc ? 'DESC' : 'ASC'}`;
     }
-    if (this.limitValue !== undefined) {
-      query += ` LIMIT ${this.limitValue}`;
+    if (this.limitValue !== undefined || this.offsetValue !== undefined) {
+      query += ` LIMIT ${this.limitValue ?? -1}`;
+      if (this.offsetValue !== undefined) {
+        query += ` OFFSET ${this.offsetValue}`;
+      }
     }
 
     const rows = this.conn.prepare(query).all(...where.params) as SqliteRow[];

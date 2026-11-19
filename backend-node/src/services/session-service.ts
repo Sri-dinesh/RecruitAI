@@ -4,6 +4,7 @@ import type { AppConfig } from '../config/index.js';
 import {
   createWorkspaceQueryStore,
   type DbRow,
+  type ListQuery,
   type WorkspaceQueryStore,
 } from '../db/workspace-query-store.js';
 import { logWorkspaceReset } from '../telemetry/logging.js';
@@ -107,10 +108,10 @@ export class SessionService {
     return this.store;
   }
 
-  async listSessions(userId: string): Promise<DbRow[]> {
+  async listSessions(userId: string, query: ListQuery = {}): Promise<DbRow[]> {
     try {
       const store = this.getStore();
-      const sessions = await store.listSessions(userId);
+      const sessions = await store.listSessions(userId, query);
       const candidates = await store.listCandidates(userId);
       const applications = await store.listApplications(userId);
 

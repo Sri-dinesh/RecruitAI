@@ -151,9 +151,10 @@ describe('RetentionScheduler', () => {
       );
 
       const second = await scheduler.runOnce();
-      // Python's update returns every matched row even when the text is
-      // already NULL, so the candidate count repeats; chat rows are gone.
-      assert.equal(second.summary.raw_resumes_cleared, 2);
+      // Phase 22 sweeps only rows whose text is still set, so an already
+      // cleared tenant reports 0 instead of re-counting rows Python would
+      // re-match. Chat rows are already gone.
+      assert.equal(second.summary.raw_resumes_cleared, 0);
       assert.equal(second.summary.chat_messages_purged, 0);
     });
   });

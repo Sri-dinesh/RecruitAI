@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, asc, desc, eq, gte, inArray, lt, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from 'drizzle-orm';
 
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, getReadDb, type Database } from './client.js';
@@ -75,6 +75,43 @@ export interface ChatMessageQuery {
   readonly limit?: number;
 }
 
+/**
+ * Bounded list pagination.
+ *
+ * `limit` is clamped to `DB_LIST_MAX_LIMIT` (default 1000), which matches the
+ * PostgREST row cap the Python backend ran under. `offset` is provided for
+ * small admin lists; large sweeps use `KeysetQuery` instead.
+ */
+export interface ListQuery {
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+/** Keyset cursor for large, resumable scans. `after` is the last seen id. */
+export interface KeysetQuery {
+  readonly after?: string;
+  readonly limit?: number;
+}
+
+/** Resolve a requested limit against the configured hard cap. */
+export function resolveListLimit(config: AppConfig, requested?: number): number {
+  const max = config.database.listMaxLimit;
+  if (requested === undefined) {
+    return max;
+  }
+  const value = Math.trunc(requested);
+  return Number.isFinite(value) && value > 0 ? Math.min(value, max) : max;
+}
+
+/** Resolve a requested offset; negative/NaN offsets become 0. */
+export function resolveListOffset(requested?: number): number {
+  if (requested === undefined) {
+    return 0;
+  }
+  const value = Math.trunc(requested);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 export interface WorkspaceQueryStore {
   /**
    * Backing store label for readiness diagnostics. Never a connection string
@@ -86,7 +123,7 @@ export interface WorkspaceQueryStore {
   ping(): Promise<void>;
 
   // ── Sessions ──────────────────────────────────────────────────────────────
-  listSessions(userId: string): Promise<DbRow[]>;
+  listSessions(userId: string, query?: ListQuery): Promise<DbRow[]>;
   getSession(userId: string, sessionId: string): Promise<DbRow | undefined>;
   insertSession(record: SessionInsert): Promise<void>;
   updateSession(
@@ -100,11 +137,15 @@ export interface WorkspaceQueryStore {
   // ── Chat messages ─────────────────────────────────────────────────────────
   insertChatMessage(record: ChatMessageInsert): Promise<void>;
   listChatMessages(userId: string, sessionId: string, query?: ChatMessageQuery): Promise<DbRow[]>;
-  deleteChatMessagesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
+  deleteChatMessagesBefore(
+    userId: string | undefined,
+    cutoffIso: string,
+    batchSize?: number,
+  ): Promise<number>;
   countChatMessagesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
 
   // ── Candidates ────────────────────────────────────────────────────────────
-  listCandidates(userId: string): Promise<DbRow[]>;
+  listCandidates(userId: string, query?: ListQuery): Promise<DbRow[]>;
   getCandidate(userId: string, candidateId: string): Promise<DbRow | undefined>;
   insertCandidate(record: CandidateInsert): Promise<void>;
   updateCandidateMetadata(
@@ -112,23 +153,35 @@ export interface WorkspaceQueryStore {
     candidateId: string,
     metadata: Record<string, unknown>,
   ): Promise<DbRow | undefined>;
-  listCandidatesCreatedSince(userId: string, cutoffIso: string): Promise<DbRow[]>;
-  clearRawResumeTextBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
+  listCandidatesCreatedSince(
+    userId: string,
+    cutoffIso: string,
+    query?: KeysetQuery,
+  ): Promise<DbRow[]>;
+  clearRawResumeTextBefore(
+    userId: string | undefined,
+    cutoffIso: string,
+    batchSize?: number,
+  ): Promise<number>;
   countCandidatesBefore(userId: string | undefined, cutoffIso: string): Promise<number>;
   deleteCandidate(userId: string, candidateId: string): Promise<void>;
 
   // ── Jobs ──────────────────────────────────────────────────────────────────
-  listJobs(userId: string): Promise<DbRow[]>;
+  listJobs(userId: string, query?: ListQuery): Promise<DbRow[]>;
   getJobStructured(userId: string, jobId: string): Promise<DbRow | undefined>;
 
   // ── Applications ──────────────────────────────────────────────────────────
-  listApplications(userId: string): Promise<DbRow[]>;
+  listApplications(userId: string, query?: ListQuery): Promise<DbRow[]>;
   getApplicationForCandidate(
     userId: string,
     candidateId: string,
     jobId?: string,
   ): Promise<DbRow | undefined>;
-  listApplicationsForCandidate(userId: string, candidateId: string): Promise<DbRow[]>;
+  listApplicationsForCandidate(
+    userId: string,
+    candidateId: string,
+    query?: ListQuery,
+  ): Promise<DbRow[]>;
   insertApplication(record: ApplicationInsert): Promise<void>;
   updateApplication(
     userId: string,
@@ -143,8 +196,16 @@ export interface WorkspaceQueryStore {
   deleteApplicationsForCandidate(userId: string, candidateId: string): Promise<void>;
 
   // ── Interviews ────────────────────────────────────────────────────────────
-  listInterviews(userId: string, candidateIds?: readonly string[]): Promise<DbRow[]>;
-  listInterviewsForCandidate(userId: string, candidateId: string): Promise<DbRow[]>;
+  listInterviews(
+    userId: string,
+    candidateIds?: readonly string[],
+    query?: ListQuery,
+  ): Promise<DbRow[]>;
+  listInterviewsForCandidate(
+    userId: string,
+    candidateId: string,
+    query?: ListQuery,
+  ): Promise<DbRow[]>;
   deleteInterviewsForCandidate(userId: string, candidateId: string): Promise<void>;
 
   // ── Session ↔ candidate links ─────────────────────────────────────────────
@@ -162,7 +223,7 @@ export interface WorkspaceQueryStore {
   // ── Users ─────────────────────────────────────────────────────────────────
   getUser(userId: string): Promise<DbRow | undefined>;
   /** Tenant ids for operational sweeps; never used to read tenant data. */
-  listUserIds(): Promise<string[]>;
+  listUserIds(query?: KeysetQuery): Promise<string[]>;
   updateUser(userId: string, patch: Record<string, unknown>): Promise<DbRow | undefined>;
   deleteUser(userId: string): Promise<void>;
   purgeUserAccount(userId: string): Promise<void>;
@@ -397,7 +458,10 @@ function drizzleUserPatch(patch: Record<string, unknown>): Partial<typeof users.
   return values;
 }
 
-export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQueryStore {
+export function createDrizzleWorkspaceQueryStore(
+  db: Database,
+  config: AppConfig = getConfig(),
+): WorkspaceQueryStore {
   return {
     kind: 'postgresql',
 
@@ -407,12 +471,14 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       await db.select({ id: chatSessions.id }).from(chatSessions).limit(1);
     },
 
-    async listSessions(userId) {
+    async listSessions(userId, query = {}) {
       const rows = await db
         .select()
         .from(chatSessions)
         .where(eq(chatSessions.userId, userId))
-        .orderBy(desc(chatSessions.updatedAt));
+        .orderBy(desc(chatSessions.updatedAt), desc(chatSessions.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleSessionRow);
     },
 
@@ -474,16 +540,18 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       const direction = query.descending
         ? desc(chatMessages.createdAt)
         : asc(chatMessages.createdAt);
+      const tiebreak = query.descending ? desc(chatMessages.id) : asc(chatMessages.id);
       const base = db
         .select()
         .from(chatMessages)
         .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.userId, userId)))
-        .orderBy(direction);
-      const rows = query.limit === undefined ? await base : await base.limit(query.limit);
+        .orderBy(direction, tiebreak)
+        .limit(resolveListLimit(config, query.limit));
+      const rows = await base;
       return rows.map(drizzleMessageRow);
     },
 
-    async deleteChatMessagesBefore(userId, cutoffIso) {
+    async deleteChatMessagesBefore(userId, cutoffIso, batchSize = config.database.sweepBatchSize) {
       const cutoff = asDate(cutoffIso);
       if (!cutoff) {
         return 0;
@@ -492,8 +560,23 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         userId === undefined
           ? lt(chatMessages.createdAt, cutoff)
           : and(eq(chatMessages.userId, userId), lt(chatMessages.createdAt, cutoff));
-      const rows = await db.delete(chatMessages).where(where).returning({ id: chatMessages.id });
-      return rows.length;
+      // Fetch a bounded id page first: one short statement, no long-held locks.
+      const ids = await db
+        .select({ id: chatMessages.id })
+        .from(chatMessages)
+        .where(where)
+        .orderBy(asc(chatMessages.createdAt), asc(chatMessages.id))
+        .limit(resolveListLimit(config, batchSize));
+      if (ids.length === 0) {
+        return 0;
+      }
+      await db.delete(chatMessages).where(
+        inArray(
+          chatMessages.id,
+          ids.map((row) => row.id),
+        ),
+      );
+      return ids.length;
     },
 
     async countChatMessagesBefore(userId, cutoffIso) {
@@ -505,16 +588,21 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         userId === undefined
           ? lt(chatMessages.createdAt, cutoff)
           : and(eq(chatMessages.userId, userId), lt(chatMessages.createdAt, cutoff));
-      const rows = await db.select({ id: chatMessages.id }).from(chatMessages).where(where);
-      return rows.length;
+      const rows = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(chatMessages)
+        .where(where);
+      return Number(rows[0]?.count ?? 0);
     },
 
-    async listCandidates(userId) {
+    async listCandidates(userId, query = {}) {
       const rows = await db
         .select()
         .from(candidates)
         .where(eq(candidates.userId, userId))
-        .orderBy(asc(candidates.createdAt));
+        .orderBy(asc(candidates.createdAt), asc(candidates.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleCandidateRow);
     },
 
@@ -547,34 +635,56 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       return rows[0] ? drizzleCandidateRow(rows[0]) : undefined;
     },
 
-    async listCandidatesCreatedSince(userId, cutoffIso) {
+    async listCandidatesCreatedSince(userId, cutoffIso, query = {}) {
       const cutoff = asDate(cutoffIso);
       if (!cutoff) {
         return [];
       }
+      const filters: SQL[] = [eq(candidates.userId, userId), gte(candidates.createdAt, cutoff)];
+      if (query.after !== undefined) {
+        filters.push(sql`${candidates.id} > ${query.after}`);
+      }
       const rows = await db
         .select()
         .from(candidates)
-        .where(and(eq(candidates.userId, userId), gte(candidates.createdAt, cutoff)))
-        .orderBy(asc(candidates.createdAt));
+        .where(and(...filters))
+        .orderBy(asc(candidates.createdAt), asc(candidates.id))
+        .limit(resolveListLimit(config, query.limit));
       return rows.map(drizzleCandidateRow);
     },
 
-    async clearRawResumeTextBefore(userId, cutoffIso) {
+    async clearRawResumeTextBefore(userId, cutoffIso, batchSize = config.database.sweepBatchSize) {
       const cutoff = asDate(cutoffIso);
       if (!cutoff) {
         return 0;
       }
       const where =
         userId === undefined
-          ? lt(candidates.createdAt, cutoff)
-          : and(eq(candidates.userId, userId), lt(candidates.createdAt, cutoff));
-      const rows = await db
+          ? and(lt(candidates.createdAt, cutoff), isNotNull(candidates.rawResumeText))
+          : and(
+              eq(candidates.userId, userId),
+              lt(candidates.createdAt, cutoff),
+              isNotNull(candidates.rawResumeText),
+            );
+      const ids = await db
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(where)
+        .orderBy(asc(candidates.createdAt), asc(candidates.id))
+        .limit(resolveListLimit(config, batchSize));
+      if (ids.length === 0) {
+        return 0;
+      }
+      await db
         .update(candidates)
         .set({ rawResumeText: null })
-        .where(where)
-        .returning({ id: candidates.id });
-      return rows.length;
+        .where(
+          inArray(
+            candidates.id,
+            ids.map((row) => row.id),
+          ),
+        );
+      return ids.length;
     },
 
     async countCandidatesBefore(userId, cutoffIso) {
@@ -586,8 +696,11 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         userId === undefined
           ? lt(candidates.createdAt, cutoff)
           : and(eq(candidates.userId, userId), lt(candidates.createdAt, cutoff));
-      const rows = await db.select({ id: candidates.id }).from(candidates).where(where);
-      return rows.length;
+      const rows = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(candidates)
+        .where(where);
+      return Number(rows[0]?.count ?? 0);
     },
 
     async deleteCandidate(userId, candidateId) {
@@ -596,12 +709,14 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         .where(and(eq(candidates.id, candidateId), eq(candidates.userId, userId)));
     },
 
-    async listJobs(userId) {
+    async listJobs(userId, query = {}) {
       const rows = await db
         .select()
         .from(jobs)
         .where(eq(jobs.userId, userId))
-        .orderBy(desc(jobs.createdAt));
+        .orderBy(desc(jobs.createdAt), desc(jobs.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleJobRow);
     },
 
@@ -616,8 +731,14 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         : { jd_structured: rows[0].jdStructured };
     },
 
-    async listApplications(userId) {
-      const rows = await db.select().from(applications).where(eq(applications.userId, userId));
+    async listApplications(userId, query = {}) {
+      const rows = await db
+        .select()
+        .from(applications)
+        .where(eq(applications.userId, userId))
+        .orderBy(asc(applications.createdAt), asc(applications.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleApplicationRow);
     },
 
@@ -637,11 +758,14 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       return rows[0] ? drizzleApplicationRow(rows[0]) : undefined;
     },
 
-    async listApplicationsForCandidate(userId, candidateId) {
+    async listApplicationsForCandidate(userId, candidateId, query = {}) {
       const rows = await db
         .select()
         .from(applications)
-        .where(and(eq(applications.userId, userId), eq(applications.candidateId, candidateId)));
+        .where(and(eq(applications.userId, userId), eq(applications.candidateId, candidateId)))
+        .orderBy(asc(applications.createdAt), asc(applications.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleApplicationRow);
     },
 
@@ -679,7 +803,7 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         .where(and(eq(applications.userId, userId), eq(applications.candidateId, candidateId)));
     },
 
-    async listInterviews(userId, candidateIds) {
+    async listInterviews(userId, candidateIds, query = {}) {
       const filters: SQL[] = [eq(interviews.userId, userId)];
       if (candidateIds !== undefined) {
         if (candidateIds.length === 0) {
@@ -691,15 +815,20 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
         .select()
         .from(interviews)
         .where(and(...filters))
-        .orderBy(asc(interviews.scheduledAt));
+        .orderBy(asc(interviews.scheduledAt), asc(interviews.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleInterviewRow);
     },
 
-    async listInterviewsForCandidate(userId, candidateId) {
+    async listInterviewsForCandidate(userId, candidateId, query = {}) {
       const rows = await db
         .select()
         .from(interviews)
-        .where(and(eq(interviews.userId, userId), eq(interviews.candidateId, candidateId)));
+        .where(and(eq(interviews.userId, userId), eq(interviews.candidateId, candidateId)))
+        .orderBy(asc(interviews.scheduledAt), asc(interviews.id))
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       return rows.map(drizzleInterviewRow);
     },
 
@@ -775,10 +904,10 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
 
     async countResumeChunks(userId, candidateId) {
       const rows = await db
-        .select({ id: resumeChunks.id })
+        .select({ count: sql<number>`count(*)::int` })
         .from(resumeChunks)
         .where(and(eq(resumeChunks.userId, userId), eq(resumeChunks.candidateId, candidateId)));
-      return rows.length;
+      return Number(rows[0]?.count ?? 0);
     },
 
     async deleteResumeChunksForCandidate(userId, candidateId) {
@@ -792,8 +921,17 @@ export function createDrizzleWorkspaceQueryStore(db: Database): WorkspaceQuerySt
       return rows[0] ? drizzleUserRow(rows[0]) : undefined;
     },
 
-    async listUserIds() {
-      const rows = await db.select({ id: users.id }).from(users).orderBy(asc(users.id));
+    async listUserIds(query = {}) {
+      const filters: SQL[] = [];
+      if (query.after !== undefined) {
+        filters.push(sql`${users.id} > ${query.after}`);
+      }
+      const rows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(filters.length > 0 ? and(...filters) : undefined)
+        .orderBy(asc(users.id))
+        .limit(resolveListLimit(config, query.limit));
       return rows.map((row) => row.id);
     },
 
@@ -940,7 +1078,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): WorkspaceQueryStore {
+export function createSqliteWorkspaceQueryStore(
+  db: FallbackDatabase,
+  config: AppConfig = getConfig(),
+): WorkspaceQueryStore {
   return {
     kind: 'sqlite_fallback',
 
@@ -948,12 +1089,14 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       db.table('chat_sessions').select('id').limit(1).execute();
     },
 
-    async listSessions(userId) {
+    async listSessions(userId, query = {}) {
       const rows = db
         .table('chat_sessions')
         .select('*')
         .eq('user_id', userId)
         .order('updated_at', true)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
         .execute().data as Record<string, unknown>[];
       return sqliteRows('chat_sessions', rows);
     },
@@ -1018,42 +1161,50 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
     },
 
     async listChatMessages(userId, sessionId, query = {}) {
-      let builder = db
+      const builder = db
         .table('chat_messages')
         .select('*')
         .eq('session_id', sessionId)
         .eq('user_id', userId)
-        .order('created_at', query.descending === true);
-      if (query.limit !== undefined) {
-        builder = builder.limit(query.limit);
-      }
+        .order('created_at', query.descending === true)
+        .limit(resolveListLimit(config, query.limit));
       return sqliteRows('chat_messages', builder.execute().data as Record<string, unknown>[]);
     },
 
-    async deleteChatMessagesBefore(userId, cutoffIso) {
-      const countBuilder = db.table('chat_messages').select('id').lt('created_at', cutoffIso);
-      const scoped = userId === undefined ? countBuilder : countBuilder.eq('user_id', userId);
-      const count = scoped.execute().data.length;
-      let deleteBuilder = db.table('chat_messages').delete().lt('created_at', cutoffIso);
+    async deleteChatMessagesBefore(userId, cutoffIso, batchSize = config.database.sweepBatchSize) {
+      let selectBuilder = db
+        .table('chat_messages')
+        .select('id')
+        .lt('created_at', cutoffIso)
+        .order('created_at', false)
+        .limit(resolveListLimit(config, batchSize));
       if (userId !== undefined) {
-        deleteBuilder = deleteBuilder.eq('user_id', userId);
+        selectBuilder = selectBuilder.eq('user_id', userId);
       }
-      deleteBuilder.execute();
-      return count;
+      const ids = (selectBuilder.execute().data as Record<string, unknown>[]).map((row) =>
+        String(row['id']),
+      );
+      if (ids.length === 0) {
+        return 0;
+      }
+      db.table('chat_messages').delete().in('id', ids).execute();
+      return ids.length;
     },
 
     async countChatMessagesBefore(userId, cutoffIso) {
       const builder = db.table('chat_messages').select('id').lt('created_at', cutoffIso);
       const scoped = userId === undefined ? builder : builder.eq('user_id', userId);
-      return scoped.execute().data.length;
+      return scoped.count();
     },
 
-    async listCandidates(userId) {
+    async listCandidates(userId, query = {}) {
       const rows = db
         .table('candidates')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', false)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
         .execute().data as Record<string, unknown>[];
       return sqliteRows('candidates', rows);
     },
@@ -1092,26 +1243,39 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       return rows[0] ? sqliteRow('candidates', rows[0]) : undefined;
     },
 
-    async listCandidatesCreatedSince(userId, cutoffIso) {
-      const rows = db
+    async listCandidatesCreatedSince(userId, cutoffIso, query = {}) {
+      let builder = db
         .table('candidates')
         .select('*')
         .eq('user_id', userId)
         .gte('created_at', cutoffIso)
         .order('created_at', false)
-        .execute().data as Record<string, unknown>[];
-      return sqliteRows('candidates', rows);
+        .limit(resolveListLimit(config, query.limit));
+      if (query.after !== undefined) {
+        builder = builder.gt('id', query.after);
+      }
+      return sqliteRows('candidates', builder.execute().data as Record<string, unknown>[]);
     },
 
-    async clearRawResumeTextBefore(userId, cutoffIso) {
-      let builder = db
+    async clearRawResumeTextBefore(userId, cutoffIso, batchSize = config.database.sweepBatchSize) {
+      let selectBuilder = db
         .table('candidates')
-        .update({ raw_resume_text: null })
-        .lt('created_at', cutoffIso);
+        .select('id')
+        .lt('created_at', cutoffIso)
+        .notNull('raw_resume_text')
+        .order('created_at', false)
+        .limit(resolveListLimit(config, batchSize));
       if (userId !== undefined) {
-        builder = builder.eq('user_id', userId);
+        selectBuilder = selectBuilder.eq('user_id', userId);
       }
-      return builder.execute().data.length;
+      const ids = (selectBuilder.execute().data as Record<string, unknown>[]).map((row) =>
+        String(row['id']),
+      );
+      if (ids.length === 0) {
+        return 0;
+      }
+      db.table('candidates').update({ raw_resume_text: null }).in('id', ids).execute();
+      return ids.length;
     },
 
     async countCandidatesBefore(userId, cutoffIso) {
@@ -1119,19 +1283,21 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       if (userId !== undefined) {
         builder = builder.eq('user_id', userId);
       }
-      return builder.execute().data.length;
+      return builder.count();
     },
 
     async deleteCandidate(userId, candidateId) {
       db.table('candidates').delete().eq('id', candidateId).eq('user_id', userId).execute();
     },
 
-    async listJobs(userId) {
+    async listJobs(userId, query = {}) {
       const rows = db
         .table('jobs')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', true)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
         .execute().data as Record<string, unknown>[];
       return sqliteRows('jobs', rows);
     },
@@ -1147,9 +1313,15 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       return rows[0] ? { jd_structured: rows[0]['jd_structured'] ?? null } : undefined;
     },
 
-    async listApplications(userId) {
-      const rows = db.table('applications').select('*').eq('user_id', userId).execute()
-        .data as Record<string, unknown>[];
+    async listApplications(userId, query = {}) {
+      const rows = db
+        .table('applications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', true)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
+        .execute().data as Record<string, unknown>[];
       return sqliteRows('applications', rows);
     },
 
@@ -1166,12 +1338,15 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       return rows[0] ? sqliteRow('applications', rows[0]) : undefined;
     },
 
-    async listApplicationsForCandidate(userId, candidateId) {
+    async listApplicationsForCandidate(userId, candidateId, query = {}) {
       const rows = db
         .table('applications')
         .select('*')
         .eq('candidate_id', candidateId)
         .eq('user_id', userId)
+        .order('created_at', true)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
         .execute().data as Record<string, unknown>[];
       return sqliteRows('applications', rows);
     },
@@ -1216,7 +1391,7 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
         .execute();
     },
 
-    async listInterviews(userId, candidateIds) {
+    async listInterviews(userId, candidateIds, query = {}) {
       if (candidateIds !== undefined && candidateIds.length === 0) {
         return [];
       }
@@ -1224,19 +1399,24 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
         .table('interviews')
         .select('*')
         .eq('user_id', userId)
-        .order('scheduled_at', false);
+        .order('scheduled_at', false)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset));
       if (candidateIds !== undefined) {
         builder = builder.in('candidate_id', candidateIds);
       }
       return sqliteRows('interviews', builder.execute().data as Record<string, unknown>[]);
     },
 
-    async listInterviewsForCandidate(userId, candidateId) {
+    async listInterviewsForCandidate(userId, candidateId, query = {}) {
       const rows = db
         .table('interviews')
         .select('*')
         .eq('candidate_id', candidateId)
         .eq('user_id', userId)
+        .order('scheduled_at', false)
+        .limit(resolveListLimit(config, query.limit))
+        .offset(resolveListOffset(query.offset))
         .execute().data as Record<string, unknown>[];
       return sqliteRows('interviews', rows);
     },
@@ -1313,7 +1493,7 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
         .select('id')
         .eq('candidate_id', candidateId)
         .eq('user_id', userId)
-        .execute().data.length;
+        .count();
     },
 
     async deleteResumeChunksForCandidate(userId, candidateId) {
@@ -1332,11 +1512,16 @@ export function createSqliteWorkspaceQueryStore(db: FallbackDatabase): Workspace
       return rows[0] ? sqliteRow('users', rows[0]) : undefined;
     },
 
-    async listUserIds() {
-      return db
+    async listUserIds(query = {}) {
+      let builder = db
         .table('users')
         .select('id')
         .order('id', false)
+        .limit(resolveListLimit(config, query.limit));
+      if (query.after !== undefined) {
+        builder = builder.gt('id', query.after);
+      }
+      return builder
         .execute()
         .data.map((row) => String(row['id']))
         .filter((id) => id.length > 0);
@@ -1400,15 +1585,17 @@ export function createWorkspaceQueryStore(
   options: WorkspaceQueryStoreOptions = {},
 ): WorkspaceQueryStore {
   if (options.db) {
-    return createDrizzleWorkspaceQueryStore(options.db);
+    const config = options.config ?? getConfig();
+    return createDrizzleWorkspaceQueryStore(options.db, config);
   }
   if (options.fallback) {
-    return createSqliteWorkspaceQueryStore(options.fallback);
+    const config = options.config ?? getConfig();
+    return createSqliteWorkspaceQueryStore(options.fallback, config);
   }
   const config = options.config ?? getConfig();
   return config.database.url
-    ? createDrizzleWorkspaceQueryStore(options.readOnly ? getReadDb() : getDb())
-    : createSqliteWorkspaceQueryStore(getFallbackDatabase());
+    ? createDrizzleWorkspaceQueryStore(options.readOnly ? getReadDb() : getDb(), config)
+    : createSqliteWorkspaceQueryStore(getFallbackDatabase(), config);
 }
 
 /** Exposed for services that need to mint identifiers exactly like Python. */

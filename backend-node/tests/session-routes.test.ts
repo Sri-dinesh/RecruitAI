@@ -129,6 +129,36 @@ describe('sessions routes', () => {
     });
   });
 
+  it('paginates the session list with limit and offset', async () => {
+    await withPhase15(async ({ app, db }) => {
+      seedWorkspace(db);
+      for (const [index, id] of [
+        '11111111-2222-4333-8444-555555555551',
+        '11111111-2222-4333-8444-555555555552',
+      ].entries()) {
+        db.table('chat_sessions')
+          .insert({
+            id,
+            user_id: USER_ID,
+            title: `Page Session ${index + 1}`,
+            updated_at: `2026-11-1${index + 8}T00:00:00Z`,
+          })
+          .execute();
+      }
+
+      const first = await request(app).get('/api/sessions?limit=2').expect(200);
+      assert.equal(first.body.length, 2);
+
+      const second = await request(app).get('/api/sessions?limit=2&offset=2').expect(200);
+      assert.equal(second.body.length, 1);
+
+      const ids = [...first.body, ...second.body].map((row: { id: string }) => row.id);
+      assert.equal(new Set(ids).size, ids.length, 'pages must not overlap');
+
+      await request(app).get('/api/sessions?limit=0').expect(422);
+    });
+  });
+
   it('returns an isolated session detail with history, shortlist and interviews', async () => {
     await withPhase15(async ({ app, db }) => {
       seedWorkspace(db);
