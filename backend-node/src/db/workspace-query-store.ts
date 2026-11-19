@@ -12,6 +12,7 @@ import {
   chatSessions,
   interviews,
   jobs,
+  processedEvents,
   resumeChunks,
   sessionCandidates,
   users,
@@ -212,6 +213,10 @@ export interface WorkspaceQueryStore {
   listSessionCandidates(sessionId: string): Promise<string[]>;
   listSessionCandidatesForSessions(sessionIds: readonly string[]): Promise<DbRow[]>;
   upsertSessionCandidate(sessionId: string, candidateId: string): Promise<void>;
+  /** Batch link rows for a legacy-metadata backfill; one multi-row insert. */
+  upsertSessionCandidates(
+    links: readonly { readonly sessionId: string; readonly candidateId: string }[],
+  ): Promise<void>;
   deleteSessionCandidatesForSession(sessionId: string): Promise<void>;
   deleteSessionCandidatesForCandidate(candidateId: string): Promise<void>;
   deleteSessionCandidatesForUser(userId: string): Promise<void>;
@@ -870,6 +875,18 @@ export function createDrizzleWorkspaceQueryStore(
         });
     },
 
+    async upsertSessionCandidates(links) {
+      if (links.length === 0) {
+        return;
+      }
+      await db
+        .insert(sessionCandidates)
+        .values(links.map((link) => ({ sessionId: link.sessionId, candidateId: link.candidateId })))
+        .onConflictDoNothing({
+          target: [sessionCandidates.sessionId, sessionCandidates.candidateId],
+        });
+    },
+
     async deleteSessionCandidatesForSession(sessionId) {
       await db.delete(sessionCandidates).where(eq(sessionCandidates.sessionId, sessionId));
     },
@@ -957,6 +974,8 @@ export function createDrizzleWorkspaceQueryStore(
         () => db.delete(candidates).where(eq(candidates.userId, userId)),
         () => db.delete(chatSessions).where(eq(chatSessions.userId, userId)),
         () => db.delete(jobs).where(eq(jobs.userId, userId)),
+        // Payment idempotency keys keep a user reference; erase with the account.
+        () => db.delete(processedEvents).where(eq(processedEvents.userId, userId)),
         () => db.delete(users).where(eq(users.id, userId)),
       ]);
     },
@@ -1457,6 +1476,18 @@ export function createSqliteWorkspaceQueryStore(
         .execute();
     },
 
+    async upsertSessionCandidates(links) {
+      if (links.length === 0) {
+        return;
+      }
+      db.table('session_candidates')
+        .upsert(
+          links.map((link) => ({ session_id: link.sessionId, candidate_id: link.candidateId })),
+          'session_id,candidate_id',
+        )
+        .execute();
+    },
+
     async deleteSessionCandidatesForSession(sessionId) {
       db.table('session_candidates').delete().eq('session_id', sessionId).execute();
     },
@@ -1549,6 +1580,7 @@ export function createSqliteWorkspaceQueryStore(
         () => db.table('candidates').delete().eq('user_id', userId).execute(),
         () => db.table('chat_sessions').delete().eq('user_id', userId).execute(),
         () => db.table('jobs').delete().eq('user_id', userId).execute(),
+        () => db.table('processed_events').delete().eq('user_id', userId).execute(),
         () => db.table('users').delete().eq('id', userId).execute(),
       ];
       for (const operation of operations) {

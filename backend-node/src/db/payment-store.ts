@@ -5,7 +5,7 @@ import { desc, eq } from 'drizzle-orm';
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, type Database } from './client.js';
 import { getFallbackDatabase, type FallbackDatabase } from './fallback.js';
-import { creditTransactions, subscriptions, users } from './schema.js';
+import { creditTransactions, processedEvents, subscriptions, users } from './schema.js';
 
 /**
  * Narrow data-access contract used by `services/payment-service.ts`.
@@ -65,6 +65,14 @@ export interface UserInsert {
   readonly creditsBalance: number;
 }
 
+/** Idempotency key claimed before a payment verify/webhook grants credits. */
+export interface ProcessedEventInsert {
+  readonly id: string;
+  readonly kind: 'verify' | 'webhook';
+  readonly userId: string | null;
+  readonly expiresAt: Date;
+}
+
 export interface PaymentStore {
   /** Current credit balance, or `undefined` when the user row is missing. */
   getCreditsBalance(userId: string): Promise<number | undefined>;
@@ -78,6 +86,12 @@ export interface PaymentStore {
   insertCreditTransaction(record: CreditTransactionInsert): Promise<void>;
   listCreditTransactions(userId: string, limit: number): Promise<CreditTransactionRecord[]>;
   cancelSubscriptions(userId: string): Promise<void>;
+  /**
+   * Atomically claim an idempotency key. Returns `true` when this caller won
+   * the claim and may grant credits; `false` when a previous verify/webhook
+   * already processed the same payment or event.
+   */
+  claimProcessedEvent(record: ProcessedEventInsert): Promise<boolean>;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,6 +99,12 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** PostgreSQL `uuid` columns cannot store the public `sub_…`/`tx_…` ids. */
 function uuidOrGenerated(id: string): string {
   return UUID_PATTERN.test(id) ? id : randomUUID();
+}
+
+/** SQLite reports a duplicate primary key as a UNIQUE constraint failure. */
+function isUniqueViolation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('UNIQUE constraint failed') || message.includes('PRIMARY KEY');
 }
 
 function asDate(value: TimestampValue): Date | null {
@@ -249,6 +269,20 @@ export function createDrizzlePaymentStore(db: Database): PaymentStore {
         .set({ status: 'canceled', updatedAt: new Date() })
         .where(eq(subscriptions.userId, userId));
     },
+
+    async claimProcessedEvent(record) {
+      const inserted = await db
+        .insert(processedEvents)
+        .values({
+          id: record.id,
+          kind: record.kind,
+          userId: record.userId,
+          expiresAt: record.expiresAt,
+        })
+        .onConflictDoNothing({ target: processedEvents.id })
+        .returning({ id: processedEvents.id });
+      return inserted.length > 0;
+    },
   };
 }
 
@@ -385,6 +419,27 @@ export function createSqlitePaymentStore(db: FallbackDatabase): PaymentStore {
         .update({ status: 'canceled', updated_at: new Date().toISOString() })
         .eq('user_id', userId)
         .execute();
+    },
+
+    async claimProcessedEvent(record) {
+      // SQLite has one writer at a time, so an insert that conflicts with the
+      // primary key is the same atomic fence as Postgres' ON CONFLICT DO NOTHING.
+      try {
+        db.table('processed_events')
+          .insert({
+            id: record.id,
+            kind: record.kind,
+            user_id: record.userId,
+            expires_at: record.expiresAt.toISOString(),
+          })
+          .execute();
+        return true;
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return false;
+        }
+        throw error;
+      }
     },
   };
 }

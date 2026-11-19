@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { getConfig, type AppConfig } from '../config/index.js';
+import { HotReadCache, getHotReadCache, type CachedSubscription } from '../cache/hot-read-cache.js';
 import {
   createPaymentStore,
   type CreditTransactionRecord,
@@ -138,6 +139,8 @@ export interface PaymentServiceOptions {
   readonly config?: AppConfig;
   /** Explicit store for tests; otherwise resolved lazily from config. */
   readonly store?: PaymentStore;
+  /** Explicit hot-read cache for tests; otherwise the process-wide cache. */
+  readonly hotReadCache?: HotReadCache;
   readonly fetchImpl?: typeof fetch;
   /** Injectable clock for deterministic periods/audit timestamps. */
   readonly now?: () => Date;
@@ -156,6 +159,7 @@ export class PaymentService {
   private readonly webhookSecret: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
+  private readonly hotReadCache: HotReadCache;
   private store: PaymentStore | undefined;
 
   constructor(options: PaymentServiceOptions = {}) {
@@ -166,6 +170,11 @@ export class PaymentService {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => new Date());
     this.store = options.store;
+    this.hotReadCache =
+      options.hotReadCache ??
+      (options.config === undefined
+        ? getHotReadCache()
+        : new HotReadCache({ config: this.config }));
   }
 
   private getStore(): PaymentStore {
@@ -286,10 +295,19 @@ export class PaymentService {
   /**
    * Current credits balance. Defaults to `DEFAULT_FREE_CREDITS` for missing
    * users and unreadable rows, exactly like Python.
+   *
+   * This is the hot-read path: it may answer from the short-TTL cache. Mutating
+   * paths use `readPrimaryCredits()` so a stale entry can never authorise a
+   * spend or a top-up calculation.
    */
   async getUserCredits(userId: string): Promise<number> {
+    return this.fetchCredits(userId, true);
+  }
+
+  private async fetchCredits(userId: string, useCache: boolean): Promise<number> {
     try {
-      const value = await this.getStore().getCreditsBalance(userId);
+      const load = (): Promise<number | undefined> => this.getStore().getCreditsBalance(userId);
+      const value = useCache ? await this.hotReadCache.credits(userId, load) : await load();
       if (value !== undefined && value !== null) {
         const numeric = Number(value);
         if (Number.isFinite(numeric)) {
@@ -303,29 +321,44 @@ export class PaymentService {
     return DEFAULT_FREE_CREDITS;
   }
 
+  /** Cache-bypassing balance read used before an authoritative ledger write. */
+  private readPrimaryCredits(userId: string): Promise<number> {
+    return this.fetchCredits(userId, false);
+  }
+
   async getSubscriptionStatus(userId: string): Promise<SubscriptionStatusResult> {
-    let planId = 'free';
-    let subscriptionStatus = 'active';
-    let periodEnd: string | null = null;
+    let summary: CachedSubscription = { planId: 'free', status: 'active', periodEnd: null };
 
     try {
-      const subscription = await this.getStore().getLatestSubscription(userId);
-      if (subscription) {
-        planId = subscription.planId ?? 'free';
-        subscriptionStatus = subscription.status ?? 'active';
-        periodEnd = toIsoString(subscription.currentPeriodEnd);
-      }
+      summary = await this.hotReadCache.subscription(userId, async () => {
+        try {
+          const subscription = await this.getStore().getLatestSubscription(userId);
+          if (!subscription) {
+            return { planId: 'free', status: 'active', periodEnd: null };
+          }
+          return {
+            planId: subscription.planId ?? 'free',
+            status: subscription.status ?? 'active',
+            periodEnd: toIsoString(subscription.currentPeriodEnd),
+          };
+        } catch (error) {
+          logger.warn(
+            `Failed to fetch subscription status for user ${userId}: ${errorMessage(error)}`,
+          );
+          return { planId: 'free', status: 'active', periodEnd: null };
+        }
+      });
     } catch (error) {
-      logger.warn(`Failed to fetch subscription status for user ${userId}: ${errorMessage(error)}`);
+      logger.warn(`Failed to read cached subscription for user ${userId}: ${errorMessage(error)}`);
     }
 
     const creditsRemaining = await this.getUserCredits(userId);
     return {
       user_id: userId,
-      plan_id: planId,
-      status: subscriptionStatus,
+      plan_id: summary.planId,
+      status: summary.status,
       credits_remaining: creditsRemaining,
-      current_period_end: periodEnd,
+      current_period_end: summary.periodEnd,
     };
   }
 
@@ -334,18 +367,36 @@ export class PaymentService {
     planId: string,
     razorpayOrderId: string,
     razorpayPaymentId: string,
+    kind: 'verify' | 'webhook' = 'verify',
   ): Promise<ActivationResult> {
     const plan = this.getPlan(planId);
     if (!plan) {
       throw new PaymentValidationError(`Plan '${planId}' does not exist.`);
     }
 
+    const store = this.getStore();
     const now = this.now();
+
+    // Phase 22 idempotency fence: verify calls and webhook redeliveries share
+    // one key per Razorpay payment id. The request that inserts the key grants
+    // credits exactly once; every replay returns the current subscription.
+    const claimed = await store.claimProcessedEvent({
+      id: `payment:${razorpayPaymentId}`,
+      kind,
+      userId,
+      expiresAt: new Date(now.getTime() + this.config.payments.idempotencyTtlSeconds * 1000),
+    });
+    if (!claimed) {
+      logger.info(
+        `[payment] duplicate activation ignored for payment ${razorpayPaymentId} (user ${userId})`,
+      );
+      return this.replayActivation(userId, plan.id);
+    }
+
     const nowIso = now.toISOString();
     const periodEnd = new Date(now.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY_MS);
     const periodEndIso = periodEnd.toISOString();
     const subscriptionId = `sub_${randomHex(12)}`;
-    const store = this.getStore();
 
     // 1. Save/replace the tenant's subscription row.
     await store.saveSubscription({
@@ -361,8 +412,9 @@ export class PaymentService {
       createdAt: nowIso,
     });
 
-    // 2. Add the plan's credits to the user's quota.
-    const currentCredits = await this.getUserCredits(userId);
+    // 2. Add the plan's credits to the user's quota. Read the primary so a
+    // stale cached balance can never inflate the new total.
+    const currentCredits = await this.readPrimaryCredits(userId);
     const newCredits = currentCredits + plan.candidate_quota;
 
     try {
@@ -395,6 +447,9 @@ export class PaymentService {
       logger.warn(`Failed to log credit transaction: ${errorMessage(error)}`);
     }
 
+    // 4. Drop cached reads only after the authoritative writes above.
+    await this.invalidateHotReads(userId);
+
     return {
       success: true,
       subscription_id: subscriptionId,
@@ -403,6 +458,48 @@ export class PaymentService {
       credits_remaining: newCredits,
       current_period_end: periodEndIso,
     };
+  }
+
+  /**
+   * Replay-safe response for a duplicate payment key. Returns the stored
+   * subscription and the primary balance without granting credits again.
+   */
+  private async replayActivation(userId: string, planId: string): Promise<ActivationResult> {
+    const store = this.getStore();
+    const credits = await this.readPrimaryCredits(userId);
+    try {
+      const subscription = await store.getLatestSubscription(userId);
+      if (subscription) {
+        return {
+          success: true,
+          subscription_id: String(subscription.id),
+          plan_id: subscription.planId ?? planId,
+          status: subscription.status ?? 'active',
+          credits_remaining: credits,
+          current_period_end: toIsoString(subscription.currentPeriodEnd) ?? '',
+        };
+      }
+    } catch (error) {
+      logger.warn(
+        `Failed to read subscription for replay (user ${userId}): ${errorMessage(error)}`,
+      );
+    }
+    return {
+      success: true,
+      subscription_id: '',
+      plan_id: planId,
+      status: 'active',
+      credits_remaining: credits,
+      current_period_end: '',
+    };
+  }
+
+  private async invalidateHotReads(userId: string): Promise<void> {
+    try {
+      await this.hotReadCache.invalidateTenant(userId);
+    } catch (error) {
+      logger.warn(`Failed to invalidate hot-read cache for user ${userId}: ${errorMessage(error)}`);
+    }
   }
 
   async consumeCredits(
@@ -414,7 +511,8 @@ export class PaymentService {
       throw new PaymentValidationError('Amount must be greater than 0.');
     }
 
-    const currentBalance = await this.getUserCredits(userId);
+    // Authoritative read: never spend against a cached balance.
+    const currentBalance = await this.readPrimaryCredits(userId);
     if (currentBalance < amount) {
       throw new PaymentValidationError(
         `Insufficient credits. Remaining: ${currentBalance}, required: ${amount}`,
@@ -453,6 +551,8 @@ export class PaymentService {
     } catch (error) {
       logger.warn(`Failed to log credit transaction deduction: ${errorMessage(error)}`);
     }
+
+    await this.invalidateHotReads(userId);
 
     return {
       success: true,
@@ -501,6 +601,25 @@ export class PaymentService {
       nonEmptyString(paymentEntity.order_id) ??
       `order_${randomHex(8)}`;
 
+    // Razorpay redelivers webhooks on timeouts and non-2xx responses. When the
+    // payload carries an event id, that id is the replay fence; payment events
+    // additionally share the `payment:<id>` key claimed in activateSubscription.
+    const eventId = nonEmptyString(root.id) ?? nonEmptyString(root.event_id);
+    if (eventId) {
+      const claimed = await this.getStore().claimProcessedEvent({
+        id: `webhook:${eventId}`,
+        kind: 'webhook',
+        userId: userId ?? null,
+        expiresAt: new Date(
+          this.now().getTime() + this.config.payments.idempotencyTtlSeconds * 1000,
+        ),
+      });
+      if (!claimed) {
+        logger.info(`[payment] duplicate webhook ${eventId} ignored (event=${eventName})`);
+        return { status: 'duplicate', event: eventName };
+      }
+    }
+
     if (
       eventName === 'payment.captured' ||
       eventName === 'order.paid' ||
@@ -508,7 +627,13 @@ export class PaymentService {
       eventName === 'subscription.activated'
     ) {
       if (userId && planId) {
-        const subscription = await this.activateSubscription(userId, planId, orderId, paymentId);
+        const subscription = await this.activateSubscription(
+          userId,
+          planId,
+          orderId,
+          paymentId,
+          'webhook',
+        );
         return {
           status: 'processed',
           event: eventName,
@@ -529,6 +654,7 @@ export class PaymentService {
       if (userId) {
         try {
           await this.getStore().cancelSubscriptions(userId);
+          await this.invalidateHotReads(userId);
         } catch (error) {
           logger.warn(`Error canceling subscription for ${userId}: ${errorMessage(error)}`);
         }

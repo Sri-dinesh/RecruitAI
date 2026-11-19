@@ -832,6 +832,16 @@ export class FallbackDatabase {
       CREATE INDEX IF NOT EXISTS idx_outreach_logs_user_id ON outreach_logs(user_id);
       CREATE INDEX IF NOT EXISTS idx_outreach_logs_candidate_id ON outreach_logs(candidate_id);
       CREATE INDEX IF NOT EXISTS idx_outreach_logs_created_at ON outreach_logs(created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS processed_events (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('verify', 'webhook')),
+        user_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_processed_events_expires_at ON processed_events(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_processed_events_user_id ON processed_events(user_id);
     `);
 
     // Forward-compatible columns for databases created by older versions.
