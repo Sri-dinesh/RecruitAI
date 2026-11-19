@@ -153,7 +153,7 @@ describe('batched workspace writes', () => {
         gaps: ['SQL'],
         summary: 'ok',
       },
-    ]);
+    ] as unknown as Parameters<typeof persistApplications>[3]);
 
     assert.equal(calls.batch, 1);
     assert.equal(calls.single, 0);
