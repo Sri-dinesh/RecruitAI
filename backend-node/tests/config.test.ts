@@ -282,6 +282,28 @@ describe('logging and rate limiting config', () => {
     }
   });
 
+  it('parses LLM budget settings and rejects invalid cost thresholds', () => {
+    const config = loadConfig({
+      LLM_MAX_CONCURRENT_CALLS: '4',
+      LLM_BUDGET_LEASE_SECONDS: '90',
+      LLM_BUDGET_ACQUIRE_TIMEOUT_MS: '250',
+      LLM_COST_ALARM_WINDOW_SECONDS: '120',
+      LLM_COST_ALARM_THRESHOLD_USD: '0.25',
+    });
+    assert.equal(config.llm.maxConcurrentCalls, 4);
+    assert.equal(config.llm.budgetLeaseSeconds, 90);
+    assert.equal(config.llm.budgetAcquireTimeoutMs, 250);
+    assert.equal(config.llm.costAlarmWindowSeconds, 120);
+    assert.equal(config.llm.costAlarmThresholdUsd, 0.25);
+
+    for (const value of ['0', '-1', 'abc', 'Infinity']) {
+      assertThrowsWith(
+        () => loadConfig({ LLM_COST_ALARM_THRESHOLD_USD: value }),
+        'Invalid LLM_COST_ALARM_THRESHOLD_USD',
+      );
+    }
+  });
+
   it('parses and validates LOG_LEVEL', () => {
     assert.equal(loadConfig({ LOG_LEVEL: 'WARN' }).logging.level, 'warn');
     assert.equal(loadConfig({ LOG_LEVEL: '' }).logging.level, 'info');

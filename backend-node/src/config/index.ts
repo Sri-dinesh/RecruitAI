@@ -5,6 +5,7 @@ import {
   readInt,
   readIntStrict,
   readNonNegativeIntStrict,
+  readPositiveFloatStrict,
   readPositiveIntStrict,
   readString,
   readStringOr,
@@ -94,6 +95,16 @@ export interface LlmConfig {
   readonly dataUseMode: string;
   readonly killSwitch: boolean;
   readonly rotatingModels: readonly string[];
+  /** Fleet-wide cap on simultaneous Gemini attempts (Phase 23 spend gate). */
+  readonly maxConcurrentCalls: number;
+  /** Lease lifetime for a concurrency slot; must exceed the request timeout. */
+  readonly budgetLeaseSeconds: number;
+  /** How long a caller waits for a slot before failing over/degrading. */
+  readonly budgetAcquireTimeoutMs: number;
+  /** Approximate rolling window used for cost-anomaly detection. */
+  readonly costAlarmWindowSeconds: number;
+  /** Alert when the window's estimated spend reaches this many USD. */
+  readonly costAlarmThresholdUsd: number;
 }
 
 export interface SupabaseConfig {
@@ -431,6 +442,11 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       dataUseMode: readStringOr(env, 'LLM_DATA_USE_MODE', DEFAULT_LLM_DATA_USE_MODE),
       killSwitch: readBoolean(env, 'LLM_KILL_SWITCH', false),
       rotatingModels: ROTATING_MODELS,
+      maxConcurrentCalls: readPositiveIntStrict(env, 'LLM_MAX_CONCURRENT_CALLS', 8),
+      budgetLeaseSeconds: readPositiveIntStrict(env, 'LLM_BUDGET_LEASE_SECONDS', 120),
+      budgetAcquireTimeoutMs: readPositiveIntStrict(env, 'LLM_BUDGET_ACQUIRE_TIMEOUT_MS', 1500),
+      costAlarmWindowSeconds: readPositiveIntStrict(env, 'LLM_COST_ALARM_WINDOW_SECONDS', 300),
+      costAlarmThresholdUsd: readPositiveFloatStrict(env, 'LLM_COST_ALARM_THRESHOLD_USD', 1),
     },
     supabase: {
       url: readString(env, 'SUPABASE_URL'),

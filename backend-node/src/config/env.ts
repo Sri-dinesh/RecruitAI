@@ -114,6 +114,26 @@ export function readNonNegativeIntStrict(env: EnvSource, key: string, fallback: 
 }
 
 /**
+ * Strict positive-number parsing for cost thresholds. Unset/empty uses the
+ * fallback; invalid, zero or negative values fail loudly.
+ */
+export function readPositiveFloatStrict(env: EnvSource, key: string, fallback: number): number {
+  const raw = env[key];
+  if (raw === undefined || raw === '') {
+    return fallback;
+  }
+  const trimmed = raw.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed)) {
+    throw new Error(`Invalid ${key}: expected a number, received "${raw}".`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${key}: expected a positive number, received "${raw}".`);
+  }
+  return parsed;
+}
+
+/**
  * Strict enum parsing for startup-critical switches (log level). Unset/empty
  * uses the fallback; any other value that is not in `allowed` fails loudly so a
  * typo cannot silently change production behavior.

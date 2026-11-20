@@ -9,6 +9,11 @@ import { logEvent } from '../telemetry/logging.js';
 import { createLogger } from '../telemetry/logger.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
 import {
+  getDefaultLlmBudgetGate,
+  LlmBudgetExceededError,
+  type LlmBudgetGateLike,
+} from './budget.js';
+import {
   invokeGemini,
   type GeminiInvoker,
   type GeminiRequest,
@@ -562,6 +567,8 @@ export interface LlmCallOptions {
   readonly circuitBreaker?: AsyncCircuitBreaker;
   /** Metrics registry injection; defaults to the process-wide collector. */
   readonly metrics?: RedMetricsRegistry;
+  /** Spend-gate injection (tests); defaults to the process-wide gate. */
+  readonly budget?: LlmBudgetGateLike;
 }
 
 export interface LlmCallResult {
@@ -650,78 +657,92 @@ export async function callLlm(
     throw new Error('No valid GEMINI_API_KEY is configured in backend/.env.');
   }
 
-  const order = await getNextModelOrderAsync(options.providerOverride, breaker);
-  const errors: string[] = [];
-
-  for (const modelName of order) {
-    const startedAt = performance.now();
-
-    try {
-      const request: GeminiRequest = {
-        model: modelName,
-        prompt,
-        apiKey,
-        ...(options.systemInstruction ? { systemInstruction: options.systemInstruction } : {}),
-        ...(options.jsonMode ? { jsonMode: true } : {}),
-      };
-      const response = await invoker(request);
-      const latencyMs = performance.now() - startedAt;
-      const responseText = extractText(response.content);
-
-      await breaker.recordSuccessAsync(modelName);
-
-      const { tokensIn, tokensOut } = extractUsage(response, prompt, responseText);
-      const costUsd = estimateCost(tokensIn, tokensOut);
-
-      logEvent('llm_call_completed', {
-        extra: {
-          model: modelName,
-          tokens_in: tokensIn,
-          tokens_out: tokensOut,
-          cost_usd: costUsd,
-          latency_ms: roundTo(latencyMs, 2),
-          circuit_state: await breaker.getCircuitStateAsync(modelName),
-          status: 'success',
-        },
-      });
-
-      // Phase 7 accounting hook: feeds /api/metrics token + cost totals.
-      metrics.recordTokens(tokensIn, tokensOut, costUsd);
-
-      logger.info(
-        `[llm_router] Handled by ${modelName} in ${latencyMs.toFixed(1)}ms ` +
-          `(in=${tokensIn}, out=${tokensOut}, cost=$${costUsd.toFixed(6)})`,
-        { model: modelName, latency_ms: roundTo(latencyMs, 2), status: 'success' },
-      );
-
-      return { text: responseText, provider: 'gemini', latencyMs };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const isRateLimit = isRateLimitMessage(message);
-
-      await breaker.recordFailureAsync(modelName, isRateLimit);
-      errors.push(`${modelName}: ${message}`);
-
-      if (isRateLimit) {
-        logger.warn(
-          `[gemini] Rate limit hit on ${modelName}. Tripping circuit and failing over...`,
-          {
-            model: modelName,
-            status: 'rate_limit',
-          },
-        );
-      } else {
-        logger.warn(`[${modelName}] call failed: ${message}. Failing over to next model...`, {
-          model: modelName,
-          status: 'failed',
-        });
-      }
-    }
+  const budget = options.budget ?? getDefaultLlmBudgetGate(config);
+  const lease = await budget.acquire();
+  if (!lease) {
+    throw new LlmBudgetExceededError(
+      'LLM concurrency budget is saturated. Degrade to deterministic processing and retry shortly.',
+    );
   }
 
-  throw new AllProvidersFailedError(
-    `All Gemini models in pool failed. Details: ${errors.join('; ')}`,
-  );
+  try {
+    const order = await getNextModelOrderAsync(options.providerOverride, breaker);
+    const errors: string[] = [];
+
+    for (const modelName of order) {
+      const startedAt = performance.now();
+
+      try {
+        const request: GeminiRequest = {
+          model: modelName,
+          prompt,
+          apiKey,
+          ...(options.systemInstruction ? { systemInstruction: options.systemInstruction } : {}),
+          ...(options.jsonMode ? { jsonMode: true } : {}),
+        };
+        const response = await invoker(request);
+        const latencyMs = performance.now() - startedAt;
+        const responseText = extractText(response.content);
+
+        await breaker.recordSuccessAsync(modelName);
+
+        const { tokensIn, tokensOut } = extractUsage(response, prompt, responseText);
+        const costUsd = estimateCost(tokensIn, tokensOut);
+
+        logEvent('llm_call_completed', {
+          extra: {
+            model: modelName,
+            tokens_in: tokensIn,
+            tokens_out: tokensOut,
+            cost_usd: costUsd,
+            latency_ms: roundTo(latencyMs, 2),
+            circuit_state: await breaker.getCircuitStateAsync(modelName),
+            status: 'success',
+          },
+        });
+
+        // Phase 7 accounting hook: feeds /api/metrics token + cost totals.
+        metrics.recordTokens(tokensIn, tokensOut, costUsd);
+        // Phase 23 spend anomaly alert (never blocks the response).
+        await budget.recordCost(costUsd, modelName);
+
+        logger.info(
+          `[llm_router] Handled by ${modelName} in ${latencyMs.toFixed(1)}ms ` +
+            `(in=${tokensIn}, out=${tokensOut}, cost=$${costUsd.toFixed(6)})`,
+          { model: modelName, latency_ms: roundTo(latencyMs, 2), status: 'success' },
+        );
+
+        return { text: responseText, provider: 'gemini', latencyMs };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const isRateLimit = isRateLimitMessage(message);
+
+        await breaker.recordFailureAsync(modelName, isRateLimit);
+        errors.push(`${modelName}: ${message}`);
+
+        if (isRateLimit) {
+          logger.warn(
+            `[gemini] Rate limit hit on ${modelName}. Tripping circuit and failing over...`,
+            {
+              model: modelName,
+              status: 'rate_limit',
+            },
+          );
+        } else {
+          logger.warn(`[${modelName}] call failed: ${message}. Failing over to next model...`, {
+            model: modelName,
+            status: 'failed',
+          });
+        }
+      }
+    }
+
+    throw new AllProvidersFailedError(
+      `All Gemini models in pool failed. Details: ${errors.join('; ')}`,
+    );
+  } finally {
+    await lease.release();
+  }
 }
 
 /**
