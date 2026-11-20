@@ -97,6 +97,10 @@ export function createApp(options: CreateAppOptions = {}): Express {
 
   app.use(createCorsMiddleware(config));
 
+  // Shared application-state store: the global limiter and the Phase 23
+  // tiered quotas must agree on the same connection (or both stay local).
+  const rateLimitStore = getSharedRedisStore();
+
   // After CORS so a browser can read the 429 body, before parsing so abusive
   // requests are rejected cheaply. Disabled outside production by default.
   app.use(
@@ -104,7 +108,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
       enabled: config.rateLimit.enabled,
       windowMs: config.rateLimit.windowSeconds * 1000,
       maxRequests: config.rateLimit.maxRequests,
-      store: getSharedRedisStore(),
+      store: rateLimitStore,
     }),
   );
 
@@ -133,6 +137,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
       ingestionService,
       campaignService,
       chatJobManager,
+      rateLimitStore,
       ...(options.workspaceQueryStore === undefined
         ? {}
         : { workspaceQueryStore: options.workspaceQueryStore }),

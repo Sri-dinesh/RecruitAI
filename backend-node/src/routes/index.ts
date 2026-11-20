@@ -1,9 +1,11 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 
 import type { AppConfig } from '../config/index.js';
 import type { WorkspaceQueryStore } from '../db/workspace-query-store.js';
 import type { ChatJobManager } from '../jobs/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { createTieredRateLimitMiddleware } from '../middleware/tiered-rate-limit.js';
+import type { RedisStore } from '../redis/client.js';
 import type { AnalyticsService } from '../services/analytics-service.js';
 import type { CampaignService } from '../services/campaign-service.js';
 import type { EmailService } from '../services/email-service.js';
@@ -80,20 +82,50 @@ export interface ApiRouterOptions {
   readonly analyticsService?: AnalyticsService;
   readonly userService?: UserService;
   readonly privacyService?: PrivacyService;
+  /** Shared Redis store for fleet-wide tiered quotas (tests pass `null`). */
+  readonly rateLimitStore?: RedisStore | null;
+}
+
+function withRateLimit(auth: RequestHandler, rateLimit: RequestHandler): RequestHandler {
+  // Run the tiered quota only after auth resolves a tenant. Routers keep their
+  // own `auth` dependency, so paths that never match a route still return 404
+  // instead of inheriting an auth failure from a router-level mount.
+  return (req, res, next) => {
+    auth(req, res, (error?: unknown) => {
+      if (error) {
+        next(error);
+        return;
+      }
+      rateLimit(req, res, next);
+    });
+  };
 }
 
 export function createApiRouter(options: ApiRouterOptions = {}): Router {
   const router = Router();
   const auth = options.config ? requireAuth({ config: options.config }) : requireAuth();
+  // Phase 23: fine-grained fair-use quotas after authentication. The global
+  // pre-auth IP limiter in `app.ts` remains the coarse abuse guard.
+  const rateLimit: RequestHandler =
+    options.config === undefined
+      ? (_req, _res, next) => next()
+      : createTieredRateLimitMiddleware({
+          enabled: options.config.rateLimit.tieredEnabled,
+          windowMs: options.config.rateLimit.tierWindowSeconds * 1000,
+          limits: options.config.rateLimit.tiers,
+          ipMultiplier: options.config.rateLimit.ipMultiplier,
+          store: options.rateLimitStore ?? null,
+        });
+  const authed = withRateLimit(auth, rateLimit);
   const storeOptions =
     options.workspaceQueryStore === undefined ? {} : { queryStore: options.workspaceQueryStore };
-  router.use('/metrics', auth, createMetricsRouter(options.metrics ?? metricsRegistry));
+  router.use('/metrics', auth, rateLimit, createMetricsRouter(options.metrics ?? metricsRegistry));
   router.use(
     '/chat',
     auth,
     createChatRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...(options.campaignService === undefined
         ? {}
         : { campaignService: options.campaignService }),
@@ -104,7 +136,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/payments',
     createPaymentsRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...(options.paymentService === undefined ? {} : { paymentService: options.paymentService }),
     }),
   );
@@ -112,7 +144,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/email',
     createEmailRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...(options.emailService === undefined ? {} : { emailService: options.emailService }),
     }),
   );
@@ -120,7 +152,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/ingest',
     createIngestRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...(options.ingestionService === undefined
         ? {}
         : { ingestionService: options.ingestionService }),
@@ -130,7 +162,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/sessions',
     createSessionsRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.sessionService === undefined ? {} : { sessionService: options.sessionService }),
     }),
@@ -139,7 +171,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/privacy',
     createPrivacyRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.privacyService === undefined ? {} : { privacyService: options.privacyService }),
     }),
@@ -148,7 +180,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/reports',
     createReportsRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.reportService === undefined ? {} : { reportService: options.reportService }),
     }),
@@ -157,7 +189,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/analytics',
     createAnalyticsRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.analyticsService === undefined
         ? {}
@@ -168,7 +200,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
     '/users',
     createUsersRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.userService === undefined ? {} : { userService: options.userService }),
     }),
@@ -178,7 +210,7 @@ export function createApiRouter(options: ApiRouterOptions = {}): Router {
   router.use(
     createEvaluateRouter({
       ...(options.config === undefined ? {} : { config: options.config }),
-      auth,
+      auth: authed,
       ...storeOptions,
       ...(options.paymentService === undefined ? {} : { paymentService: options.paymentService }),
       ...(options.evaluationService === undefined

@@ -244,7 +244,55 @@ export interface RateLimitConfig {
    * reachable exclusively through a proxy that overwrites the header.
    */
   readonly trustProxy: boolean;
+  /**
+   * Per-user tiered quotas (Phase 23). This is the fine-grained fair-use layer
+   * mounted after authentication; the global limiter above stays as the coarse
+   * pre-auth guard. Disabled outside production unless explicitly enabled.
+   */
+  readonly tieredEnabled: boolean;
+  /** Sliding window for every tier; defaults to 60 seconds. */
+  readonly tierWindowSeconds: number;
+  /**
+   * Per-IP limit multiplier relative to the per-user limit for the same tier.
+   * A higher value lets several users share a NAT/proxy address while still
+   * bounding a single abusive client. Defaults to 4.
+   */
+  readonly ipMultiplier: number;
+  /** Per-user request budget per tier/window. */
+  readonly tiers: Readonly<Record<RateLimitTier, number>>;
 }
+
+/** Fair-use tiers, matching `docs/slo.md` §4 (chat 60/min). */
+export const RATE_LIMIT_TIERS = [
+  'chat',
+  'email',
+  'payments',
+  'ingest',
+  'evaluate',
+  'write',
+  'read',
+] as const;
+
+export type RateLimitTier = (typeof RATE_LIMIT_TIERS)[number];
+
+export type RateLimitTierLimits = Readonly<Record<RateLimitTier, number>>;
+
+export const DEFAULT_RATE_LIMIT_TIER_LIMITS: RateLimitTierLimits = {
+  // 60 chat requests/minute per recruiter workspace (docs/slo.md §4).
+  chat: 60,
+  // Outbound email is expensive and mostly LLM-drafted.
+  email: 20,
+  // Payment mutations are idempotent but must not be scriptable.
+  payments: 30,
+  // Batch ingestion is capped at 10 files/request; bound batches per minute.
+  ingest: 30,
+  // Candidate evaluation/ATS export invokes the LLM pool.
+  evaluate: 30,
+  // Generic authenticated mutations (sessions, privacy, reports, users).
+  write: 120,
+  // Read/list/status endpoints get a larger but still bounded budget.
+  read: 600,
+};
 
 /**
  * Async chat job execution (Phase 14).
@@ -468,6 +516,46 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       windowSeconds: readPositiveIntStrict(env, 'RATE_LIMIT_WINDOW_SECONDS', 60),
       maxRequests: readPositiveIntStrict(env, 'RATE_LIMIT_MAX_REQUESTS', 600),
       trustProxy: readBoolean(env, 'TRUST_PROXY', false),
+      tieredEnabled: readBoolean(env, 'RATE_LIMIT_TIERED_ENABLED', isProduction),
+      tierWindowSeconds: readPositiveIntStrict(env, 'RATE_LIMIT_TIER_WINDOW_SECONDS', 60),
+      ipMultiplier: readPositiveIntStrict(env, 'RATE_LIMIT_IP_MULTIPLIER', 4),
+      tiers: {
+        chat: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_CHAT_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.chat,
+        ),
+        email: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_EMAIL_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.email,
+        ),
+        payments: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_PAYMENTS_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.payments,
+        ),
+        ingest: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_INGEST_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.ingest,
+        ),
+        evaluate: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_EVALUATE_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.evaluate,
+        ),
+        write: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_WRITE_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.write,
+        ),
+        read: readPositiveIntStrict(
+          env,
+          'RATE_LIMIT_READ_MAX',
+          DEFAULT_RATE_LIMIT_TIER_LIMITS.read,
+        ),
+      },
     },
     missingKeys: getMissingKeys(env),
   };

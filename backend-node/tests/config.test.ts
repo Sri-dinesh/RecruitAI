@@ -9,6 +9,7 @@ import {
   DEFAULT_JWT_AUDIENCE,
   DEFAULT_LLM_DATA_USE_MODE,
   DEFAULT_LOCAL_DEV_USER_ID,
+  DEFAULT_RATE_LIMIT_TIER_LIMITS,
   REQUIRED_PRODUCTION_KEYS,
   ROTATING_MODELS,
   getConfig,
@@ -100,6 +101,10 @@ describe('config defaults (development)', () => {
       windowSeconds: 60,
       maxRequests: 600,
       trustProxy: false,
+      tieredEnabled: false,
+      tierWindowSeconds: 60,
+      ipMultiplier: 4,
+      tiers: DEFAULT_RATE_LIMIT_TIER_LIMITS,
     });
     assert.deepEqual(config.missingKeys, [...REQUIRED_PRODUCTION_KEYS]);
   });
@@ -217,14 +222,60 @@ describe('logging and rate limiting config', () => {
       windowSeconds: 30,
       maxRequests: 120,
       trustProxy: true,
+      tieredEnabled: false,
+      tierWindowSeconds: 60,
+      ipMultiplier: 4,
+      tiers: DEFAULT_RATE_LIMIT_TIER_LIMITS,
     });
 
     const disabled = loadConfig(productionEnv({ RATE_LIMIT_ENABLED: 'false' }));
     assert.equal(disabled.rateLimit.enabled, false);
   });
 
+  it('enables tiered quotas by default only in production', () => {
+    assert.equal(loadConfig({}).rateLimit.tieredEnabled, false);
+    assert.equal(loadConfig(productionEnv()).rateLimit.tieredEnabled, true);
+    assert.equal(loadConfig({ RATE_LIMIT_TIERED_ENABLED: 'true' }).rateLimit.tieredEnabled, true);
+    assert.equal(
+      loadConfig(productionEnv({ RATE_LIMIT_TIERED_ENABLED: 'false' })).rateLimit.tieredEnabled,
+      false,
+    );
+  });
+
+  it('parses per-tier limits and the IP multiplier', () => {
+    const config = loadConfig({
+      RATE_LIMIT_CHAT_MAX: '10',
+      RATE_LIMIT_EMAIL_MAX: '11',
+      RATE_LIMIT_PAYMENTS_MAX: '12',
+      RATE_LIMIT_INGEST_MAX: '13',
+      RATE_LIMIT_EVALUATE_MAX: '14',
+      RATE_LIMIT_WRITE_MAX: '15',
+      RATE_LIMIT_READ_MAX: '16',
+      RATE_LIMIT_IP_MULTIPLIER: '8',
+      RATE_LIMIT_TIER_WINDOW_SECONDS: '30',
+    });
+    assert.deepEqual(config.rateLimit.tiers, {
+      chat: 10,
+      email: 11,
+      payments: 12,
+      ingest: 13,
+      evaluate: 14,
+      write: 15,
+      read: 16,
+    });
+    assert.equal(config.rateLimit.ipMultiplier, 8);
+    assert.equal(config.rateLimit.tierWindowSeconds, 30);
+  });
+
   it('rejects invalid limiter bounds instead of silently changing them', () => {
-    for (const key of ['RATE_LIMIT_WINDOW_SECONDS', 'RATE_LIMIT_MAX_REQUESTS']) {
+    for (const key of [
+      'RATE_LIMIT_WINDOW_SECONDS',
+      'RATE_LIMIT_MAX_REQUESTS',
+      'RATE_LIMIT_TIER_WINDOW_SECONDS',
+      'RATE_LIMIT_IP_MULTIPLIER',
+      'RATE_LIMIT_CHAT_MAX',
+      'RATE_LIMIT_READ_MAX',
+    ]) {
       assertThrowsWith(() => loadConfig({ [key]: '0' }), `Invalid ${key}`);
       assertThrowsWith(() => loadConfig({ [key]: '-1' }), `Invalid ${key}`);
       assertThrowsWith(() => loadConfig({ [key]: 'abc' }), `Invalid ${key}`);
