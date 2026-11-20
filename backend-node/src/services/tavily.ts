@@ -5,6 +5,7 @@ import { createTtlCache, type TtlCache } from '../cache/ttl-cache.js';
 import { getConfig } from '../config/index.js';
 import { getSharedRedisStore } from '../redis/client.js';
 import { createLogger } from '../telemetry/logger.js';
+import { fetchWithTimeout } from './http.js';
 
 /**
  * Port of `backend/app/services/tavily_service.py`.
@@ -78,6 +79,8 @@ export interface TavilyServiceOptions {
   readonly now?: () => number;
   /** Cache injection (tests); defaults to Redis when configured, else local. */
   readonly cache?: TtlCache;
+  /** Hard request deadline in milliseconds; defaults to config/env. */
+  readonly timeoutMs?: number;
 }
 
 interface TavilySearchResponse {
@@ -426,12 +429,14 @@ export class TavilyService {
   private readonly apiKey: string | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
   private readonly now: () => number;
 
   constructor(options: TavilyServiceOptions = {}) {
     this.apiKey = options.apiKey ?? getConfig().llm.tavilyApiKey;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.baseUrl = (options.baseUrl ?? DEFAULT_TAVILY_BASE_URL).replace(/\/$/, '');
+    this.timeoutMs = options.timeoutMs ?? getConfig().outbound.tavilyTimeoutMs;
     this.now = options.now ?? Date.now;
     this.cache =
       options.cache ??
@@ -462,11 +467,16 @@ export class TavilyService {
 
   /** POST to `/search`, attaching the API key the same way TavilyClient does. */
   private async search(body: Readonly<Record<string, unknown>>): Promise<TavilySearchResponse> {
-    const response = await this.fetchImpl(`${this.baseUrl}/search`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ api_key: this.apiKey, ...body }),
-    });
+    const response = await fetchWithTimeout(
+      this.fetchImpl,
+      `${this.baseUrl}/search`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ api_key: this.apiKey, ...body }),
+      },
+      this.timeoutMs,
+    );
 
     if (!response.ok) {
       throw new Error(`Tavily API error (${response.status})`);

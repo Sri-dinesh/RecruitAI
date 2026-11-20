@@ -10,6 +10,7 @@ import {
 } from '../db/payment-store.js';
 import type { PricingPlan } from '../schemas/payment.js';
 import { createLogger } from '../telemetry/logger.js';
+import { fetchWithTimeout } from './http.js';
 
 const logger = createLogger('recruitai.payment_service');
 
@@ -142,6 +143,8 @@ export interface PaymentServiceOptions {
   /** Explicit hot-read cache for tests; otherwise the process-wide cache. */
   readonly hotReadCache?: HotReadCache;
   readonly fetchImpl?: typeof fetch;
+  /** Hard Razorpay request deadline; defaults to config/env. */
+  readonly timeoutMs?: number;
   /** Injectable clock for deterministic periods/audit timestamps. */
   readonly now?: () => Date;
 }
@@ -158,6 +161,7 @@ export class PaymentService {
   private readonly keySecret: string;
   private readonly webhookSecret: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
   private readonly now: () => Date;
   private readonly hotReadCache: HotReadCache;
   private store: PaymentStore | undefined;
@@ -168,6 +172,7 @@ export class PaymentService {
     this.keySecret = this.config.razorpay.keySecret;
     this.webhookSecret = this.config.razorpay.webhookSecret;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? this.config.outbound.razorpayTimeoutMs;
     this.now = options.now ?? (() => new Date());
     this.store = options.store;
     this.hotReadCache =
@@ -213,14 +218,19 @@ export class PaymentService {
         };
 
         const credentials = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
-        const response = await this.fetchImpl(`${DEFAULT_RAZORPAY_BASE_URL}/v1/orders`, {
-          method: 'POST',
-          headers: {
-            authorization: `Basic ${credentials}`,
-            'content-type': 'application/json',
+        const response = await fetchWithTimeout(
+          this.fetchImpl,
+          `${DEFAULT_RAZORPAY_BASE_URL}/v1/orders`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Basic ${credentials}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(orderPayload),
           },
-          body: JSON.stringify(orderPayload),
-        });
+          this.timeoutMs,
+        );
 
         if (!response.ok) {
           throw new Error(`Razorpay API responded with ${response.status}`);

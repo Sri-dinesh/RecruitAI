@@ -1,6 +1,11 @@
 import nodemailer from 'nodemailer';
 
-import { getConfig, type AppConfig, type SmtpConfig } from '../config/index.js';
+import {
+  getConfig,
+  type AppConfig,
+  type OutboundConfig,
+  type SmtpConfig,
+} from '../config/index.js';
 import { callLlm } from '../llm/router.js';
 
 /**
@@ -150,12 +155,16 @@ export function parseDraft(emailDraft: string): { subject: string; body: string 
   return { subject, body };
 }
 
-function createSmtpTransport(config: SmtpConfig): EmailTransport {
+function createSmtpTransport(config: SmtpConfig, outbound: OutboundConfig): EmailTransport {
   const transporter = nodemailer.createTransport({
     host: config.server,
     port: config.port,
     secure: false,
     requireTLS: true,
+    // Never let a stuck SMTP handshake hold the request open indefinitely.
+    connectionTimeout: outbound.smtpConnectionTimeoutMs,
+    greetingTimeout: outbound.smtpGreetingTimeoutMs,
+    socketTimeout: outbound.smtpSocketTimeoutMs,
     auth: {
       user: config.username,
       pass: config.password,
@@ -185,7 +194,7 @@ export async function sendEmailDraft(
   if (smtp.username && smtp.password) {
     try {
       const { subject, body } = parseDraft(emailDraft);
-      const transport = options.transport ?? createSmtpTransport(smtp);
+      const transport = options.transport ?? createSmtpTransport(smtp, config.outbound);
       const sender = smtp.sender || smtp.username;
 
       await transport.send({

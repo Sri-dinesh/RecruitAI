@@ -304,6 +304,31 @@ describe('logging and rate limiting config', () => {
     }
   });
 
+  it('parses outbound dependency deadlines', () => {
+    const defaults = loadConfig({});
+    assert.equal(defaults.outbound.tavilyTimeoutMs, 8_000);
+    assert.equal(defaults.outbound.razorpayTimeoutMs, 10_000);
+    assert.equal(defaults.outbound.smtpConnectionTimeoutMs, 10_000);
+
+    const config = loadConfig({
+      TAVILY_TIMEOUT_MS: '2500',
+      RAZORPAY_TIMEOUT_MS: '3000',
+      SMTP_CONNECTION_TIMEOUT_MS: '4000',
+      SMTP_GREETING_TIMEOUT_MS: '5000',
+      SMTP_SOCKET_TIMEOUT_MS: '6000',
+    });
+    assert.deepEqual(config.outbound, {
+      tavilyTimeoutMs: 2_500,
+      razorpayTimeoutMs: 3_000,
+      smtpConnectionTimeoutMs: 4_000,
+      smtpGreetingTimeoutMs: 5_000,
+      smtpSocketTimeoutMs: 6_000,
+    });
+    for (const key of ['TAVILY_TIMEOUT_MS', 'RAZORPAY_TIMEOUT_MS']) {
+      assertThrowsWith(() => loadConfig({ [key]: '0' }), `Invalid ${key}`);
+    }
+  });
+
   it('parses and validates LOG_LEVEL', () => {
     assert.equal(loadConfig({ LOG_LEVEL: 'WARN' }).logging.level, 'warn');
     assert.equal(loadConfig({ LOG_LEVEL: '' }).logging.level, 'info');

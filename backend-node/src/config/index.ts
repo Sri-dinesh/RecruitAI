@@ -184,6 +184,22 @@ export interface PaymentsConfig {
   readonly idempotencyTtlSeconds: number;
 }
 
+/**
+ * Outbound dependency deadlines (Phase 23).
+ *
+ * Every third-party call has a hard timeout so a hung provider cannot pin a
+ * request slot indefinitely. Tavily falls back to deterministic market data;
+ * Razorpay failures are mapped by the payment route; SMTP failures return the
+ * existing dispatch-failure message.
+ */
+export interface OutboundConfig {
+  readonly tavilyTimeoutMs: number;
+  readonly razorpayTimeoutMs: number;
+  readonly smtpConnectionTimeoutMs: number;
+  readonly smtpGreetingTimeoutMs: number;
+  readonly smtpSocketTimeoutMs: number;
+}
+
 export interface SmtpConfig {
   readonly server: string;
   readonly port: number;
@@ -369,6 +385,7 @@ export interface AppConfig {
   readonly chat: ChatConfig;
   readonly cache: CacheConfig;
   readonly payments: PaymentsConfig;
+  readonly outbound: OutboundConfig;
   readonly telemetry: TelemetryConfig;
   readonly logging: LoggingConfig;
   readonly rateLimit: RateLimitConfig;
@@ -526,6 +543,13 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
     },
     payments: {
       idempotencyTtlSeconds: readPositiveIntStrict(env, 'PAYMENT_IDEMPOTENCY_TTL_SECONDS', 86_400),
+    },
+    outbound: {
+      tavilyTimeoutMs: readPositiveIntStrict(env, 'TAVILY_TIMEOUT_MS', 8_000),
+      razorpayTimeoutMs: readPositiveIntStrict(env, 'RAZORPAY_TIMEOUT_MS', 10_000),
+      smtpConnectionTimeoutMs: readPositiveIntStrict(env, 'SMTP_CONNECTION_TIMEOUT_MS', 10_000),
+      smtpGreetingTimeoutMs: readPositiveIntStrict(env, 'SMTP_GREETING_TIMEOUT_MS', 10_000),
+      smtpSocketTimeoutMs: readPositiveIntStrict(env, 'SMTP_SOCKET_TIMEOUT_MS', 20_000),
     },
     telemetry: {
       enabled: true,
