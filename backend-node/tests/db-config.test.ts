@@ -108,6 +108,8 @@ describe('database configuration', () => {
       creditsTtlSeconds: 15,
       subscriptionTtlSeconds: 30,
       analyticsTtlSeconds: 30,
+      jdParseEnabled: true,
+      jdParseTtlSeconds: 3600,
     });
     assert.equal(config.payments.idempotencyTtlSeconds, 86_400);
   });
@@ -118,12 +120,16 @@ describe('database configuration', () => {
       CACHE_CREDITS_TTL_SECONDS: '5',
       CACHE_SUBSCRIPTION_TTL_SECONDS: '10',
       CACHE_ANALYTICS_TTL_SECONDS: '60',
+      CACHE_JD_PARSE_ENABLED: 'false',
+      CACHE_JD_PARSE_TTL_SECONDS: '120',
       PAYMENT_IDEMPOTENCY_TTL_SECONDS: '3600',
     });
     assert.equal(config.cache.hotReadsEnabled, false);
     assert.equal(config.cache.creditsTtlSeconds, 5);
     assert.equal(config.cache.subscriptionTtlSeconds, 10);
     assert.equal(config.cache.analyticsTtlSeconds, 60);
+    assert.equal(config.cache.jdParseEnabled, false);
+    assert.equal(config.cache.jdParseTtlSeconds, 120);
     assert.equal(config.payments.idempotencyTtlSeconds, 3_600);
   });
 });

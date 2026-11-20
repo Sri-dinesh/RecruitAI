@@ -158,6 +158,13 @@ export interface CacheConfig {
   readonly creditsTtlSeconds: number;
   readonly subscriptionTtlSeconds: number;
   readonly analyticsTtlSeconds: number;
+  /**
+   * JD parsed-structure cache (Phase 23). Parsing is deterministic for a given
+   * document, so repeated uploads of the same JD can reuse the structured
+   * result across replicas when Redis is configured.
+   */
+  readonly jdParseEnabled: boolean;
+  readonly jdParseTtlSeconds: number;
 }
 
 /** Payment idempotency window (Phase 22). */
@@ -498,6 +505,8 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       creditsTtlSeconds: readPositiveIntStrict(env, 'CACHE_CREDITS_TTL_SECONDS', 15),
       subscriptionTtlSeconds: readPositiveIntStrict(env, 'CACHE_SUBSCRIPTION_TTL_SECONDS', 30),
       analyticsTtlSeconds: readPositiveIntStrict(env, 'CACHE_ANALYTICS_TTL_SECONDS', 30),
+      jdParseEnabled: readBoolean(env, 'CACHE_JD_PARSE_ENABLED', true),
+      jdParseTtlSeconds: readPositiveIntStrict(env, 'CACHE_JD_PARSE_TTL_SECONDS', 3600),
     },
     payments: {
       idempotencyTtlSeconds: readPositiveIntStrict(env, 'PAYMENT_IDEMPOTENCY_TTL_SECONDS', 86_400),

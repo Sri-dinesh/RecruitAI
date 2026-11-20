@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 import { ensureValidUuid } from '../auth/index.js';
+import { createTtlCache, type TtlCache } from '../cache/ttl-cache.js';
 import { getConfig, type AppConfig } from '../config/index.js';
 import {
   createWorkspaceStore,
@@ -11,6 +12,7 @@ import {
 } from '../db/workspace-store.js';
 import { chunkResume } from '../rag/chunking.js';
 import { embedTexts, type EmbeddingOptions } from '../rag/embeddings.js';
+import { getSharedRedisStore } from '../redis/client.js';
 import type { Candidate } from '../schemas/candidate.js';
 import { jobDescriptionSchema, type JobDescription } from '../schemas/jd.js';
 import { createLogger } from '../telemetry/logger.js';
@@ -180,7 +182,20 @@ export interface IngestionServiceOptions {
   readonly parseResumeImpl?: (rawText: string, filename: string) => Promise<Candidate>;
   /** JD parsing injection for tests. */
   readonly parseJdImpl?: (rawText: string, filename: string) => Promise<JobDescription>;
+  /** JD parsed-structure cache injection for tests (Phase 23). */
+  readonly jdCache?: TtlCache;
   readonly now?: () => Date;
+}
+
+/**
+ * Content-addressed cache key for a parsed JD.
+ *
+ * Filename is included because the parser uses it for hints (e.g. extension
+ * and title detection). Hashing keeps keys bounded and avoids exposing raw JD
+ * text in Redis key names.
+ */
+export function computeJdCacheKey(rawText: string, filename: string): string {
+  return createHash('sha256').update(`${filename}\u0000${rawText}`).digest('hex');
 }
 
 export class IngestionService {
@@ -190,6 +205,7 @@ export class IngestionService {
   private readonly parseDocumentImpl: typeof parseDocument;
   private readonly parseResumeImpl: (rawText: string, filename: string) => Promise<Candidate>;
   private readonly parseJdImpl: (rawText: string, filename: string) => Promise<JobDescription>;
+  private readonly jdCache: TtlCache | null;
   private readonly now: () => Date;
   private store: WorkspaceStore | undefined;
 
@@ -204,6 +220,15 @@ export class IngestionService {
       options.parseResumeImpl ?? ((rawText, filename) => parseStructuredResume(rawText, filename));
     this.parseJdImpl =
       options.parseJdImpl ?? ((rawText, filename) => parseStructuredJd(rawText, filename));
+    this.jdCache =
+      options.jdCache ??
+      (this.config.cache.jdParseEnabled
+        ? createTtlCache({
+            store: getSharedRedisStore(),
+            namespace: 'jd',
+            maxEntries: 500,
+          })
+        : null);
     this.now = options.now ?? (() => new Date());
     this.store = options.store;
   }
@@ -240,9 +265,25 @@ export class IngestionService {
     return this.parseDocumentImpl(fileBytes, filename);
   }
 
-  /** Parse raw JD text into the structured model. */
+  /** Parse raw JD text into the structured model (cached by content hash). */
   async parseJobDescription(rawText: string, filename: string): Promise<JobDescription> {
-    return this.parseJdImpl(rawText, filename);
+    if (!this.jdCache) {
+      return this.parseJdImpl(rawText, filename);
+    }
+
+    const key = computeJdCacheKey(rawText, filename);
+    const cached = await this.jdCache.get<JobDescription>(key);
+    if (cached !== undefined) {
+      // A corrupt/shape-changed Redis value must not break ingestion.
+      const validated = jobDescriptionSchema.safeParse(cached);
+      if (validated.success) {
+        return validated.data;
+      }
+    }
+
+    const parsed = await this.parseJdImpl(rawText, filename);
+    await this.jdCache.set(key, parsed, this.config.cache.jdParseTtlSeconds);
+    return parsed;
   }
 
   /**
