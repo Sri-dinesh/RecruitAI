@@ -82,6 +82,12 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
 - Circuit breaker logs: `[circuit_breaker] Model ... hit rate limit. Circuit tripped to OPEN`.
 - Logs show failover attempts across all 5 models.
 - If all 5 models exhaust quota, `AllProvidersFailedError` is raised.
+- A `[llm_budget] LLM spend anomaly` warning or an `llm_cost_anomaly`
+  telemetry event means estimated spend crossed `LLM_COST_ALARM_THRESHOLD_USD`
+  inside `LLM_COST_ALARM_WINDOW_SECONDS`. This is an alert, not a hard stop.
+- `LlmBudgetExceededError` means every concurrency slot was busy for
+  `LLM_BUDGET_ACQUIRE_TIMEOUT_MS`; affected turns degrade to deterministic
+  matching instead of queuing indefinitely.
 
 ### Immediate Diagnostics
 
@@ -91,6 +97,15 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
      http://localhost:8000/api/metrics | jq .red_metrics.latencies_ms
    ```
 2. Check Google Cloud Gemini Quota console for 429 rate limit spikes.
+3. For spend alerts, inspect the fleet-wide window and lease count:
+   ```bash
+   redis-cli -u "$REDIS_URL" get recruitai:llm:cost_window
+   redis-cli -u "$REDIS_URL" zcard recruitai:llm:leases
+   grep 'llm_budget' <platform-logs> | tail -20
+   ```
+   The cost window is an approximate rolling bucket keyed with a TTL; a spike
+   with normal token counts usually means a retry loop or a new high-volume
+   caller, not a pricing change.
 
 ### Mitigation
 
@@ -101,6 +116,13 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    ```
 2. **Add / Rotate API Key**:
    Update `GEMINI_API_KEY` in production secrets manager and trigger a rolling restart.
+3. **Contain spend**:
+   Lower `LLM_MAX_CONCURRENT_CALLS` (or raise
+   `LLM_COST_ALARM_THRESHOLD_USD` only to reduce noise, never to hide a real
+   spike) and identify the caller from request/tenant logs. If the anomaly is a
+   retry storm, let the circuit breaker open rather than increasing
+   `LLM_BUDGET_ACQUIRE_TIMEOUT_MS`; sustained `LlmBudgetExceededError` is a
+   capacity signal, not a bug to paper over.
 
 ---
 
@@ -167,7 +189,7 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    `statement_timeout` should read `15s` (or `PG_STATEMENT_TIMEOUT_MS`), and no
    session should sit in `idle in transaction` past 30 s.
 4. Check the connection budget before scaling: `(PG_POOL_MAX +
-   PG_READ_POOL_MAX) × instances + worker connections` must stay under the
+PG_READ_POOL_MAX) × instances + worker connections` must stay under the
    Supabase pooler ceiling. `PG_READ_POOL_MAX` defaults to `PG_POOL_MAX`.
 
 ### Mitigation
@@ -238,8 +260,8 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
 ### Symptoms
 
 - Clients receive `429` with body
-  `{"detail":"Too many requests. Please retry shortly."}` and a `Retry-After`
-  header.
+  `{"detail":"Too many requests. Please retry shortly.","code":"rate_limit_exceeded","retry_after":<seconds>}`
+  and a `Retry-After` header.
 - `recruitai_requests_total{endpoint=...,status="429"}` rises while the error
   rate alert stays otherwise quiet.
 - Users report the UI showing a retry message right after a burst of actions.
@@ -251,32 +273,49 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    curl -s -H "Authorization: Bearer $ADMIN_JWT" \
      https://<backend-host>/api/metrics | jq '.red_metrics.requests_total // .red_metrics'
    ```
-2. Determine the client key. The limiter key is the client IP (`req.ip`). When
-   `REDIS_URL` is configured the fixed window is shared by every replica, so a
-   `429` means the fleet-wide ceiling was reached, not the local process. If
-   `TRUST_PROXY=true`, the key comes from `X-Forwarded-For`; if the proxy does
-   not overwrite that header, every client shares the proxy address and
-   legitimate traffic will be throttled together.
-3. Compare `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` against the
-   observed request rate for the window. A page load with several parallel
-   calls counts once per request, not once per session.
+2. Determine which layer rejected the request. The **global** limiter (Phase 19)
+   keys on client IP with `RATE_LIMIT_MAX_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`
+   and returns only `detail`. The **tiered** limiter (Phase 23) runs after auth
+   on matched routes and adds `code` + `retry_after`; it enforces a per-user
+   budget and a per-IP budget at `user limit × RATE_LIMIT_IP_MULTIPLIER`.
+   - `chat` 60, `email` 20, `payments` 30, `ingest` 30, `evaluate` 30,
+     `write` 120, `read` 600 per minute by default.
+   - Inspect Redis windows (safe to read; they expire on their own):
+     ```bash
+     redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:rl:tier:*' | head -20
+     redis-cli -u "$REDIS_URL" zcard 'recruitai:rl:tier:chat:user:<user-id>'
+     redis-cli -u "$REDIS_URL" pttl 'recruitai:rl:tier:chat:user:<user-id>'
+     ```
+   - When `REDIS_URL` is unset, both limiters are per process, so the effective
+     fleet ceiling multiplies by replica count.
+3. Compare the active tier limits against the observed request rate. A page load
+   with several parallel calls counts once per request, not once per session.
+   Health probes are exempt from tiered budgets.
 
 ### Mitigation
 
-1. For a legitimate traffic surge, raise the ceiling and redeploy:
+1. For a legitimate traffic surge, raise the specific tier and redeploy rather
+   than disabling all quotas:
+   ```bash
+   RATE_LIMIT_CHAT_MAX=120 RATE_LIMIT_TIER_WINDOW_SECONDS=60
+   RATE_LIMIT_IP_MULTIPLIER=6
+   ```
+   Increase the global ceiling only if the pre-auth limiter is the rejecting
+   layer:
    ```bash
    RATE_LIMIT_MAX_REQUESTS=1200 RATE_LIMIT_WINDOW_SECONDS=60
    ```
-   Preflight reports the active values as the `rate-limit` check.
+   Preflight reports the active global values as the `rate-limit` check.
 2. If the 429s are a single abusive client, keep the limit and block at the
-   edge instead. Do not disable the limiter during an attack.
+   edge instead. Do not disable either limiter during an attack.
 3. If every client is affected at once, suspect proxy configuration: verify
    `TRUST_PROXY` matches the platform and that the proxy sets
    `X-Forwarded-For`. Preflight warns when `TRUST_PROXY=true`, because it is
    only safe behind a header-overwriting proxy.
-4. `RATE_LIMIT_ENABLED=false` is an emergency-only change; it removes the
-   global abuse guard and preflight reports it as a warning. Re-enable after
-   the incident.
+4. `RATE_LIMIT_ENABLED=false` removes the global guard;
+   `RATE_LIMIT_TIERED_ENABLED=false` removes per-tenant fair use. Both are
+   emergency-only changes and preflight reports the global one as a warning.
+   Re-enable after the incident.
 
 ---
 
@@ -291,7 +330,7 @@ plain HTTP 5xx.
 - Readiness returns `503` with `services.redis` missing (the payload shape is
   unchanged) while `/api/health` still answers `200`.
 - Logs repeat `[redis] ping failed` or `Redis window failed; using local
-  fallback`; rate limits, Tavily cache hits and circuit state become
+fallback`; rate limits, Tavily cache hits and circuit state become
   per-instance.
 - `[event_loop] p99 delay ... exceeds ...ms` appears while request latency
   climbs and CPU sits on the request thread.
@@ -318,10 +357,14 @@ plain HTTP 5xx.
    redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:*' | head -50
    redis-cli -u "$REDIS_URL" pttl recruitai:lock:retention
    redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:cache:hot-reads:*' | head
+   redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:cache:jd:*' | head
+   redis-cli -u "$REDIS_URL" zcard recruitai:llm:leases
    ```
    `recruitai:cache:hot-reads:*` holds only credits/subscription/analytics
    copies with 15–30 s TTLs. Deleting them is safe; payments never read them
    before a ledger write, so the cost is a cold cache, not a wrong balance.
+   `recruitai:cache:jd:*` holds parsed JD structures (1 h TTL) and
+   `recruitai:llm:leases` is the spend-gate semaphore; both self-heal.
 3. Confirm worker offloading is active:
    ```bash
    grep '\[worker_pool\] started' <platform-logs>
@@ -336,18 +379,20 @@ plain HTTP 5xx.
 
 1. **Redis outage:** restore Redis first. The process keeps serving with local
    fallbacks, but retention sweeps skip (the lock cannot be acquired), the
-   reset throttle and HTTP limiter become per-instance, and jobs stay in
+   reset throttle and HTTP/tiered limiters become per-instance, and jobs stay in
    whichever instance accepted them unless BullMQ mode was already configured.
-   Do not scale out during the outage; scale-in or hold traffic until Redis is
-   healthy again.
+   JD parsing and cost accounting fall back to per-instance windows, and the
+   LLM concurrency lease becomes a local semaphore. Do not scale out during the
+   outage; scale-in or hold traffic until Redis is healthy again.
 2. **Worker overload:** raise `WORKER_POOL_SIZE` (bounded by CPU) or
    `WORKER_POOL_MAX_QUEUE`, and scale replicas. Overflow is a deliberate `503`
-   + `Retry-After: 5`, not a crash; check whether a single large document is
-   monopolising a worker before raising limits.
+   - `Retry-After: 5`, not a crash; check whether a single large document is
+     monopolising a worker before raising limits.
 3. **SSE capacity:** treat a sustained `429` as a capacity signal. Add replicas
    or raise `CHAT_MAX_SSE_CONNECTIONS` only after confirming file-descriptor
-   headroom. Stale streams are released on client disconnect and aborted after
-   the shutdown grace period.
+   headroom. Stale streams are released on client disconnect, receive a
+   `: keepalive` comment every `CHAT_SSE_HEARTBEAT_SECONDS` (15 s), and are
+   aborted after `CHAT_SSE_IDLE_TIMEOUT_SECONDS` (300 s) with no event frames.
 4. **Slow drain / stuck deploy:** `SHUTDOWN_DRAIN_MS` (default `10000`) forces
    remaining sockets closed; `SHUTDOWN_SSE_GRACE_MS` (default `2000`) aborts
    streams first. If a deploy exceeds the orchestrator's termination grace,

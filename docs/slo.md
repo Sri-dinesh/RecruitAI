@@ -45,6 +45,46 @@ At **99.9% Availability**, the error budget permits:
 3. **Workspace Reset**: 1 reset per 30 seconds per tenant (`_LAST_RESET_REQUESTS`).
 4. **LLM Quota Defense**: Dynamic circular failover across 5 Gemini models (`gemini-2.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.7-flash`).
 
+### Tiered fair-use enforcement (Phase 23)
+
+The authenticated API enforces a sliding-window quota per user **and** per
+client IP (IP budget = user budget × `RATE_LIMIT_IP_MULTIPLIER`, default `4`).
+The separate global IP limiter remains the coarse pre-auth guard.
+
+| Tier       | Applies to                                                  | Default / minute |
+| :--------- | :---------------------------------------------------------- | :--------------- |
+| `chat`     | `POST /api/chat` turns (SSE status reads use `read`)        | 60               |
+| `email`    | Email draft/dispatch mutations                              | 20               |
+| `payments` | Order, verify, consume-credit mutations                     | 30               |
+| `ingest`   | Resume/JD upload requests                                   | 30               |
+| `evaluate` | Candidate evaluation, status changes, ATS export            | 30               |
+| `write`    | Other authenticated mutations (sessions, privacy, reports…) | 120              |
+| `read`     | Authenticated reads, polling and list endpoints             | 600              |
+
+Every tier is overridable with `RATE_LIMIT_<TIER>_MAX`; the window is
+`RATE_LIMIT_TIER_WINDOW_SECONDS` (default `60`). Redis sorted sets make the
+window fleet-wide; without Redis the quota applies per instance. A rejected
+request returns `429` with `Retry-After` and
+`{ "detail": "...", "code": "rate_limit_exceeded", "retry_after": <seconds> }`.
+
+### Cost-safety limits (Phase 23)
+
+- **JD cache**: identical raw JD text + filename reuses the parsed structure for
+  `CACHE_JD_PARSE_TTL_SECONDS` (default `3600`), fleet-wide when Redis is
+  configured.
+- **LLM concurrency**: at most `LLM_MAX_CONCURRENT_CALLS` (default `8`) Gemini
+  attempts run fleet-wide. A caller waits up to `LLM_BUDGET_ACQUIRE_TIMEOUT_MS`
+  (default `1500`) for a slot, then degrades to deterministic processing.
+- **Cost anomaly**: crossing `LLM_COST_ALARM_THRESHOLD_USD` (default `$1`) in a
+  rolling `LLM_COST_ALARM_WINDOW_SECONDS` (default `300`) window emits one
+  `llm_cost_anomaly` telemetry event and a warning log per window.
+- **Outbound deadlines**: Tavily (`TAVILY_TIMEOUT_MS`, 8 s), Razorpay
+  (`RAZORPAY_TIMEOUT_MS`, 10 s) and SMTP
+  (`SMTP_CONNECTION_TIMEOUT_MS`/`SMTP_GREETING_TIMEOUT_MS`, 10 s;
+  `SMTP_SOCKET_TIMEOUT_MS`, 20 s). Uploads stop buffering at 15 MB per file, and
+  SSE streams send keepalives every `CHAT_SSE_HEARTBEAT_SECONDS` (15 s) and
+  close after `CHAT_SSE_IDLE_TIMEOUT_SECONDS` (300 s) without an event.
+
 ---
 
 ## 5. Automated Monitoring & Scraping
@@ -106,7 +146,7 @@ Stable metric names (do not rename without updating alerting):
 - **Connection math.** Each instance opens one primary pool of `PG_POOL_MAX`
   (default `10`) and one read pool of `PG_READ_POOL_MAX` (defaults to the
   primary size). Size the fleet so `(PG_POOL_MAX + PG_READ_POOL_MAX) ×
-  instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
+instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
   least 20% headroom for migrations and operator sessions.
 - **Session timeouts.** Every pooled session starts with
   `statement_timeout=15000ms`, `idle_in_transaction_session_timeout=30000ms`
@@ -133,8 +173,6 @@ Stable metric names (do not rename without updating alerting):
   `PAYMENT_IDEMPOTENCY_TTL_SECONDS` (default 24 h). A duplicate verify or
   redelivery returns the stored subscription and balance without granting
   credits again.
-
-
 
 During the cutover soak, `npm run stabilize` evaluates these signals from the
 same metrics contract. Only the 5xx budget is a formal SLO; the rest are

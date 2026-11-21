@@ -161,6 +161,30 @@ Data-layer and payment settings (Phase 22):
 - `PAYMENT_IDEMPOTENCY_TTL_SECONDS` defaults to `86400`; verify and webhook
   claims are stored in `processed_events` for that window.
 
+Fair-use and cost-safety settings (Phase 23):
+
+- `RATE_LIMIT_TIERED_ENABLED` defaults to `true` when `ENVIRONMENT=production`
+  and `false` otherwise. Per-user sliding windows are `chat` 60, `email` 20,
+  `payments` 30, `ingest` 30, `evaluate` 30, `write` 120 and `read` 600 per
+  `RATE_LIMIT_TIER_WINDOW_SECONDS` (default `60`). Override a tier with
+  `RATE_LIMIT_<TIER>_MAX`; the per-IP budget is `RATE_LIMIT_IP_MULTIPLIER`
+  (default `4`) times the user budget.
+- `CACHE_JD_PARSE_ENABLED` defaults to `true`; parsed JD structures are cached
+  by SHA-256 of filename + raw text for `CACHE_JD_PARSE_TTL_SECONDS`
+  (default `3600`). Redis is fleet-wide, memory is the local fallback.
+- `LLM_MAX_CONCURRENT_CALLS` (default `8`) caps simultaneous Gemini attempts
+  fleet-wide; `LLM_BUDGET_LEASE_SECONDS` (120) bounds a lease and
+  `LLM_BUDGET_ACQUIRE_TIMEOUT_MS` (1500) bounds waiting for one.
+- `LLM_COST_ALARM_WINDOW_SECONDS` (300) and `LLM_COST_ALARM_THRESHOLD_USD`
+  (default `$1`, positive float) control the `llm_cost_anomaly` alert.
+- `TAVILY_TIMEOUT_MS` (8000) and `RAZORPAY_TIMEOUT_MS` (10000) are hard
+  outbound deadlines. SMTP uses `SMTP_CONNECTION_TIMEOUT_MS` and
+  `SMTP_GREETING_TIMEOUT_MS` (10000), plus `SMTP_SOCKET_TIMEOUT_MS` (20000).
+- Uploads stop buffering at 15 MB per file and reject more than 10 files per
+  batch; an oversized file in a mixed batch still yields a per-file 207 result.
+- `CHAT_SSE_HEARTBEAT_SECONDS` (15) sends SSE keepalive comments and
+  `CHAT_SSE_IDLE_TIMEOUT_SECONDS` (300) closes a stream with no event frames.
+
 Logging and hardening settings (Phase 19):
 
 - `LOG_LEVEL` (`debug`/`info`/`warn`/`error`) defaults to `info` and is
@@ -218,7 +242,9 @@ New configuration (all strict):
 - `WORKER_POOL_ENABLED` defaults to `true` when `ENVIRONMENT=production` and
   `false` otherwise. `WORKER_POOL_SIZE` defaults to `2` and
   `WORKER_POOL_MAX_QUEUE` to `100`.
-- `CHAT_MAX_SSE_CONNECTIONS` defaults to `200` per instance.
+- `CHAT_MAX_SSE_CONNECTIONS` defaults to `200` per instance;
+  `CHAT_SSE_HEARTBEAT_SECONDS`/`CHAT_SSE_IDLE_TIMEOUT_SECONDS` bound stream
+  liveness (Phase 23).
 - `EVENT_LOOP_LAG_WARN_MS` defaults to `200`; the monitor samples every 10 s
   and warns when the event-loop p99 exceeds it.
 - `SHUTDOWN_DRAIN_MS` (default `10000`) and `SHUTDOWN_SSE_GRACE_MS` (default
