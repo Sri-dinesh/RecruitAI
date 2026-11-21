@@ -82,6 +82,16 @@ export function createIngestRouter(options: IngestRouterOptions = {}): Router {
     for (const upload of uploadList) {
       const rawName = upload.originalname || 'resume.pdf';
       try {
+        if (upload.sizeExceeded) {
+          hasFailure = true;
+          results.push({
+            filename: rawName,
+            status: 'failed',
+            error: `File '${rawName}' exceeds maximum allowed size of 15 MB.`,
+          });
+          continue;
+        }
+
         const fileBytes = upload.buffer;
         const { filename, extension } = resolveFilenameAndExtension(
           rawName,
@@ -170,6 +180,9 @@ export function createIngestRouter(options: IngestRouterOptions = {}): Router {
       }
 
       const rawName = upload.originalname || 'jd.pdf';
+      if (upload.sizeExceeded) {
+        throw new HttpError(413, `File '${rawName}' exceeds maximum allowed size of 15 MB.`);
+      }
       const fileBytes = upload.buffer;
       const { filename, extension } = resolveFilenameAndExtension(
         rawName,

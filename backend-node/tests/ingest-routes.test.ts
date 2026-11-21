@@ -261,6 +261,41 @@ describe('POST /api/ingest/upload', () => {
     });
   });
 
+  it('keeps a mixed batch at 207 when one file exceeds 15 MB', async () => {
+    await withApp(async ({ app, db }) => {
+      const req = request(app).post('/api/ingest/upload');
+      req.attach('files', Buffer.alloc(OVERSIZE), {
+        filename: 'big.txt',
+        contentType: 'text/plain',
+      });
+      attachResume(req, 'ada.txt');
+
+      const response = await req.expect(207);
+      assert.equal(response.body.length, 2);
+      assert.deepEqual(response.body[0], {
+        filename: 'big.txt',
+        status: 'failed',
+        error: "File 'big.txt' exceeds maximum allowed size of 15 MB.",
+      });
+      assert.equal(response.body[1].status, 'success');
+      assert.equal(db.table('candidates').select().execute().data.length, 1);
+    });
+  });
+
+  it('rejects a batch with more than 10 files', async () => {
+    await withApp(async ({ app }) => {
+      const req = request(app).post('/api/ingest/upload');
+      for (let index = 0; index < 11; index += 1) {
+        attachResume(req, `resume-${index}.txt`);
+      }
+
+      const response = await req.expect(400);
+      assert.deepEqual(response.body, {
+        detail: 'Too many files. A maximum of 10 resumes can be uploaded per batch.',
+      });
+    });
+  });
+
   it('links the candidate to the campaign session', async () => {
     await withApp(async ({ app, db, store }) => {
       await store.insertSession({ id: SESSION, userId: USER_ID, title: 'Campaign' });

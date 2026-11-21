@@ -22,6 +22,8 @@ export interface UploadedResumeFile {
   readonly mimetype: string;
   readonly size: number;
   readonly buffer: Buffer;
+  /** True when the streaming collector stopped at the 15 MB cap. */
+  readonly sizeExceeded?: boolean;
 }
 
 /** `POST /api/ingest/upload` after multer has populated the request. */

@@ -251,6 +251,10 @@ export interface WorkersConfig {
  */
 export interface ChatConfig {
   readonly maxSseConnections: number;
+  /** SSE comment frame interval; keeps proxies from idling the stream out. */
+  readonly sseHeartbeatSeconds: number;
+  /** Close a stream that produced no event frames for this long. */
+  readonly sseIdleTimeoutSeconds: number;
 }
 
 /** Structured log verbosity (Phase 19). */
@@ -530,6 +534,8 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
     },
     chat: {
       maxSseConnections: readPositiveIntStrict(env, 'CHAT_MAX_SSE_CONNECTIONS', 200),
+      sseHeartbeatSeconds: readPositiveIntStrict(env, 'CHAT_SSE_HEARTBEAT_SECONDS', 15),
+      sseIdleTimeoutSeconds: readPositiveIntStrict(env, 'CHAT_SSE_IDLE_TIMEOUT_SECONDS', 300),
     },
     cache: {
       // Enabled by default; the Redis store is the fleet-wide backend and the

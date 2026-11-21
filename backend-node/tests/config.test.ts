@@ -94,7 +94,11 @@ describe('config defaults (development)', () => {
     assert.equal(config.telemetry.enabled, true);
     assert.equal(config.telemetry.eventLoopLagWarnMs, 200);
     assert.deepEqual(config.workers, { enabled: false, size: 2, maxQueue: 100 });
-    assert.deepEqual(config.chat, { maxSseConnections: 200 });
+    assert.deepEqual(config.chat, {
+      maxSseConnections: 200,
+      sseHeartbeatSeconds: 15,
+      sseIdleTimeoutSeconds: 300,
+    });
     assert.equal(config.logging.level, 'info');
     assert.deepEqual(config.rateLimit, {
       enabled: false,

@@ -194,11 +194,40 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
     };
     req.on('close', onClose);
 
+    // Phase 23: keep intermediaries from closing an idle SSE connection, and
+    // bound streams that stop producing events so a stuck job cannot hold a
+    // slot (and file descriptor) forever.
+    const heartbeatMs = config.chat.sseHeartbeatSeconds * 1000;
+    const idleTimeoutMs = config.chat.sseIdleTimeoutSeconds * 1000;
+    let lastFrameAt = Date.now();
+    const heartbeat = setInterval(
+      () => {
+        if (res.writableEnded || res.destroyed) {
+          return;
+        }
+        if (Date.now() - lastFrameAt >= idleTimeoutMs) {
+          logger.warn(
+            `[chat_endpoint] SSE stream for job ${jobId} produced no events for ` +
+              `${config.chat.sseIdleTimeoutSeconds}s; closing.`,
+          );
+          controller.abort();
+          if (!res.writableEnded) {
+            res.end();
+          }
+          return;
+        }
+        res.write(': keepalive\n\n');
+      },
+      Math.max(1_000, Math.min(heartbeatMs, Math.ceil(idleTimeoutMs / 2))),
+    );
+    heartbeat.unref();
+
     try {
       for await (const frame of manager.streamEvents(jobId, userId, controller.signal)) {
         if (res.writableEnded || res.destroyed) {
           break;
         }
+        lastFrameAt = Date.now();
         res.write(frame);
       }
     } catch (error) {
@@ -206,6 +235,7 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
         `[chat_endpoint] SSE stream for job ${jobId} ended early: ${errorMessage(error)}`,
       );
     } finally {
+      clearInterval(heartbeat);
       req.off('close', onClose);
       lease.release();
       if (!res.writableEnded) {
