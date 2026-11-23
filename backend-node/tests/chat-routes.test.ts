@@ -9,6 +9,9 @@ import { loadConfig, type AppConfig } from '../src/config/index.js';
 import { FallbackDatabase } from '../src/db/fallback.js';
 import { createSqliteWorkspaceStore, type WorkspaceStore } from '../src/db/workspace-store.js';
 import { InMemoryChatJobManager } from '../src/jobs/in-memory-job-manager.js';
+import { setSharedRedisStoreForTests } from '../src/redis/client.js';
+import { resetRedisHealthForTests } from '../src/redis/health.js';
+import { ASYNC_UNAVAILABLE_DETAIL } from '../src/routes/chat.js';
 import { CampaignService, type ExecuteAgentTurnInput } from '../src/services/campaign-service.js';
 import { fakeDeps } from './graph-helpers.js';
 
@@ -241,6 +244,34 @@ describe('POST /api/chat (asynchronous jobs)', () => {
 
       assert.match(String(response.body.job_id), UUID_RE);
     });
+  });
+
+  it('rejects async jobs with 503 when Redis is unreachable in degraded mode', async () => {
+    setSharedRedisStoreForTests(null);
+    resetRedisHealthForTests();
+    const config = loadConfig({
+      USE_LOCAL_AUTH: 'true',
+      LOCAL_DEV_USER_ID: USER_ID,
+      GEMINI_API_KEY: '',
+      GOOGLE_API_KEY: '',
+      REDIS_URL: 'redis://127.0.0.1:6399',
+      REDIS_DEGRADED_MODE_ENABLED: 'true',
+    });
+    try {
+      await withApp(
+        async ({ app }) => {
+          const response = await request(app)
+            .post('/api/chat')
+            .send({ message: 'hello', async_mode: true })
+            .expect(503);
+          assert.deepEqual(response.body, { detail: ASYNC_UNAVAILABLE_DETAIL });
+          assert.equal(response.headers['retry-after'], '5');
+        },
+        { config },
+      );
+    } finally {
+      resetRedisHealthForTests();
+    }
   });
 
   it('completes the background turn and exposes the result', async () => {
