@@ -21,6 +21,8 @@
  * packages, and the topology is inspectable at runtime (`nodes`, `entry`).
  */
 
+import { withSpan } from '../telemetry/tracing.js';
+
 export const END = '__end__';
 
 export type StatePatch<S> = Partial<S> | S;
@@ -150,7 +152,14 @@ export function compileDefinition<S extends object>(
           throw new Error(`Graph exceeded the ${maxSteps}-step limit at node '${current}'.`);
         }
 
-        const patch = await node(state);
+        const patch = await withSpan(
+          'agent.node',
+          async (span) => {
+            span.setAttribute('agent.node', current);
+            return await node(state);
+          },
+          { 'agent.node': current },
+        );
         Object.assign(state, patch);
 
         const conditional = conditionalEdges.get(current);

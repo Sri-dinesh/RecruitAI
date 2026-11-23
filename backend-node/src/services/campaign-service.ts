@@ -9,6 +9,7 @@ import { candidateSchema } from '../schemas/candidate.js';
 import { jobDescriptionSchema } from '../schemas/jd.js';
 import { clearTelemetryContext, getAllLogs, setTelemetryContext } from '../telemetry/logging.js';
 import { createLogger } from '../telemetry/logger.js';
+import { runWithTraceparent, withSpan } from '../telemetry/tracing.js';
 import {
   persistApplications,
   persistChatMessage,
@@ -66,6 +67,8 @@ export interface ExecuteAgentTurnInput {
   readonly lastIntent?: string | null;
   readonly scheduledInterviews?: readonly Record<string, unknown>[] | null;
   readonly focusedCandidateId?: string | null;
+  /** W3C trace context serialized at enqueue time (async chat jobs). */
+  readonly traceparent?: string | null;
 }
 
 export interface AgentTurnResult {
@@ -228,6 +231,17 @@ export class CampaignService {
    * 4. return the serialized response payload the chat route expects.
    */
   async executeAgentTurn(input: ExecuteAgentTurnInput): Promise<AgentTurnResult> {
+    // Async jobs run in a different process/async scope; resume the enqueueing
+    // trace so HTTP -> enqueue -> agent nodes -> DB/external calls is one trace.
+    return runWithTraceparent(input.traceparent ?? null, () =>
+      withSpan('chat.agent_turn', () => this.executeAgentTurnInner(input), {
+        'tenant.id': input.userId,
+        'session.id': input.sessionId,
+      }),
+    );
+  }
+
+  private async executeAgentTurnInner(input: ExecuteAgentTurnInput): Promise<AgentTurnResult> {
     const { userId, sessionId, message } = input;
     const store = this.getStore();
     const graph = buildRecruitGraph(this.graphDeps ?? getGraphDeps());
@@ -262,7 +276,7 @@ export class CampaignService {
       };
 
       // 3. Run the agent graph.
-      const result = await graph.invoke(initialState);
+      const result = await withSpan('agent.graph', () => graph.invoke(initialState));
 
       // 4. Serialize output models to plain JSON values.
       const jdValue = result.jd_structured ?? null;

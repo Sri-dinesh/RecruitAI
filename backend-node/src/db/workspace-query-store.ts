@@ -5,6 +5,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } fr
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, getReadDb, type Database } from './client.js';
 import { getFallbackDatabase, type FallbackDatabase } from './fallback.js';
+import { traceStoreMethods } from '../telemetry/tracing.js';
 import {
   applications,
   candidates,
@@ -1616,18 +1617,18 @@ export interface WorkspaceQueryStoreOptions {
 export function createWorkspaceQueryStore(
   options: WorkspaceQueryStoreOptions = {},
 ): WorkspaceQueryStore {
-  if (options.db) {
-    const config = options.config ?? getConfig();
-    return createDrizzleWorkspaceQueryStore(options.db, config);
-  }
-  if (options.fallback) {
-    const config = options.config ?? getConfig();
-    return createSqliteWorkspaceQueryStore(options.fallback, config);
-  }
-  const config = options.config ?? getConfig();
-  return config.database.url
-    ? createDrizzleWorkspaceQueryStore(options.readOnly ? getReadDb() : getDb(), config)
-    : createSqliteWorkspaceQueryStore(getFallbackDatabase(), config);
+  const store = options.db
+    ? createDrizzleWorkspaceQueryStore(options.db, options.config ?? getConfig())
+    : options.fallback
+      ? createSqliteWorkspaceQueryStore(options.fallback, options.config ?? getConfig())
+      : (options.config ?? getConfig()).database.url
+        ? createDrizzleWorkspaceQueryStore(
+            options.readOnly ? getReadDb() : getDb(),
+            options.config ?? getConfig(),
+          )
+        : createSqliteWorkspaceQueryStore(getFallbackDatabase(), options.config ?? getConfig());
+  // Phase 24: every route-level query becomes a `db.query.*` span.
+  return traceStoreMethods('db.query', store);
 }
 
 /** Exposed for services that need to mint identifiers exactly like Python. */

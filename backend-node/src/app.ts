@@ -9,6 +9,7 @@ import { jsonBodyParser } from './middleware/json-body.js';
 import { createRateLimitMiddleware } from './middleware/rate-limit.js';
 import { createRequestIdMiddleware } from './middleware/request-id.js';
 import { createRequestMetricsMiddleware } from './middleware/telemetry.js';
+import { createTracingMiddleware } from './middleware/tracing.js';
 import { getSharedRedisStore } from './redis/client.js';
 import { createReadinessRouter, healthRouter } from './routes/health.js';
 import { createApiRouter } from './routes/index.js';
@@ -89,6 +90,10 @@ export function createApp(options: CreateAppOptions = {}): Express {
 
   // Correlation id first: auth failures, parser errors and 404s all carry it.
   app.use(createRequestIdMiddleware());
+
+  // Phase 24: one span per request; the trace context stays active for every
+  // downstream service, DB and external call.
+  app.use(createTracingMiddleware());
 
   // Metrics are always enabled, matching the Python config (no env toggle).
   if (config.telemetry.enabled) {

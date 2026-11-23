@@ -5,6 +5,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, type Database } from './client.js';
 import { getFallbackDatabase, type FallbackDatabase } from './fallback.js';
+import { traceStoreMethods } from '../telemetry/tracing.js';
 import {
   applications,
   chatMessages,
@@ -1047,13 +1048,13 @@ export interface WorkspaceStoreOptions {
  */
 export function createWorkspaceStore(options: WorkspaceStoreOptions = {}): WorkspaceStore {
   const config = options.config ?? getConfig();
-  if (options.db) {
-    return createDrizzleWorkspaceStore(options.db, config);
-  }
-  if (options.fallback) {
-    return createSqliteWorkspaceStore(options.fallback, config);
-  }
-  return config.database.url
-    ? createDrizzleWorkspaceStore(getDb(), config)
-    : createSqliteWorkspaceStore(getFallbackDatabase(), config);
+  const store = options.db
+    ? createDrizzleWorkspaceStore(options.db, config)
+    : options.fallback
+      ? createSqliteWorkspaceStore(options.fallback, config)
+      : config.database.url
+        ? createDrizzleWorkspaceStore(getDb(), config)
+        : createSqliteWorkspaceStore(getFallbackDatabase(), config);
+  // Phase 24: every persistence call becomes a `db.workspace.*` span.
+  return traceStoreMethods('db.workspace', store);
 }
