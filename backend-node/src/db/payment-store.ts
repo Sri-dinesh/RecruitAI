@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 
 import { getConfig, type AppConfig } from '../config/index.js';
 import { getDb, type Database } from './client.js';
@@ -57,6 +57,9 @@ export interface CreditTransactionInsert {
 
 export type CreditTransactionRecord = CreditTransactionInsert;
 
+/** Caller-supplied ledger fields; the store fills `userId`, `amount` and `balanceAfter`. */
+export type CreditDeduction = Pick<CreditTransactionInsert, 'id' | 'reason' | 'createdAt'>;
+
 export interface UserInsert {
   readonly id: string;
   readonly email: string;
@@ -82,6 +85,18 @@ export interface PaymentStore {
   saveSubscription(record: SubscriptionUpsert): Promise<void>;
   userExists(userId: string): Promise<boolean>;
   updateCreditsBalance(userId: string, balance: number): Promise<void>;
+  /**
+   * Atomically deduct `amount` from the tenant balance and append the matching
+   * ledger row in one transaction. Returns the resulting balance, or
+   * `undefined` when the user row is missing or the balance does not cover the
+   * spend. The conditional read-inside-write is what prevents two concurrent
+   * consumers from both spending the same credits.
+   */
+  consumeCreditsAtomic(
+    userId: string,
+    amount: number,
+    entry: CreditDeduction,
+  ): Promise<number | undefined>;
   insertUser(record: UserInsert): Promise<void>;
   insertCreditTransaction(record: CreditTransactionInsert): Promise<void>;
   listCreditTransactions(userId: string, limit: number): Promise<CreditTransactionRecord[]>;
@@ -223,6 +238,34 @@ export function createDrizzlePaymentStore(db: Database): PaymentStore {
 
     async updateCreditsBalance(userId, balance) {
       await db.update(users).set({ creditsBalance: balance }).where(eq(users.id, userId));
+    },
+
+    async consumeCreditsAtomic(userId, amount, entry) {
+      return db.transaction(async (tx) => {
+        // One conditional UPDATE is the whole race guard: concurrent callers
+        // either match `credits_balance >= amount` and get a distinct row lock,
+        // or match nothing and receive `undefined` rather than going negative.
+        const rows = await tx
+          .update(users)
+          .set({ creditsBalance: sql`${users.creditsBalance} - ${amount}` })
+          .where(and(eq(users.id, userId), gte(users.creditsBalance, amount)))
+          .returning({ creditsBalance: users.creditsBalance });
+
+        const balance = rows[0]?.creditsBalance;
+        if (balance === undefined || balance === null) {
+          return undefined;
+        }
+
+        await tx.insert(creditTransactions).values({
+          id: uuidOrGenerated(entry.id),
+          userId,
+          amount: -amount,
+          balanceAfter: Number(balance),
+          reason: entry.reason,
+          createdAt: asDate(entry.createdAt) ?? new Date(),
+        });
+        return Number(balance);
+      });
     },
 
     async insertUser(record) {
@@ -369,6 +412,27 @@ export function createSqlitePaymentStore(db: FallbackDatabase): PaymentStore {
         .update({ credits_balance: balance, updated_at: new Date().toISOString() })
         .eq('id', userId)
         .execute();
+    },
+
+    async consumeCreditsAtomic(userId, amount, entry) {
+      // `deductCredits` runs one synchronous conditional UPDATE and the ledger
+      // insert follows in the same tick, so no other consumer can observe or
+      // spend the balance in between.
+      const balance = db.deductCredits(userId, amount);
+      if (balance === undefined) {
+        return undefined;
+      }
+      db.table('credit_transactions')
+        .insert({
+          id: entry.id,
+          user_id: userId,
+          amount: -amount,
+          balance_after: balance,
+          reason: entry.reason,
+          created_at: toIso(entry.createdAt) ?? new Date().toISOString(),
+        })
+        .execute();
+      return balance;
     },
 
     async insertUser(record) {

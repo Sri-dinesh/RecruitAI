@@ -550,52 +550,63 @@ export class PaymentService {
       throw new PaymentValidationError('Amount must be greater than 0.');
     }
 
-    // Authoritative read: never spend against a cached balance.
-    const currentBalance = await this.readPrimaryCredits(userId);
-    if (currentBalance < amount) {
-      throw new PaymentValidationError(
-        `Insufficient credits. Remaining: ${currentBalance}, required: ${amount}`,
-      );
-    }
-
-    const newBalance = currentBalance - amount;
-    const nowIso = this.now().toISOString();
     const store = this.getStore();
+    const deduct = (): Promise<number | undefined> =>
+      store.consumeCreditsAtomic(userId, amount, {
+        id: `tx_${randomHex(12)}`,
+        reason,
+        createdAt: this.now().toISOString(),
+      });
 
-    try {
-      if (await store.userExists(userId)) {
-        await store.updateCreditsBalance(userId, newBalance);
-      } else {
+    // The store does the balance check inside a conditional UPDATE, so a
+    // parallel consumer cannot spend the same credits twice. `undefined` means
+    // the row went missing or the balance did not cover the spend.
+    let balance = await deduct();
+
+    if (balance === undefined) {
+      const remaining = await store.getCreditsBalance(userId);
+      if (remaining !== undefined) {
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${remaining}, required: ${amount}`,
+        );
+      }
+
+      // Missing user: keep the legacy default-free-balance behavior, then retry
+      // the atomic spend. If a concurrent request provisioned the row first, the
+      // retry deducts from it instead of overwriting the balance.
+      if (DEFAULT_FREE_CREDITS < amount) {
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${DEFAULT_FREE_CREDITS}, required: ${amount}`,
+        );
+      }
+      try {
         await store.insertUser({
           id: userId,
           email: `${userId}@recruitai.local`,
           fullName: 'Recruiter',
           role: 'recruiter',
-          creditsBalance: newBalance,
+          creditsBalance: DEFAULT_FREE_CREDITS,
         });
+      } catch (error) {
+        if (!(await store.userExists(userId))) {
+          throw error;
+        }
       }
-    } catch (error) {
-      logger.error(`Error updating user credit balance during consumption: ${errorMessage(error)}`);
-    }
 
-    try {
-      await store.insertCreditTransaction({
-        id: `tx_${randomHex(12)}`,
-        userId,
-        amount: -amount,
-        balanceAfter: newBalance,
-        reason,
-        createdAt: nowIso,
-      });
-    } catch (error) {
-      logger.warn(`Failed to log credit transaction deduction: ${errorMessage(error)}`);
+      balance = await deduct();
+      if (balance === undefined) {
+        const current = await store.getCreditsBalance(userId);
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${current ?? DEFAULT_FREE_CREDITS}, required: ${amount}`,
+        );
+      }
     }
 
     await this.invalidateHotReads(userId);
 
     return {
       success: true,
-      credits_remaining: newBalance,
+      credits_remaining: balance,
       amount_deducted: amount,
       reason,
     };

@@ -674,6 +674,27 @@ export class FallbackDatabase {
     return new RpcBuilder(name, params, this.conn);
   }
 
+  /**
+   * Atomically subtract credits with a single conditional `UPDATE`
+   * (`credits_balance >= amount`). Returns the resulting balance, or
+   * `undefined` when the row is missing or the balance is short. Callers must
+   * treat `undefined` as "spend rejected", never as zero.
+   */
+  deductCredits(userId: string, amount: number): number | undefined {
+    const result = this.conn
+      .prepare(
+        'UPDATE users SET credits_balance = credits_balance - ?, updated_at = ? ' +
+          'WHERE id = ? AND credits_balance >= ?',
+      )
+      .run(amount, new Date().toISOString(), userId, amount);
+    if (Number(result.changes) === 0) {
+      return undefined;
+    }
+    const row = this.conn.prepare('SELECT credits_balance FROM users WHERE id = ?').get(userId) as
+      SqliteRow | undefined;
+    return row ? Number(row.credits_balance) : undefined;
+  }
+
   close(): void {
     this.conn.close();
   }

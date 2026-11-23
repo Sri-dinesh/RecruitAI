@@ -395,6 +395,60 @@ describe('credits and subscriptions', () => {
     });
   });
 
+  it('never double-spends under parallel consumption attempts', async () => {
+    await withDb(async (db, store) => {
+      const service = new PaymentService({ config: devConfig(), store });
+
+      // Ten free credits, twenty simultaneous one-credit spends: exactly ten
+      // may succeed. The balance must land on zero, never negative, and every
+      // rejected attempt must still see the authoritative balance.
+      const settled = await Promise.allSettled(
+        Array.from({ length: 20 }, () => service.consumeCredits('user-1', 1, 'parallel')),
+      );
+      const granted = settled.filter((result) => result.status === 'fulfilled');
+      const rejected = settled.filter((result) => result.status === 'rejected');
+
+      assert.equal(granted.length, DEFAULT_FREE_CREDITS);
+      assert.equal(rejected.length, 20 - DEFAULT_FREE_CREDITS);
+      for (const result of rejected) {
+        assert.ok(result.status === 'rejected');
+        assert.ok(result.reason instanceof PaymentValidationError);
+        assert.match(result.reason.message, /^Insufficient credits\. Remaining: \d+, required: 1$/);
+      }
+
+      assert.equal(await service.getUserCredits('user-1'), 0);
+
+      const deductions = db
+        .table('credit_transactions')
+        .select()
+        .eq('user_id', 'user-1')
+        .execute()
+        .data.filter((row) => Number(row.amount) < 0);
+      assert.equal(deductions.length, DEFAULT_FREE_CREDITS);
+      // Each ledger row records the post-deduction balance, so the ledger can
+      // be replayed without ever seeing a repeated or negative balance.
+      assert.deepEqual(
+        deductions.map((row) => Number(row.balance_after)).sort((a, b) => b - a),
+        [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+      );
+    });
+  });
+
+  it('provisions the default balance for a missing user exactly once', async () => {
+    await withDb(async (_db, store) => {
+      const service = new PaymentService({ config: devConfig(), store });
+
+      const result = await service.consumeCredits('brand-new-user', 3, 'provision');
+      assert.deepEqual(result, {
+        success: true,
+        credits_remaining: DEFAULT_FREE_CREDITS - 3,
+        amount_deducted: 3,
+        reason: 'provision',
+      });
+      assert.equal(await service.getUserCredits('brand-new-user'), DEFAULT_FREE_CREDITS - 3);
+    });
+  });
+
   it('rejects zero/negative amounts and insufficient balances with exact messages', async () => {
     await withDb(async (_db, store) => {
       const service = new PaymentService({ config: devConfig(), store });
