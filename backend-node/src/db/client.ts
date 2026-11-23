@@ -3,7 +3,9 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolConfig } from 'pg';
 
 import { getConfig, type AppConfig } from '../config/index.js';
+import { isTransientDatabaseError, runWithBreaker } from '../resilience/dependencies.js';
 import { createLogger } from '../telemetry/logger.js';
+import { withSpan } from '../telemetry/tracing.js';
 import {
   DATABASE_MISSING_IN_PRODUCTION,
   DATABASE_URL_MISSING,
@@ -214,16 +216,35 @@ export function getPoolStats(): PoolStats[] {
 export async function withTransaction<T>(
   fn: (tx: TransactionScope) => Promise<T>,
   config: AppConfig = getConfig(),
-  db: Database = getDb(),
+  db?: Database,
 ): Promise<T> {
   const timeoutMs = config.database.transactionTimeoutMs;
-  return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('statement_timeout', ${String(timeoutMs)}, true),
+  return withSpan(
+    'db.transaction',
+    () =>
+      runWithBreaker(
+        {
+          config,
+          dependency: 'postgres',
+          // Readiness probes record on the default key; sharing it means an
+          // observed database outage also short-circuits new transactions.
+          key: 'default',
+          // Only connectivity/timeout failures trip the breaker; SQL and
+          // constraint errors stay with the caller.
+          isFailure: isTransientDatabaseError,
+        },
+        // Resolve the pool lazily so an OPEN circuit never touches the driver.
+        async () =>
+          (db ?? getDb()).transaction(async (tx) => {
+            await tx.execute(
+              sql`select set_config('statement_timeout', ${String(timeoutMs)}, true),
                  set_config('idle_in_transaction_session_timeout', ${String(
                    config.database.idleInTransactionTimeoutMs,
                  )}, true)`,
-    );
-    return fn(tx);
-  });
+            );
+            return fn(tx);
+          }),
+      ),
+    { 'db.store': 'postgres' },
+  );
 }

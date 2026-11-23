@@ -5,6 +5,7 @@ import {
   ChatJobNotFoundError,
   errorMessage,
   formatSseEvent,
+  jobErrorMessage,
   type AgentJobSnapshot,
   type ChatJobEvent,
   type ChatJobManager,
@@ -255,8 +256,8 @@ export class InMemoryChatJobManager implements ChatJobManager {
         data: (result ?? {}) as Record<string, unknown>,
       });
     } catch (error) {
-      const message = errorMessage(error);
-      logger.error(`[ChatJobManager] Job ${job.job_id} failed: ${message}`);
+      const message = jobErrorMessage(error);
+      logger.error(`[ChatJobManager] Job ${job.job_id} failed: ${errorMessage(error)}`);
       job.status = 'failed';
       job.error = message;
       job.updated_at = this.now();

@@ -7,7 +7,8 @@ import {
 } from '../db/workspace-query-store.js';
 import { requireAuth } from '../middleware/auth.js';
 import { isDraining } from '../lifecycle.js';
-import { getSharedRedisStore } from '../redis/client.js';
+import { probeRedisHealth } from '../redis/health.js';
+import { recordDependencyProbe } from '../resilience/dependencies.js';
 
 /**
  * Public liveness and authenticated readiness probes, ported from
@@ -147,6 +148,9 @@ export function createReadinessRouter(options: ReadinessRouterOptions): Router {
       if (database.kind === 'sqlite_fallback') {
         degraded = true;
       }
+      // Phase 24: readiness is the canonical Postgres probe, so it keeps the
+      // shared breaker in sync with observed database health.
+      await recordDependencyProbe('postgres', options.config, true);
     } catch (error) {
       overallHealthy = false;
       services.database = {
@@ -154,14 +158,21 @@ export function createReadinessRouter(options: ReadinessRouterOptions): Router {
         error_type: errorType(error),
         latency_ms: roundMs(performance.now() - dbStarted),
       };
+      await recordDependencyProbe('postgres', options.config, false, error);
     }
 
-    // 2. Fleet state (Redis). The response shape stays identical; a failed
-    // ping makes the whole probe unhealthy so traffic drains away.
+    // 2. Fleet state (Redis). The response shape stays identical. By default a
+    // failed ping makes the whole probe unhealthy so traffic drains away; with
+    // REDIS_DEGRADED_MODE_ENABLED the replica keeps serving from in-memory
+    // state and reports `degraded` instead.
     if (options.config.jobs.redisUrl) {
-      const store = getSharedRedisStore();
-      if (!store || !(await store.ping())) {
-        overallHealthy = false;
+      const redisHealth = await probeRedisHealth(options.config);
+      if (!redisHealth.healthy) {
+        if (options.config.resilience.redisDegradedModeEnabled) {
+          degraded = true;
+        } else {
+          overallHealthy = false;
+        }
       }
     }
 

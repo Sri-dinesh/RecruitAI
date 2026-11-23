@@ -4,6 +4,7 @@ import { Router, type RequestHandler } from 'express';
 
 import type { AppConfig } from '../config/index.js';
 import { getConfig } from '../config/index.js';
+import { probeRedisHealth } from '../redis/health.js';
 import { getCurrentUserId } from '../context/request-context.js';
 import { createChatJobManager } from '../jobs/index.js';
 import type { ChatJobManager, ChatJobPayload } from '../jobs/index.js';
@@ -21,6 +22,7 @@ import {
   type ExecuteAgentTurnInput,
 } from '../services/campaign-service.js';
 import { createLogger } from '../telemetry/logger.js';
+import { startSpan, withSpan } from '../telemetry/tracing.js';
 import { HttpError } from '../types/errors.js';
 import { sseRegistry, type SseRegistry } from './sse-registry.js';
 
@@ -55,6 +57,8 @@ export interface ChatRouterOptions {
 /** `Retry-After` for admission rejection; short enough for a stream to finish. */
 export const SSE_RETRY_AFTER_SECONDS = 5;
 export const SSE_CAPACITY_DETAIL = 'Too many active chat streams. Please retry shortly.';
+export const ASYNC_UNAVAILABLE_DETAIL =
+  'Async chat is temporarily unavailable. Please retry shortly or use sync mode.';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -124,8 +128,34 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
       const shouldRunAsync = query.async_mode || Boolean(body.async_mode);
 
       if (shouldRunAsync) {
-        const job = await manager.createJob(userId, sessionId);
-        await manager.startJob(job.job_id, input as unknown as ChatJobPayload);
+        // Degraded single-instance mode: async jobs need fleet-wide Redis
+        // queues, so refuse the enqueue explicitly instead of waiting on a
+        // dead connection. Sync chat keeps working from local caches/limits.
+        if (
+          config.jobs.redisUrl &&
+          config.resilience.redisDegradedModeEnabled &&
+          !(await probeRedisHealth(config)).healthy
+        ) {
+          res.setHeader('Retry-After', String(SSE_RETRY_AFTER_SECONDS));
+          throw new HttpError(503, ASYNC_UNAVAILABLE_DETAIL);
+        }
+
+        const job = await withSpan(
+          'chat.enqueue',
+          async (span) => {
+            const created = await manager.createJob(userId, sessionId);
+            span.setAttribute('job.id', created.job_id);
+            // Propagate the trace into the worker; the payload is JSON-safe and
+            // additive to the existing chat job contract.
+            const payload = {
+              ...input,
+              traceparent: span.traceparent(),
+            } as unknown as ChatJobPayload;
+            await manager.startJob(created.job_id, payload);
+            return created;
+          },
+          { 'chat.async': true, 'tenant.id': userId, 'session.id': sessionId },
+        );
         res.status(202).json({
           job_id: job.job_id,
           session_id: sessionId,
@@ -137,7 +167,13 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
       }
 
       try {
-        res.json(await service.executeAgentTurn(input));
+        res.json(
+          await withSpan('chat.turn', () => service.executeAgentTurn(input), {
+            'chat.async': false,
+            'tenant.id': userId,
+            'session.id': sessionId,
+          }),
+        );
       } catch (error) {
         const refId = randomUUID().replace(/-/g, '').slice(0, 8);
         logger.error(`[chat_endpoint ref=${refId}] Agent execution failed: ${errorMessage(error)}`);
@@ -187,6 +223,12 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
+    const streamSpan = startSpan('chat.stream', {
+      'job.id': jobId,
+      'tenant.id': userId,
+      'session.id': job.session_id,
+    });
+
     const controller = lease.controller;
     const onClose = (): void => {
       controller.abort();
@@ -231,6 +273,8 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
         res.write(frame);
       }
     } catch (error) {
+      streamSpan.setAttribute('error.type', error instanceof Error ? error.name : 'Error');
+      streamSpan.finish('ERROR');
       logger.warn(
         `[chat_endpoint] SSE stream for job ${jobId} ended early: ${errorMessage(error)}`,
       );
@@ -238,6 +282,9 @@ export function createChatRouter(options: ChatRouterOptions = {}): Router {
       clearInterval(heartbeat);
       req.off('close', onClose);
       lease.release();
+      if (streamSpan.status === 'OK') {
+        streamSpan.finish('OK');
+      }
       if (!res.writableEnded) {
         res.end();
       }

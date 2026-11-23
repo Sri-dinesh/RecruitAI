@@ -1,4 +1,5 @@
 import type { Candidate } from '../../schemas/candidate.js';
+import { userSafeLlmFailure } from '../../llm/errors.js';
 import { PiiSanitizer } from '../../services/redaction.js';
 import { getGraphDeps, type GraphDeps } from '../deps.js';
 import { resolveCandidateWithMemory } from '../router.js';
@@ -139,7 +140,10 @@ export async function candidateQaNode(
     const response = await deps.callLlm(prompt, { systemInstruction: QA_SYSTEM_INSTRUCTION });
     answer = sanitizer.restoreText(response.text.trim());
   } catch (error) {
-    answer = `Failed to retrieve details for ${candidateName}: ${errorMessage(error)}`;
+    answer = userSafeLlmFailure(
+      error,
+      `Failed to retrieve details for ${candidateName}: ${errorMessage(error)}`,
+    );
   }
 
   return {

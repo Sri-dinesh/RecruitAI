@@ -3,12 +3,18 @@ import { randomUUID } from 'node:crypto';
 import type { ErrorRequestHandler, Request, RequestHandler } from 'express';
 
 import { getRequestContext } from '../context/request-context.js';
+import { isTransientDatabaseError } from '../resilience/dependencies.js';
+import { CircuitOpenError } from '../resilience/breaker.js';
 import type { FastApiValidationError } from '../schemas/validation.js';
 import { createLogger } from '../telemetry/logger.js';
 import { HttpError } from '../types/errors.js';
 import { WorkerPoolOverloadedError } from '../workers/pool.js';
 
 const logger = createLogger('recruitai.server');
+
+/** Stable, user-safe availability message (no provider or driver details). */
+export const DEPENDENCY_UNAVAILABLE_DETAIL =
+  'A required service is temporarily unavailable. Please retry shortly.';
 
 /**
  * Express's default unmatched-route response is HTML. FastAPI returns
@@ -130,6 +136,25 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, next
   if (error instanceof WorkerPoolOverloadedError) {
     res.setHeader('Retry-After', '5');
     res.status(503).json({ detail: error.message });
+    return;
+  }
+
+  // Phase 24 degradation: an open dependency circuit or a transient database
+  // connectivity failure is an availability problem, not a client error.
+  // Callers that can degrade themselves (Tavily, SMTP, LLM) never reach this
+  // branch; this is the last line of defense for routes that cannot.
+  if (error instanceof CircuitOpenError || isTransientDatabaseError(error)) {
+    const dependencyError = error instanceof Error ? error : new Error(String(error));
+    logger.error(
+      `[DEPENDENCY_UNAVAILABLE] ${req.method} ${req.path}: ${dependencyError.name}: ${dependencyError.message}`,
+      {
+        ...requestLogFields(req),
+        status_code: 503,
+        error_type: dependencyError.name,
+      },
+    );
+    res.setHeader('Retry-After', '5');
+    res.status(503).json({ detail: DEPENDENCY_UNAVAILABLE_DETAIL });
     return;
   }
 

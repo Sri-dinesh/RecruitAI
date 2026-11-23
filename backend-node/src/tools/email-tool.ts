@@ -7,6 +7,9 @@ import {
   type SmtpConfig,
 } from '../config/index.js';
 import { callLlm } from '../llm/router.js';
+import { userSafeLlmFailure } from '../llm/errors.js';
+import { runWithBreaker } from '../resilience/dependencies.js';
+import { withSpan } from '../telemetry/tracing.js';
 
 /**
  * Port of `backend/app/tools/email_tool.py`.
@@ -92,7 +95,10 @@ export function fallbackRecruiterEmail(
     `Please feel free to reach out if you have any questions.\n\n` +
     `Best regards,\n` +
     `The Recruiting Team\n\n` +
-    `[Note: Draft generated using template fallback due to: ${errorMessage(error)}]`
+    `[Note: ${userSafeLlmFailure(
+      error,
+      `Draft generated using template fallback due to: ${errorMessage(error)}`,
+    )}]`
   );
 }
 
@@ -197,12 +203,19 @@ export async function sendEmailDraft(
       const transport = options.transport ?? createSmtpTransport(smtp, config.outbound);
       const sender = smtp.sender || smtp.username;
 
-      await transport.send({
-        from: sender,
-        to: recipientEmail,
-        subject,
-        text: body,
-      });
+      await withSpan(
+        'external.smtp.send',
+        () =>
+          runWithBreaker({ config, dependency: 'smtp', key: 'send' }, async () => {
+            await transport.send({
+              from: sender,
+              to: recipientEmail,
+              subject,
+              text: body,
+            });
+          }),
+        { 'external.provider': 'smtp' },
+      );
 
       return (
         '✅ **Email sent successfully via SMTP!**\n' +

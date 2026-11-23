@@ -1,4 +1,5 @@
 import { getGraphDeps, type GraphDeps } from '../deps.js';
+import { userSafeLlmFailure } from '../../llm/errors.js';
 import { historyOf } from '../state.js';
 import type { RecruitState } from '../state.js';
 
@@ -79,9 +80,12 @@ export async function jdRewriteNode(
         ...history,
         {
           role: 'assistant',
-          content: `Failed to rewrite JD due to LLM error: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          content: userSafeLlmFailure(
+            error,
+            `Failed to rewrite JD due to LLM error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
         },
       ],
     };

@@ -1,3 +1,5 @@
+import { userSafeLlmFailure } from '../llm/errors.js';
+
 /**
  * Shared types for asynchronous chat agent jobs.
  *
@@ -92,6 +94,14 @@ export function epochSeconds(now: () => number = () => Date.now() / 1000): numbe
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Terminal job error text. LLM outages become a stable user-safe sentence;
+ * every other failure keeps its historical message.
+ */
+export function jobErrorMessage(error: unknown): string {
+  return userSafeLlmFailure(error, errorMessage(error));
 }
 
 /** Build the terminal SSE frame for a finished job. */

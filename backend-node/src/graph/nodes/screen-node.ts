@@ -1,4 +1,5 @@
 import { candidateSchema, type Candidate } from '../../schemas/candidate.js';
+import { userSafeLlmFailure } from '../../llm/errors.js';
 import { expandQuery, rerankChunks } from '../../rag/advanced-rag.js';
 import { detectPromptInjection, PiiSanitizer } from '../../services/redaction.js';
 import { getGraphDeps, type GraphDeps } from '../deps.js';
@@ -193,7 +194,10 @@ export async function screenNode(
         ...history,
         {
           role: 'assistant',
-          content: `Failed to evaluate candidates due to LLM error: ${errorMessage(error)}`,
+          content: userSafeLlmFailure(
+            error,
+            `Failed to evaluate candidates due to LLM error: ${errorMessage(error)}`,
+          ),
         },
       ],
     };

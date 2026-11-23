@@ -9,7 +9,13 @@ import {
   type TimestampValue,
 } from '../db/payment-store.js';
 import type { PricingPlan } from '../schemas/payment.js';
+import {
+  isRateLimitError,
+  isTransientDependencyError,
+  runWithBreaker,
+} from '../resilience/dependencies.js';
 import { createLogger } from '../telemetry/logger.js';
+import { withSpan } from '../telemetry/tracing.js';
 import { fetchWithTimeout } from './http.js';
 
 const logger = createLogger('recruitai.payment_service');
@@ -218,32 +224,55 @@ export class PaymentService {
         };
 
         const credentials = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
-        const response = await fetchWithTimeout(
-          this.fetchImpl,
-          `${DEFAULT_RAZORPAY_BASE_URL}/v1/orders`,
-          {
-            method: 'POST',
-            headers: {
-              authorization: `Basic ${credentials}`,
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify(orderPayload),
-          },
-          this.timeoutMs,
+        const order = await withSpan(
+          'external.razorpay.create_order',
+          () =>
+            runWithBreaker(
+              {
+                config: this.config,
+                dependency: 'razorpay',
+                key: 'create_order',
+                isFailure: (error) =>
+                  /responded with 5\d\d/.test(errorMessage(error)) ||
+                  isTransientDependencyError(error),
+                isRateLimit: (error) =>
+                  /responded with 429/.test(errorMessage(error)) || isRateLimitError(error),
+              },
+              async () => {
+                const response = await fetchWithTimeout(
+                  this.fetchImpl,
+                  `${DEFAULT_RAZORPAY_BASE_URL}/v1/orders`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      authorization: `Basic ${credentials}`,
+                      'content-type': 'application/json',
+                    },
+                    body: JSON.stringify(orderPayload),
+                  },
+                  this.timeoutMs,
+                );
+
+                if (!response.ok) {
+                  throw new Error(`Razorpay API responded with ${response.status}`);
+                }
+
+                const parsed = (await response.json()) as RazorpayOrderEntity;
+                const id = parsed.id;
+                const amount = parsed.amount;
+                const currency = parsed.currency;
+                if (
+                  typeof id !== 'string' ||
+                  typeof amount !== 'number' ||
+                  typeof currency !== 'string'
+                ) {
+                  throw new Error('Razorpay returned an unexpected order payload');
+                }
+                return { id, amount, currency };
+              },
+            ),
+          { 'external.provider': 'razorpay' },
         );
-
-        if (!response.ok) {
-          throw new Error(`Razorpay API responded with ${response.status}`);
-        }
-
-        const order = (await response.json()) as RazorpayOrderEntity;
-        if (
-          typeof order.id !== 'string' ||
-          typeof order.amount !== 'number' ||
-          typeof order.currency !== 'string'
-        ) {
-          throw new Error('Razorpay returned an unexpected order payload');
-        }
 
         return {
           order_id: order.id,

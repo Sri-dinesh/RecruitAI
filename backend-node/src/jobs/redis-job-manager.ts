@@ -7,6 +7,7 @@ import { createLogger } from '../telemetry/logger.js';
 import {
   ChatJobNotFoundError,
   errorMessage,
+  jobErrorMessage,
   formatSseEvent,
   terminalEvent,
   type AgentJobSnapshot,
@@ -578,8 +579,8 @@ export class RedisChatJobManager implements ChatJobManager {
         });
         await this.emit(jobId, 'complete', (result ?? {}) as Record<string, unknown>);
       } catch (error) {
-        const message = errorMessage(error);
-        logger.error(`[ChatJobManager] Job ${jobId} failed: ${message}`);
+        const message = jobErrorMessage(error);
+        logger.error(`[ChatJobManager] Job ${jobId} failed: ${errorMessage(error)}`);
         await this.writeFields(jobId, {
           status: 'failed',
           updated_at: String(this.now()),

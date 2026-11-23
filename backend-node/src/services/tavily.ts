@@ -2,9 +2,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { createTtlCache, type TtlCache } from '../cache/ttl-cache.js';
-import { getConfig } from '../config/index.js';
+import { getConfig, type AppConfig } from '../config/index.js';
 import { getSharedRedisStore } from '../redis/client.js';
+import {
+  isRateLimitError,
+  isTransientDependencyError,
+  runWithBreaker,
+} from '../resilience/dependencies.js';
 import { createLogger } from '../telemetry/logger.js';
+import { withSpan } from '../telemetry/tracing.js';
 import { fetchWithTimeout } from './http.js';
 
 /**
@@ -81,6 +87,8 @@ export interface TavilyServiceOptions {
   readonly cache?: TtlCache;
   /** Hard request deadline in milliseconds; defaults to config/env. */
   readonly timeoutMs?: number;
+  /** Explicit config (tests); defaults to the validated singleton. */
+  readonly config?: AppConfig;
 }
 
 interface TavilySearchResponse {
@@ -431,12 +439,14 @@ export class TavilyService {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly now: () => number;
+  private readonly config: AppConfig;
 
   constructor(options: TavilyServiceOptions = {}) {
-    this.apiKey = options.apiKey ?? getConfig().llm.tavilyApiKey;
+    this.config = options.config ?? getConfig();
+    this.apiKey = options.apiKey ?? this.config.llm.tavilyApiKey;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.baseUrl = (options.baseUrl ?? DEFAULT_TAVILY_BASE_URL).replace(/\/$/, '');
-    this.timeoutMs = options.timeoutMs ?? getConfig().outbound.tavilyTimeoutMs;
+    this.timeoutMs = options.timeoutMs ?? this.config.outbound.tavilyTimeoutMs;
     this.now = options.now ?? Date.now;
     this.cache =
       options.cache ??
@@ -467,22 +477,39 @@ export class TavilyService {
 
   /** POST to `/search`, attaching the API key the same way TavilyClient does. */
   private async search(body: Readonly<Record<string, unknown>>): Promise<TavilySearchResponse> {
-    const response = await fetchWithTimeout(
-      this.fetchImpl,
-      `${this.baseUrl}/search`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ api_key: this.apiKey, ...body }),
-      },
-      this.timeoutMs,
+    return withSpan(
+      'external.tavily.search',
+      () =>
+        runWithBreaker(
+          {
+            config: this.config,
+            dependency: 'tavily',
+            key: 'search',
+            isFailure: (error) =>
+              /\(5\d\d\)/.test(errorMessage(error)) || isTransientDependencyError(error),
+            isRateLimit: (error) => /\(429\)/.test(errorMessage(error)) || isRateLimitError(error),
+          },
+          async () => {
+            const response = await fetchWithTimeout(
+              this.fetchImpl,
+              `${this.baseUrl}/search`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ api_key: this.apiKey, ...body }),
+              },
+              this.timeoutMs,
+            );
+
+            if (!response.ok) {
+              throw new Error(`Tavily API error (${response.status})`);
+            }
+
+            return (await response.json()) as TavilySearchResponse;
+          },
+        ),
+      { 'external.provider': 'tavily' },
     );
-
-    if (!response.ok) {
-      throw new Error(`Tavily API error (${response.status})`);
-    }
-
-    return (await response.json()) as TavilySearchResponse;
   }
 
   // ─── 1. Salary & Compensation Intelligence ─────────────────────────────────
