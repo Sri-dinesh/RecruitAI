@@ -200,6 +200,21 @@ export interface OutboundConfig {
   readonly smtpSocketTimeoutMs: number;
 }
 
+/**
+ * Resilience and degraded-mode policy (Phase 24).
+ *
+ * Breakers are enabled by default. `redisDegradedModeEnabled` is deliberately
+ * opt-in: when Redis is configured but unreachable, the service keeps serving
+ * from in-memory caches/limits and reports `degraded` readiness instead of
+ * failing closed. Without this flag the Phase 21 behavior (503) is preserved.
+ */
+export interface ResilienceConfig {
+  readonly enabled: boolean;
+  readonly redisDegradedModeEnabled: boolean;
+  /** How long a Redis health result is reused before probing again. */
+  readonly redisHealthCacheMs: number;
+}
+
 export interface SmtpConfig {
   readonly server: string;
   readonly port: number;
@@ -390,6 +405,7 @@ export interface AppConfig {
   readonly cache: CacheConfig;
   readonly payments: PaymentsConfig;
   readonly outbound: OutboundConfig;
+  readonly resilience: ResilienceConfig;
   readonly telemetry: TelemetryConfig;
   readonly logging: LoggingConfig;
   readonly rateLimit: RateLimitConfig;
@@ -556,6 +572,11 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       smtpConnectionTimeoutMs: readPositiveIntStrict(env, 'SMTP_CONNECTION_TIMEOUT_MS', 10_000),
       smtpGreetingTimeoutMs: readPositiveIntStrict(env, 'SMTP_GREETING_TIMEOUT_MS', 10_000),
       smtpSocketTimeoutMs: readPositiveIntStrict(env, 'SMTP_SOCKET_TIMEOUT_MS', 20_000),
+    },
+    resilience: {
+      enabled: readBoolean(env, 'RESILIENCE_BREAKERS_ENABLED', true),
+      redisDegradedModeEnabled: readBoolean(env, 'REDIS_DEGRADED_MODE_ENABLED', false),
+      redisHealthCacheMs: readPositiveIntStrict(env, 'REDIS_HEALTH_CACHE_MS', 5_000),
     },
     telemetry: {
       enabled: true,

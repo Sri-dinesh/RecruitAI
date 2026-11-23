@@ -116,6 +116,26 @@ describe('RED/USE metrics registry', () => {
     assert.match(text, /recruitai_llm_cost_usd 0\.5/);
     assert.ok(text.endsWith('\n'));
   });
+
+  it('exports dependency circuit state and trip counters', async () => {
+    const registry = new RedMetricsRegistry();
+    registry.recordDependencyCircuitState('tavily', 'OPEN');
+    registry.recordDependencyCircuitState('tavily', 'HALF_OPEN');
+    registry.recordDependencyCircuitState('tavily', 'CLOSED');
+    registry.recordDependencyCircuitTrip('tavily', 'failure_threshold');
+    registry.recordDependencyCircuitTrip('redis', 'rate_limit');
+
+    const text = await registry.toPrometheusFormat();
+    assert.match(text, /recruitai_dependency_circuit_state\{dependency="tavily"\} 0/);
+    assert.match(
+      text,
+      /recruitai_dependency_circuit_trips_total\{dependency="tavily",reason="failure_threshold"\} 1/,
+    );
+    assert.match(
+      text,
+      /recruitai_dependency_circuit_trips_total\{dependency="redis",reason="rate_limit"\} 1/,
+    );
+  });
 });
 
 describe('request metrics middleware', () => {

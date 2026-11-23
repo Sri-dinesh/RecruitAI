@@ -94,6 +94,11 @@ describe('config defaults (development)', () => {
     assert.equal(config.telemetry.enabled, true);
     assert.equal(config.telemetry.eventLoopLagWarnMs, 200);
     assert.deepEqual(config.workers, { enabled: false, size: 2, maxQueue: 100 });
+    assert.deepEqual(config.resilience, {
+      enabled: true,
+      redisDegradedModeEnabled: false,
+      redisHealthCacheMs: 5_000,
+    });
     assert.deepEqual(config.chat, {
       maxSseConnections: 200,
       sseHeartbeatSeconds: 15,
@@ -331,6 +336,28 @@ describe('logging and rate limiting config', () => {
     for (const key of ['TAVILY_TIMEOUT_MS', 'RAZORPAY_TIMEOUT_MS']) {
       assertThrowsWith(() => loadConfig({ [key]: '0' }), `Invalid ${key}`);
     }
+  });
+
+  it('parses resilience breaker and Redis degraded-mode switches', () => {
+    const config = loadConfig({
+      RESILIENCE_BREAKERS_ENABLED: 'false',
+      REDIS_DEGRADED_MODE_ENABLED: 'true',
+      REDIS_HEALTH_CACHE_MS: '250',
+    });
+    assert.deepEqual(config.resilience, {
+      enabled: false,
+      redisDegradedModeEnabled: true,
+      redisHealthCacheMs: 250,
+    });
+    assert.equal(loadConfig({ RESILIENCE_BREAKERS_ENABLED: 'TRUE' }).resilience.enabled, true);
+    assert.equal(
+      loadConfig({ REDIS_DEGRADED_MODE_ENABLED: 'off' }).resilience.redisDegradedModeEnabled,
+      false,
+    );
+    assertThrowsWith(
+      () => loadConfig({ REDIS_HEALTH_CACHE_MS: '0' }),
+      'Invalid REDIS_HEALTH_CACHE_MS',
+    );
   });
 
   it('parses and validates LOG_LEVEL', () => {

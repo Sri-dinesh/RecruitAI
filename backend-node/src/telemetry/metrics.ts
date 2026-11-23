@@ -78,6 +78,19 @@ export class RedMetricsRegistry {
     help: 'Cumulative estimated AI cost in USD',
     registers: [this.prometheus],
   });
+  /** 0=closed, 1=half-open, 2=open (Phase 24). */
+  private readonly dependencyCircuitGauge = new Gauge({
+    name: 'recruitai_dependency_circuit_state',
+    help: 'Circuit breaker state per external dependency',
+    labelNames: ['dependency'],
+    registers: [this.prometheus],
+  });
+  private readonly dependencyTripCounter = new Counter({
+    name: 'recruitai_dependency_circuit_trips_total',
+    help: 'Circuit breaker trips per external dependency and reason',
+    labelNames: ['dependency', 'reason'],
+    registers: [this.prometheus],
+  });
 
   constructor(private readonly now: () => number = () => Date.now() / 1000) {
     // Emit zero-valued token series before the first LLM call, matching the
@@ -135,6 +148,20 @@ export class RedMetricsRegistry {
     this.tokensCounter.labels('input').inc(tokensIn);
     this.tokensCounter.labels('output').inc(tokensOut);
     this.costCounter.inc(costUsd);
+  }
+
+  /** Update the fleet-facing circuit gauge after a state transition. */
+  recordDependencyCircuitState(dependency: string, state: 'CLOSED' | 'HALF_OPEN' | 'OPEN'): void {
+    const value = state === 'OPEN' ? 2 : state === 'HALF_OPEN' ? 1 : 0;
+    this.dependencyCircuitGauge.labels(dependency).set(value);
+  }
+
+  /** Count an OPEN transition; `reason` is bounded to known categories. */
+  recordDependencyCircuitTrip(
+    dependency: string,
+    reason: 'failure_threshold' | 'rate_limit' | 'recovered',
+  ): void {
+    this.dependencyTripCounter.labels(dependency, reason).inc();
   }
 
   private computePercentiles(samples: readonly number[]): LatencyPercentiles {
