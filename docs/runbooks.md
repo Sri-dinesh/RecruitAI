@@ -50,6 +50,33 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    `status: degraded` with `type: sqlite_fallback` means the PostgreSQL
    connection failed and the process fell back to SQLite; `status: unhealthy`
    (HTTP 503) means the readiness ping itself failed.
+4. **Check dependency breakers** (Phase 24):
+   ```bash
+   curl -s -H "Authorization: Bearer $ADMIN_JWT" \
+     -H "Accept: text/plain" http://localhost:8000/api/metrics \
+     | grep 'recruitai_dependency_circuit'
+   ```
+   `recruitai_dependency_circuit_state{dependency="..."} 2` means OPEN.
+   `recruitai_dependency_circuit_trips_total` shows whether a threshold or a
+   rate limit opened it. `503` responses with
+   `"A required service is temporarily unavailable."` are deliberate
+   degradation, not unhandled 500s; check which dependency is OPEN before
+   restarting anything.
+
+### Dependency breaker triage
+
+1. Identify the dependency from the gauge/log intent
+   (`dependency_breaker:<name>`), then confirm the upstream directly (Gemini
+   console, Tavily status, SMTP provider, Razorpay status, Postgres, Redis).
+2. Treat OPEN as a load-shedding signal, not the root cause: traffic is being
+   failed fast because consecutive connectivity/timeout/5xx/429 failures were
+   observed. Fix the dependency or fail over; do not raise the threshold
+   permanently.
+3. Recovery is automatic: after the cooldown the breaker enters HALF_OPEN and a
+   successful canary closes it. This shows as `state=1` then `state=0` and a
+   `status="recovered"` event.
+4. `RESILIENCE_BREAKERS_ENABLED=false` is an emergency bypass only; it removes
+   fail-fast protection and should be reverted after the incident.
 
 ### Correlating a Single Request
 
@@ -328,7 +355,11 @@ plain HTTP 5xx.
 ### Symptoms
 
 - Readiness returns `503` with `services.redis` missing (the payload shape is
-  unchanged) while `/api/health` still answers `200`.
+  unchanged) while `/api/health` still answers `200`; with
+  `REDIS_DEGRADED_MODE_ENABLED=true` readiness instead returns `200 degraded`.
+- Async chat requests return `503` with
+  `{"detail":"Async chat is temporarily unavailable. Please retry shortly or use sync mode."}`
+  and `Retry-After: 5` while Redis degraded mode is active. Sync chat continues.
 - Logs repeat `[redis] ping failed` or `Redis window failed; using local
 fallback`; rate limits, Tavily cache hits and circuit state become
   per-instance.
@@ -350,7 +381,8 @@ fallback`; rate limits, Tavily cache hits and circuit state become
    ```
    A configured `REDIS_URL` that fails `PING` makes readiness unhealthy on
    purpose, so the load balancer drains the instance instead of serving with
-   split state.
+   split state. Only enable `REDIS_DEGRADED_MODE_ENABLED=true` when you accept
+   per-instance state and disabled async enqueue as the trade-off.
 2. Inspect key families and TTLs (never delete `recruitai:jobs*` while jobs are
    running):
    ```bash
@@ -359,12 +391,16 @@ fallback`; rate limits, Tavily cache hits and circuit state become
    redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:cache:hot-reads:*' | head
    redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:cache:jd:*' | head
    redis-cli -u "$REDIS_URL" zcard recruitai:llm:leases
+   redis-cli -u "$REDIS_URL" --scan --pattern 'recruitai:breaker:*' | head
    ```
    `recruitai:cache:hot-reads:*` holds only credits/subscription/analytics
    copies with 15–30 s TTLs. Deleting them is safe; payments never read them
    before a ledger write, so the cost is a cold cache, not a wrong balance.
-   `recruitai:cache:jd:*` holds parsed JD structures (1 h TTL) and
-   `recruitai:llm:leases` is the spend-gate semaphore; both self-heal.
+   `recruitai:cache:jd:*` holds parsed JD structures (1 h TTL),
+   `recruitai:llm:leases` is the spend-gate semaphore, and
+   `recruitai:breaker:*` stores fleet-wide circuit state; all self-heal. Do not
+   delete `recruitai:breaker:*` during an outage — an OPEN breaker is protecting
+   the dependency and will close automatically after its cooldown.
 3. Confirm worker offloading is active:
    ```bash
    grep '\[worker_pool\] started' <platform-logs>
@@ -383,7 +419,11 @@ fallback`; rate limits, Tavily cache hits and circuit state become
    whichever instance accepted them unless BullMQ mode was already configured.
    JD parsing and cost accounting fall back to per-instance windows, and the
    LLM concurrency lease becomes a local semaphore. Do not scale out during the
-   outage; scale-in or hold traffic until Redis is healthy again.
+   outage; scale-in or hold traffic until Redis is healthy again. If
+   `REDIS_DEGRADED_MODE_ENABLED=true`, sync chat and in-memory caches remain
+   available, but new async enqueues are rejected with `503` until Redis
+   returns; tell clients to retry or use sync mode instead of disabling
+   readiness.
 2. **Worker overload:** raise `WORKER_POOL_SIZE` (bounded by CPU) or
    `WORKER_POOL_MAX_QUEUE`, and scale replicas. Overflow is a deliberate `503`
    - `Retry-After: 5`, not a crash; check whether a single large document is

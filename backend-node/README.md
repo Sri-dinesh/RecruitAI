@@ -1283,42 +1283,119 @@ contract suite.
 Phase 20 adds focused tests for the probe evaluation, thresholds and
 configuration, bringing the suite to **840 tests / 202 suites**.
 
+## Reliability operations and scale validation (Phase 24)
+
+Phase 24 turns the Phase 21/22/23 safeguards into one operating model.
+
+### Dependency breakers
+
+`src/resilience/breaker.ts` is a generic circuit breaker used by every external
+dependency. `ModelCircuitBreaker` and `RedisModelCircuitBreaker` are now thin
+subclasses, so the Phase 8 LLM behavior (rotation, kill switch, budget lease)
+and its public exports are unchanged.
+
+| Dependency | Default trip | Cooldown | Caller behavior when OPEN                                        |
+| :--------- | :----------: | :------: | :--------------------------------------------------------------- |
+| `gemini`   |  3 failures  |   60 s   | Skip the model; rotate; fall back when every model is open       |
+| `tavily`   |  3 failures  |   60 s   | Deterministic JD/salary/skill fallbacks                          |
+| `smtp`     |  3 failures  |   60 s   | Failed/simulated dispatch contract; request returns promptly     |
+| `razorpay` |  3 failures  |   60 s   | Development uses mock orders; production fails fast              |
+| `postgres` |  5 failures  |   30 s   | `withTransaction` short-circuits; terminal handler returns 503   |
+| `redis`    |  3 failures  |   15 s   | Local caches/limits/breakers; async enqueue 503 in degraded mode |
+
+- Only connectivity, timeout, 5xx and 429/rate-limit failures count; validation
+  and business errors pass through without opening a circuit.
+- `runWithBreaker()` in `src/resilience/dependencies.ts` is the call-site API.
+  `recordDependencyProbe()` feeds readiness results into the same state.
+- State is fleet-wide in Redis (`recruitai:breaker:<dependency>:<operation>:*`)
+  when `REDIS_URL` is set, with automatic local fallback if Redis itself fails.
+- `RESILIENCE_BREAKERS_ENABLED=false` is an incident-triage bypass only.
+- Every transition updates `recruitai_dependency_circuit_state` and
+  `recruitai_dependency_circuit_trips_total`, plus a
+  `dependency_breaker:<name>` structured event.
+
+### Graceful degradation
+
+- **Postgres**: new transactions fail fast when the circuit is open. The
+  terminal error handler maps `CircuitOpenError` and transient driver errors
+  (`ECONNREFUSED`, `08xxx`, `57P0x`, timeouts, …) to `503` with `Retry-After: 5`
+  and one stable, detail-free message.
+- **Redis**: readiness/PING failures refresh the Redis breaker. By default they
+  make readiness report `503`, preserving Phase 21 drain semantics. With
+  `REDIS_DEGRADED_MODE_ENABLED=true`, readiness reports `200 degraded`, sync
+  chat keeps working from local state, and async enqueue returns `503` instead
+  of waiting on a dead connection. `REDIS_HEALTH_CACHE_MS` (default `5000`)
+  bounds probe frequency.
+- **LLM outage**: `userSafeLlmFailure()` in `src/llm/errors.ts` replaces
+  provider/budget/breaker errors with one user-safe sentence in chat nodes, job
+  `error` fields and the SSE `error` event. Generic validation errors keep their
+  historical text, and operator logs still contain the real cause.
+
+### Tracing
+
+`src/telemetry/tracing.ts` now provides `AsyncLocalStorage` trace context and
+W3C `traceparent` parsing/formatting. `createTracingMiddleware()` opens one HTTP
+span per request (adopting an inbound `traceparent` and echoing one back).
+Chat enqueue serializes the context into the job payload; workers resume it, so
+one trace covers HTTP → queue → `chat.agent_turn` → `agent.node` → `db.*` /
+`external.*` calls. Attribute keys containing prompt/resume/candidate/email/
+content/secret fragments are dropped before they are recorded.
+
+### Load and chaos suite
+
+`scripts/load/` contains k6 profiles for sustained load, mixed frontend/mobile
+traffic (sync chat, async polling, SSE, sessions CRUD, analytics reads, ingest
+uploads and payment verify), soak, spike and dependency chaos, plus
+`chaos-drill.sh` for operator-supplied fault injection.
+The suite runs from `.github/workflows/load.yml` on a nightly schedule or manual
+dispatch and skips cleanly until `LOAD_BASE_URL` / `LOAD_AUTH_TOKEN` secrets
+exist. It is intentionally not a per-commit gate. Scenario sizing, contract
+targets and every scaling lever are in
+[`scripts/load/README.md`](scripts/load/README.md).
+
+Phase 24 adds focused breaker, classifier, tracing, degraded-mode and
+user-safe-error tests; the full suite runs with `npm test`.
+
 ## App wiring and error handling
 
 `createApp({ config })` assembles the stack in the same order as `app/main.py`:
 
 1. **Request id** (outermost): resolves/echoes `X-Request-ID` and opens the
    correlation scope used by logs for the whole request.
-2. **Request metrics**: records every finished response, including errors and
+2. **Tracing**: opens the request span, adopts inbound W3C `traceparent`, and
+   keeps the trace context active for all downstream async work.
+3. **Request metrics**: records every finished response, including errors and
    404s.
-3. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
+4. **CORS**: `ALLOWED_ORIGINS` plus the Vercel preview regex,
    `credentials=true`, fixed method list, reflected preflight headers, 600 s
    max-age, and Starlette's `200` preflight status.
-4. **Rate limit**: fixed-window limiter (Phase 19), fleet-wide through Redis
+5. **Rate limit**: fixed-window limiter (Phase 19), fleet-wide through Redis
    when configured, enabled by default only in production. Runs after CORS so a
    browser can read the 429, and before parsing so rejected requests are cheap.
-5. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
+6. **Razorpay webhook** (`/api/payments/webhook`): scoped raw-body parsing,
    mounted before the JSON parser so HMAC verification uses the exact bytes.
-6. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
+7. **JSON body parsing** via `src/middleware/json-body.ts` (`strict: false` so
    primitive JSON roots reach the validators; interim 25 MB limit).
-7. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
+8. **Public health routes**: `/`, `/health`, `/api/health` — mounted before the
    API router so they never inherit route-level auth.
-8. **Authenticated readiness**: `/health/ready`, `/api/health/ready`.
-9. **Feature routers under `/api`** — each router applies `requireAuth()`
-   itself, matching FastAPI's per-route dependency. `/api/chat` receives the
-   shared `CampaignService` and `ChatJobManager` built by the app factory so
-   sync turns, queued turns and SSE all use the same instances. The Phase 15
-   routers share one `WorkspaceQueryStore`; `createApp({ workspaceQueryStore })`
-   lets tests inject an isolated SQLite store, which is how the Phase 15 suite
-   runs without Postgres.
-10. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
-11. **Terminal error handler** (last):
+9. **Authenticated readiness**: `/health/ready`, `/api/health/ready`.
+10. **Feature routers under `/api`** — each router applies `requireAuth()`
+    itself, matching FastAPI's per-route dependency. `/api/chat` receives the
+    shared `CampaignService` and `ChatJobManager` built by the app factory so
+    sync turns, queued turns and SSE all use the same instances. The Phase 15
+    routers share one `WorkspaceQueryStore`; `createApp({ workspaceQueryStore })`
+    lets tests inject an isolated SQLite store, which is how the Phase 15 suite
+    runs without Postgres.
+11. **JSON 404** — `{ "detail": "Not Found" }` for unmatched paths.
+12. **Terminal error handler** (last):
 
 - `HttpError` subclasses render their status, headers and `{ detail }`
   (401 Bearer challenge, 402 quota body, 403 denials).
 - validation failures render FastAPI's `422` `{ detail: [...] }` shape.
 - malformed JSON becomes `422 json_invalid` (not body-parser's 400) and an
   oversized body becomes `413`.
+- an OPEN dependency circuit or a transient database connectivity failure
+  returns `503` with `Retry-After: 5` and one user-safe detail.
 - anything unhandled returns `500` with
   `{ detail: "An unexpected server error occurred. (ref=<8 hex>)", ref }`;
   the ref and error details are logged server-side only.

@@ -85,6 +85,46 @@ request returns `429` with `Retry-After` and
   SSE streams send keepalives every `CHAT_SSE_HEARTBEAT_SECONDS` (15 s) and
   close after `CHAT_SSE_IDLE_TIMEOUT_SECONDS` (300 s) without an event.
 
+### Dependency breakers and graceful degradation (Phase 24)
+
+Every external dependency has its own circuit breaker. State is process-local by
+default and fleet-wide in Redis when `REDIS_URL` is configured
+(`recruitai:breaker:<dependency>:<operation>:*`). Trip and recovery transitions
+emit a structured `dependency_breaker:<dependency>` event and the Prometheus
+gauges below. `RESILIENCE_BREAKERS_ENABLED=false` bypasses breakers entirely for
+incident triage.
+
+| Dependency | Failure threshold | Cooldown | Degraded behavior                                                                |
+| :--------- | :---------------- | :------- | :------------------------------------------------------------------------------- |
+| `gemini`   | 3                 | 60 s     | Rotate to the next model; when all are open, deterministic/fallback responses    |
+| `tavily`   | 3                 | 60 s     | Deterministic JD/salary/skill fallbacks; no live web intelligence                |
+| `smtp`     | 3                 | 60 s     | Return the simulated/failed dispatch contract; never hang the request            |
+| `razorpay` | 3                 | 60 s     | Production fails fast with a 5xx/503; development uses the mock order path       |
+| `postgres` | 5                 | 30 s     | New transactions short-circuit; routes return `503` + `Retry-After`              |
+| `redis`    | 3                 | 15 s     | In-memory caches/limits/breakers; async chat enqueue returns `503` in degraded mode |
+
+Only connectivity, timeout, `5xx` and `429`-class failures count toward a trip;
+validation and business errors never open a circuit. Readiness probes refresh
+the Postgres and Redis breaker state, so an observed outage is shared with the
+request path.
+
+- **Redis degraded mode**: with `REDIS_DEGRADED_MODE_ENABLED=true`, a configured
+  but unreachable Redis keeps readiness at `200 degraded` and serves sync chat
+  from in-memory state. Async chat needs the fleet queue, so `POST /api/chat`
+  with `async_mode` returns `503` and `Retry-After: 5` instead of waiting on a
+  dead connection. With the flag unset (default), readiness returns `503` and
+  traffic drains away, matching Phase 21 behavior.
+- **LLM outage messages**: typed pool failures (`AllProvidersFailedError`,
+  `LlmBudgetExceededError`, `CircuitOpenError`) are replaced with one stable,
+  PII-free sentence before they reach chat/SSE/job payloads. Generic validation
+  errors keep their historical text.
+- **Tracing**: inbound W3C `traceparent` is adopted, one HTTP span is opened per
+  request, and the context propagates through async enqueue payloads into agent
+  turns, per-node spans, database calls (`db.*`) and external calls
+  (`external.*`). Only method/route/status/ids/model names are recorded; prompts,
+  resumes, candidate data, emails and tokens are filtered before they enter a
+  span.
+
 ---
 
 ## 5. Automated Monitoring & Scraping
@@ -109,6 +149,8 @@ Stable metric names (do not rename without updating alerting):
 | `recruitai_queue_depth`    | gauge   | Pending async chat jobs                                      |
 | `recruitai_tokens_total`   | counter | LLM tokens by `type="input"\|"output"`                       |
 | `recruitai_llm_cost_usd`   | counter | Estimated cumulative LLM cost in USD                         |
+| `recruitai_dependency_circuit_state`      | gauge   | Breaker state per `dependency`: `0` closed, `1` half-open, `2` open |
+| `recruitai_dependency_circuit_trips_total` | counter | Opens per `dependency` and `reason` (`failure_threshold`, `rate_limit`) |
 
 ### Health and readiness semantics
 
@@ -117,15 +159,21 @@ Stable metric names (do not rename without updating alerting):
 - Readiness checks database connectivity (latency + backend type), LLM provider
   configuration (model names only, never keys), and authentication mode.
 - `200 healthy`: all checks passed.
-- `200 degraded`: usable but operationally degraded — SQLite fallback in use or
-  the LLM provider is unconfigured. This mirrors the FastAPI probe.
-- `503 unhealthy`: the database ping failed. The response exposes only the
-  exception **type**, never the message, connection string or stack trace.
+- `200 degraded`: usable but operationally degraded — SQLite fallback in use,
+  the LLM provider is unconfigured, or Redis is unreachable while
+  `REDIS_DEGRADED_MODE_ENABLED=true`.
+- `503 unhealthy`: the database ping failed, or a configured Redis is
+  unreachable without degraded mode. The response exposes only the exception
+  **type**, never the message, connection string or stack trace.
 
 ### Log correlation and audit records
 
 - Every response carries `X-Request-ID`. A short, URL-safe inbound id is reused
   (gateway/trace propagation); otherwise a UUID is generated.
+- Requests accept and echo W3C `traceparent`. Async chat jobs serialize the
+  enqueue context into the job payload, so one trace spans HTTP → queue → agent
+  nodes → database/external calls. Spans are logged as OpenTelemetry-shaped
+  records and contain no prompt, resume or candidate text.
 - Structured logs (FastAPI `logging` extras, Node JSON lines) carry
   `request_id`, and `user_id` / `tenant_id` / `session_id` once those are known.
   Errors before authentication still carry the request id.
@@ -173,6 +221,15 @@ instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
   `PAYMENT_IDEMPOTENCY_TTL_SECONDS` (default 24 h). A duplicate verify or
   redelivery returns the stored subscription and balance without granting
   credits again.
+
+### Load and resilience validation (Phase 24)
+
+The k6 suite under `backend-node/scripts/load/` covers sustained load, soak,
+spike and dependency-chaos profiles against a deployed target. It is a
+scheduled/manual job (`.github/workflows/load.yml`), never a required check on
+every commit. Contract targets, scenario sizing (10K active users ≈ 333 chat
+turns/s) and every scaling lever are documented in
+[`backend-node/scripts/load/README.md`](../backend-node/scripts/load/README.md).
 
 During the cutover soak, `npm run stabilize` evaluates these signals from the
 same metrics contract. Only the 5xx budget is a formal SLO; the rest are
