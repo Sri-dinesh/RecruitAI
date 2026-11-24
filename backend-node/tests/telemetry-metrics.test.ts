@@ -136,6 +136,22 @@ describe('RED/USE metrics registry', () => {
       /recruitai_dependency_circuit_trips_total\{dependency="redis",reason="rate_limit"\} 1/,
     );
   });
+
+  it('exports database pool saturation per role', async () => {
+    const registry = new RedMetricsRegistry();
+    registry.recordPoolStats([
+      { role: 'primary', totalCount: 8, idleCount: 5, waitingCount: 2, max: 10 },
+      { role: 'read', totalCount: 3, idleCount: 3, waitingCount: 0, max: 6 },
+    ]);
+
+    const text = await registry.toPrometheusFormat();
+    assert.match(text, /recruitai_db_pool_connections\{role="primary",state="total"\} 8/);
+    assert.match(text, /recruitai_db_pool_connections\{role="primary",state="idle"\} 5/);
+    assert.match(text, /recruitai_db_pool_connections\{role="primary",state="waiting"\} 2/);
+    assert.match(text, /recruitai_db_pool_size\{role="primary"\} 10/);
+    assert.match(text, /recruitai_db_pool_connections\{role="read",state="waiting"\} 0/);
+    assert.match(text, /recruitai_db_pool_size\{role="read"\} 6/);
+  });
 });
 
 describe('request metrics middleware', () => {

@@ -47,6 +47,15 @@ export interface RedMetricsSummary {
 /** Sliding window size per endpoint, matching Python. */
 export const MAX_LATENCY_SAMPLES = 500;
 
+/** One role's live pool counters, matching `db/client.ts::PoolStats`. */
+export interface DatabasePoolSample {
+  readonly role: string;
+  readonly totalCount: number;
+  readonly idleCount: number;
+  readonly waitingCount: number;
+  readonly max: number;
+}
+
 function roundTo(value: number, digits: number): number {
   const factor = 10 ** digits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
@@ -89,6 +98,19 @@ export class RedMetricsRegistry {
     name: 'recruitai_dependency_circuit_trips_total',
     help: 'Circuit breaker trips per external dependency and reason',
     labelNames: ['dependency', 'reason'],
+    registers: [this.prometheus],
+  });
+  /** Per-pool saturation signal: waiting > 0 means callers are queueing. */
+  private readonly poolConnectionsGauge = new Gauge({
+    name: 'recruitai_db_pool_connections',
+    help: 'PostgreSQL pool connections by role and state',
+    labelNames: ['role', 'state'],
+    registers: [this.prometheus],
+  });
+  private readonly poolMaxGauge = new Gauge({
+    name: 'recruitai_db_pool_size',
+    help: 'Configured PostgreSQL pool size by role',
+    labelNames: ['role'],
     registers: [this.prometheus],
   });
 
@@ -162,6 +184,20 @@ export class RedMetricsRegistry {
     reason: 'failure_threshold' | 'rate_limit' | 'recovered',
   ): void {
     this.dependencyTripCounter.labels(dependency, reason).inc();
+  }
+
+  /**
+   * Publish the live pool counters for the scrape. `waiting > 0` is the
+   * saturation signal: requests are queued for a connection because every
+   * slot is busy. Recorded at scrape time so the values are current.
+   */
+  recordPoolStats(samples: readonly DatabasePoolSample[]): void {
+    for (const sample of samples) {
+      this.poolConnectionsGauge.labels(sample.role, 'total').set(sample.totalCount);
+      this.poolConnectionsGauge.labels(sample.role, 'idle').set(sample.idleCount);
+      this.poolConnectionsGauge.labels(sample.role, 'waiting').set(sample.waitingCount);
+      this.poolMaxGauge.labels(sample.role).set(sample.max);
+    }
   }
 
   private computePercentiles(samples: readonly number[]): LatencyPercentiles {

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 
+import { getPoolStats } from '../db/client.js';
 import { metricsRegistry, type RedMetricsRegistry } from '../telemetry/metrics.js';
 
 /**
@@ -16,6 +17,9 @@ export function createMetricsRouter(registry: RedMetricsRegistry = metricsRegist
   router.get('/', async (req: Request, res: Response) => {
     const accept = req.headers.accept ?? '';
     if (accept.includes('text/plain')) {
+      // Pool counters are sampled at scrape time so Prometheus sees the live
+      // saturation state (waiting callers) rather than a stale snapshot.
+      registry.recordPoolStats(getPoolStats());
       res.type('text/plain').send(await registry.toPrometheusFormat());
       return;
     }

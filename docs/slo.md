@@ -151,6 +151,8 @@ Stable metric names (do not rename without updating alerting):
 | `recruitai_llm_cost_usd`   | counter | Estimated cumulative LLM cost in USD                         |
 | `recruitai_dependency_circuit_state`      | gauge   | Breaker state per `dependency`: `0` closed, `1` half-open, `2` open |
 | `recruitai_dependency_circuit_trips_total` | counter | Opens per `dependency` and `reason` (`failure_threshold`, `rate_limit`) |
+| `recruitai_db_pool_connections` | gauge | Postgres connections per `role` (`primary`/`read`) and `state` (`total`/`idle`/`waiting`) |
+| `recruitai_db_pool_size`        | gauge | Configured pool ceiling per `role`                            |
 
 ### Health and readiness semantics
 
@@ -195,7 +197,9 @@ Stable metric names (do not rename without updating alerting):
   (default `10`) and one read pool of `PG_READ_POOL_MAX` (defaults to the
   primary size). Size the fleet so `(PG_POOL_MAX + PG_READ_POOL_MAX) ×
 instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
-  least 20% headroom for migrations and operator sessions.
+  least 20% headroom for migrations and operator sessions. Alert on
+  `recruitai_db_pool_connections{state="waiting"} > 0` for more than a scrape
+  interval: callers queueing for a slot is saturation, not headroom.
 - **Session timeouts.** Every pooled session starts with
   `statement_timeout=15000ms`, `idle_in_transaction_session_timeout=30000ms`
   and `transaction_timeout=10000ms`; `withTransaction()` re-applies the same
