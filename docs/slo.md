@@ -17,6 +17,14 @@ RecruitAI is an enterprise autonomous recruitment orchestration platform. High a
 | **Database Query Ping**        | Database health ping latency                                 | **p99 < 50ms**                | 24-Hour Rolling | Authenticated readiness probe (`/api/health/ready`)                                                                                                          |
 | **LLM Provider Availability**  | Multi-model failover success rate                            | **>= 99.95%**                 | 30-Day Rolling  | Circuit Breaker telemetry (`ModelCircuitBreaker`)                                                                                                            |
 
+The contract-level SLOs are enforced by the Phase 24 load suite
+(`backend-node/scripts/load/traffic-mix.js`): `recruitai_enqueue_duration`
+p99 < 2 s, `recruitai_agent_turnaround_duration` p95 < 30 s,
+`recruitai_sse_attach_duration` p95 < 1 s and `recruitai_ingest_duration`
+p95 < 5 s. A scheduled run fails when any of these thresholds is crossed.
+Availability, DB-ping and failover rates remain 30-day telemetry aggregates,
+not single-run assertions.
+
 ---
 
 ## 3. Error Budget & Burn Rate Alerting

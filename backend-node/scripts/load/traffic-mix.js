@@ -3,13 +3,17 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 import {
+  agentTurnaround,
   authHeaders,
   authToken,
   baseUrl,
   chatPayload,
+  enqueueDuration,
+  ingestDuration,
   postChat,
   readiness,
   sharedThresholds,
+  sseAttachDuration,
 } from './common.js';
 
 /**
@@ -61,10 +65,15 @@ export const options = {
   },
   thresholds: {
     ...sharedThresholds,
-    // Asynchronous enqueue must be a fast acknowledgment (202), not a turn.
-    'http_req_duration{endpoint:chat_async}': ['p(95)<100'],
-    // TTFB approximates SSE attach; total body duration is the full turn.
-    'http_req_waiting{endpoint:chat_sse}': ['p(95)<1000'],
+    // SLO: chat acknowledgment (202) p99 < 2.0 s; enqueue is expected to be
+    // far faster than that, so p95 < 100 ms catches a regression early.
+    recruitai_enqueue_duration: ['p(95)<100', 'p(99)<2000'],
+    // SLO: agent reasoning turnaround p95 < 30 s (enqueue -> terminal state).
+    recruitai_agent_turnaround_duration: ['p(95)<30000'],
+    // SLO: an SSE client attaches in under a second (time to first byte).
+    recruitai_sse_attach_duration: ['p(95)<1000'],
+    // SLO: resume ingestion p95 < 5 s per document.
+    recruitai_ingest_duration: ['p(95)<5000'],
     // Reads and payments are cheap; a slow tail here points at the database.
     'http_req_duration{expected_response:true}': ['p(95)<3000'],
   },
@@ -81,6 +90,7 @@ function enqueueAsync() {
     tags: { endpoint: 'chat_async' },
     timeout: __ENV.ENQUEUE_TIMEOUT || '10s',
   });
+  enqueueDuration.add(response.timings.duration);
   check(response, {
     'async enqueue is 2xx': (result) => result.status >= 200 && result.status < 300,
   });
@@ -96,6 +106,7 @@ export function chatSync() {
 }
 
 export function chatAsyncPoll() {
+  const startedAt = Date.now();
   const jobId = enqueueAsync();
   if (!jobId) {
     return;
@@ -114,6 +125,9 @@ export function chatAsyncPoll() {
       status = '';
     }
     if (status === 'completed' || status === 'failed') {
+      // The SLO is enqueue -> final completion, so the clock starts before the
+      // 202 and stops at the terminal poll.
+      agentTurnaround.add(Date.now() - startedAt);
       check(response, {
         'job reaches a terminal state': () => status === 'completed' || status === 'failed',
         'job did not fail unexpectedly': () => status === 'completed',
@@ -135,6 +149,9 @@ export function chatSse() {
     tags: { endpoint: 'chat_sse' },
     timeout: __ENV.SSE_TIMEOUT || '120s',
   });
+  // `waiting` is time to first byte: the moment the stream is attached and the
+  // client can start rendering, independent of how long the turn then takes.
+  sseAttachDuration.add(response.timings.waiting);
   check(response, {
     'SSE stream attaches with 200': (result) => result.status === 200,
     'SSE stream emits a terminal event': (result) =>
@@ -197,6 +214,7 @@ export function ingest() {
     tags: { endpoint: 'ingest_upload' },
     timeout: __ENV.INGEST_TIMEOUT || '120s',
   });
+  ingestDuration.add(response.timings.duration);
   check(response, {
     'ingest is not a 5xx': (result) => result.status < 500,
   });
@@ -218,7 +236,15 @@ export function payments() {
       razorpay_signature: signature,
       plan_id: __ENV.PLAN_ID || 'pro_monthly',
     }),
-    { headers: jsonHeaders(), tags: { endpoint: 'payments_verify' }, timeout: '15s' },
+    {
+      headers: jsonHeaders(),
+      tags: { endpoint: 'payments_verify' },
+      timeout: '15s',
+      // Without RAZORPAY_KEY_SECRET the signature is intentionally invalid, so
+      // a 4xx answer is the expected contract. Only a 5xx is a regression;
+      // marking the status expected keeps it out of `http_req_failed`.
+      responseCallback: http.expectedStatuses({ min: 200, max: 499 }),
+    },
   );
   // Invalid/mock signatures are expected without the real secret; only server
   // failures indicate a regression.

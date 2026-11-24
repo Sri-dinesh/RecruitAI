@@ -16,6 +16,19 @@ export const readinessDuration = new Trend('recruitai_readiness_duration', true)
 export const chatFailures = new Rate('recruitai_chat_failures');
 export const unexpectedResponses = new Counter('recruitai_unexpected_responses');
 
+/**
+ * Formal SLO signals from `docs/slo.md`, recorded per request so a load run
+ * enforces the same numbers operations pages on:
+ * - enqueue acknowledgment (202) p99 < 2 s;
+ * - agent reasoning turnaround (enqueue -> terminal job state) p95 < 30 s;
+ * - SSE attach (time to first byte) p95 < 1 s;
+ * - resume ingestion p95 < 5 s per document.
+ */
+export const enqueueDuration = new Trend('recruitai_enqueue_duration', true);
+export const agentTurnaround = new Trend('recruitai_agent_turnaround_duration', true);
+export const sseAttachDuration = new Trend('recruitai_sse_attach_duration', true);
+export const ingestDuration = new Trend('recruitai_ingest_duration', true);
+
 export function baseUrl() {
   return (__ENV.BASE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 }

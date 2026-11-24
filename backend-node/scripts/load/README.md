@@ -64,15 +64,41 @@ dependency even if the drill fails.
 The suite mirrors `docs/slo.md`. It fails a **scheduled** run when these are
 missed; it is not a merge gate.
 
-| Signal                               | Target                                   |
-| :----------------------------------- | :--------------------------------------- |
-| Sync chat success rate               | `>= 99%` (spike allows 5% rejections)    |
-| Chat turn latency                    | `p95 < 30 s`, soak `p99 < 45 s`          |
-| Readiness probe latency              | `p99 < 50 ms`                            |
-| Liveness during a dependency outage  | `100%` `200`                             |
-| Readiness during a dependency outage | `200` (degraded) or `503`, never timeout |
-| Unexpected 5xx during a fault window | `0`; deliberate `503`/`429` are allowed  |
-| Async enqueue with Redis unavailable | `503` + `Retry-After` (degraded mode)    |
+| Signal                               | Target                                   | k6 metric                                    |
+| :----------------------------------- | :--------------------------------------- | :------------------------------------------- |
+| Sync chat success rate               | `>= 99%` (spike allows 5% rejections)    | `recruitai_chat_failures`, `http_req_failed` |
+| Chat turn latency                    | `p95 < 30 s`, soak `p99 < 45 s`          | `recruitai_chat_duration`                    |
+| Chat acknowledgment (202)            | `p99 < 2 s`                              | `recruitai_enqueue_duration`                 |
+| Agent reasoning turnaround           | `p95 < 30 s` (enqueue → terminal)        | `recruitai_agent_turnaround_duration`        |
+| SSE attach                           | `p95 < 1 s` (time to first byte)         | `recruitai_sse_attach_duration`              |
+| Resume ingestion                     | `p95 < 5 s` per document                 | `recruitai_ingest_duration`                  |
+| Readiness probe latency              | `p99 < 50 ms`                            | `recruitai_readiness_duration`               |
+| Liveness during a dependency outage  | `100%` `200`                             | `liveness` check                             |
+| Readiness during a dependency outage | `200` (degraded) or `503`, never timeout | `readiness` check                            |
+| Unexpected 5xx during a fault window | `0`; deliberate `503`/`429` are allowed  | `unexpectedResponses` counter                |
+| Async enqueue with Redis unavailable | `503` + `Retry-After` (degraded mode)    | chaos scenario                               |
+
+The custom trends are recorded by `traffic-mix.js` so the run itself fails when
+a documented SLO in `docs/slo.md` is missed; they are not re-derived by hand
+from HTTP percentiles.
+
+### Five-times spike comparison
+
+`chat-spike.js` accepts `BASELINE_RPS` and `PEAK_RPS`. To prove the error rate
+stays flat through a 5× spike (rather than merely staying under a fixed cap):
+
+```bash
+# 1. Baseline: 80 rps, record recruitai_chat_failures and p95.
+BASE_URL=... AUTH_TOKEN=... k6 run --env TARGET_RPS=80 --env DURATION=10m scripts/load/chat-load.js
+
+# 2. Spike: 80 rps -> 400 rps (5x) -> 600 rps burst -> 80 rps.
+BASE_URL=... AUTH_TOKEN=... \
+  k6 run --env BASELINE_RPS=80 --env PEAK_RPS=400 scripts/load/chat-spike.js
+```
+
+Compare the spike's `recruitai_chat_failures` and `http_req_failed` with the
+baseline. Deliberate `429`/`503` rejections are the fair-use contract; an
+increase in `5xx` is a regression.
 
 Load is expressed as chat turns per second. A recruiter typically sends one
 turn every 30 s, so **10K concurrently active users ≈ 333 rps** before polling
