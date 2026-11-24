@@ -57,6 +57,7 @@ npm run preflight    # validate a production deployment environment
 npm run stabilize    # read-only post-cutover error/auth/payment/queue check
 npm run typecheck    # tsc --noEmit (src + tests)
 npm test             # node:test via tsx
+npm run test:integration:redis # two managers against a real Redis (opt-in)
 npm run parity:check # read-only FastAPI vs Express comparison
 npm run lint         # eslint .
 npm run format       # prettier --write .
@@ -837,7 +838,9 @@ HTTP request and the long-running turn separate.
 Phase 14 adds 44 tests across the in-memory manager, the Redis manager (fake
 Redis/queue/worker backend, so no server is needed) and the chat routes
 (sync/async dispatch, job polling, SSE frames, tenant isolation, 422/500
-shapes).
+shapes). The opt-in `tests/redis-multi-instance.test.ts` additionally runs two
+managers against a real Redis and proves job status/SSE cross instance:
+`REDIS_INTEGRATION_URL=redis://127.0.0.1:6390 npm run test:integration:redis`.
 
 ## Sessions, evaluation, reports, analytics, users, and privacy
 
