@@ -58,6 +58,7 @@ npm run stabilize    # read-only post-cutover error/auth/payment/queue check
 npm run typecheck    # tsc --noEmit (src + tests)
 npm test             # node:test via tsx
 npm run test:integration:redis # two managers against a real Redis (opt-in)
+npm run test:integration:postgres # real-server pool saturation proof (opt-in)
 npm run parity:check # read-only FastAPI vs Express comparison
 npm run lint         # eslint .
 npm run format       # prettier --write .
@@ -385,6 +386,14 @@ silently falling back. Payment and ledger paths always use the primary.
 Call `closeDatabase()` during graceful shutdown. Missing configuration raises
 the Python-compatible 503 (`Database service configuration missing in production
 environment.`) in production.
+
+Saturation is observable, not just theoretical: `/api/metrics` publishes
+`recruitai_db_pool_connections{role,state}` and `recruitai_db_pool_size{role}`
+at scrape time, so `state="waiting"` above zero means callers are queueing for a
+slot. `tests/db-pool-saturation.test.ts` proves the bound against a real server:
+40 concurrent `pg_sleep` queries over `PG_POOL_MAX=2` never open more than two
+connections, do queue (`waiting > 0`), and all finish. Run it with
+`DATABASE_INTEGRATION_URL=postgres://… npm run test:integration:postgres`.
 
 ### RPC escape hatch
 
