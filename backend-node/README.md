@@ -850,6 +850,12 @@ Redis/queue/worker backend, so no server is needed) and the chat routes
 shapes). The opt-in `tests/redis-multi-instance.test.ts` additionally runs two
 managers against a real Redis and proves job status/SSE cross instance:
 `REDIS_INTEGRATION_URL=redis://127.0.0.1:6390 npm run test:integration:redis`.
+The same command runs `tests/rolling-deploy.test.ts`, which starts two real HTTP
+instances on one Redis, enqueues an 80-job backlog on A, opens SSE on B, sends
+A `SIGTERM`, starts a replacement, and asserts a clean exit, zero dropped jobs
+and a terminal `complete` frame. `tests/redis-fleet-state.test.ts` uses two
+independent stores to prove the rate-limit window, cached values and circuit
+state are shared fleet-wide.
 
 ## Sessions, evaluation, reports, analytics, users, and privacy
 

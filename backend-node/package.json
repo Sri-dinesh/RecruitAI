@@ -9,7 +9,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:integration:redis": "node --import tsx --test tests/redis-multi-instance.test.ts",
+    "test:integration:redis": "node --import tsx --test tests/redis-multi-instance.test.ts tests/rolling-deploy.test.ts tests/redis-fleet-state.test.ts",
     "test:integration:postgres": "node --import tsx --test tests/db-pool-saturation.test.ts",
     "retention:run": "tsx src/cli/retention.ts",
     "preflight": "tsx src/cli/preflight.ts",
