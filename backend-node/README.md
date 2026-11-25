@@ -1090,21 +1090,40 @@ npm run parity:check
 ```
 
 - Compares status codes, JSON content types and key/type shapes across root,
-  health, plans, `users/me`, sessions, all analytics endpoints, billing, email
-  history/stats, bias audit, metrics (JSON and Prometheus), and authenticated
+  health, plans, `users/me`, sessions (list and missing detail), all analytics
+  endpoints, billing, email history/stats, bias audit, GDPR user export,
+  reports by session, metrics (JSON and Prometheus), and authenticated
   readiness.
 - `PARITY_STRICT_DATA=true` adds scalar values and array lengths; use it only
   when both backends share one database and tenant.
-- Always ignores process-local metric maps (`latencies_ms`,
-  `status_breakdown`) and volatile timestamps. `null`-vs-value differences and
+- Always ignores process-local metric maps (`latencies_ms`, `status_breakdown`,
+  `error_breakdown`) and volatile timestamps. `null`-vs-value differences and
   open map keys (`preferences`, `evaluations`) are warnings in shape mode.
 - Exit code `0` means parity; `1` means drift or a failed request.
 
-Verified locally: 22/22 checks pass in shape mode for FastAPI-vs-Express and for
-Express-vs-Express. In the mixed run, warnings came from the two processes
-using different databases (Python: Supabase REST; Node: SQLite fallback because
-no `DATABASE_URL` was set) — not from contract drift. Shared-database strict
-mode is part of the cutover procedure.
+Verified locally: **25/25 checks pass** in shape mode with both backends on
+their SQLite fallbacks. To reproduce without touching Supabase, start FastAPI
+with local auth and empty Supabase keys, and Express with a temp fallback file:
+
+```bash
+# Python (SQLite fallback because the Supabase keys are empty)
+cd ../backend
+USE_LOCAL_AUTH=true SUPABASE_URL= SUPABASE_SERVICE_ROLE_KEY= PORT=8010 \
+  venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+
+# Node (SQLite fallback because DATABASE_URL is unset)
+cd ../backend-node
+USE_LOCAL_AUTH=true SQLITE_FALLBACK_PATH=/tmp/recruitai-parity.db PORT=8011 \
+  ./node_modules/.bin/tsx src/main.ts
+
+# Compare
+PYTHON_BASE_URL=http://127.0.0.1:8010 NODE_BASE_URL=http://127.0.0.1:8011 \
+  PARITY_BEARER_TOKEN=local-token npm run parity:check
+```
+
+The only shape-mode warning in that run is array length on
+`analytics/candidates-over-time`, because the two fallback databases hold
+different rows. Shared-database strict mode is part of the cutover procedure.
 
 ### Cutover and rollback
 

@@ -55,6 +55,7 @@ const VOLATILE_KEYS = new Set([
   // Process-local RED maps: both backends collect their own request history.
   'latencies_ms',
   'status_breakdown',
+  'error_breakdown',
 ]);
 
 const CHECKS = [
@@ -64,6 +65,11 @@ const CHECKS = [
   { name: 'payments plans', path: '/api/payments/plans' },
   { name: 'users/me', path: '/api/users/me', auth: true },
   { name: 'sessions', path: '/api/sessions', auth: true },
+  {
+    name: 'session detail (missing)',
+    path: '/api/sessions/00000000-0000-4000-8000-000000000000',
+    auth: true,
+  },
   { name: 'analytics summary', path: '/api/analytics/summary', auth: true },
   { name: 'analytics pipeline', path: '/api/analytics/pipeline', auth: true },
   {
@@ -85,6 +91,12 @@ const CHECKS = [
   { name: 'email history', path: '/api/email/history?limit=20', auth: true },
   { name: 'email stats', path: '/api/email/stats', auth: true },
   { name: 'privacy bias audit', path: '/api/privacy/bias-audit', auth: true },
+  { name: 'privacy user export', path: '/api/privacy/user/export', auth: true },
+  {
+    name: 'report by session (missing)',
+    path: '/api/reports/session/00000000-0000-4000-8000-000000000000',
+    auth: true,
+  },
   { name: 'metrics (JSON)', path: '/api/metrics', auth: true },
   {
     name: 'metrics (Prometheus)',
