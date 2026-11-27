@@ -18,7 +18,7 @@ RecruitAI is an enterprise autonomous recruitment orchestration platform. High a
 | **LLM Provider Availability**  | Multi-model failover success rate                            | **>= 99.95%**                 | 30-Day Rolling  | Circuit Breaker telemetry (`ModelCircuitBreaker`)                                                                                                            |
 
 The contract-level SLOs are enforced by the Phase 24 load suite
-(`backend-node/scripts/load/traffic-mix.js`): `recruitai_enqueue_duration`
+(`backend/scripts/load/traffic-mix.js`): `recruitai_enqueue_duration`
 p99 < 2 s, `recruitai_agent_turnaround_duration` p95 < 30 s,
 `recruitai_sse_attach_duration` p95 < 1 s and `recruitai_ingest_duration`
 p95 < 5 s. A scheduled run fails when any of these thresholds is crossed.
@@ -102,13 +102,13 @@ emit a structured `dependency_breaker:<dependency>` event and the Prometheus
 gauges below. `RESILIENCE_BREAKERS_ENABLED=false` bypasses breakers entirely for
 incident triage.
 
-| Dependency | Failure threshold | Cooldown | Degraded behavior                                                                |
-| :--------- | :---------------- | :------- | :------------------------------------------------------------------------------- |
-| `gemini`   | 3                 | 60 s     | Rotate to the next model; when all are open, deterministic/fallback responses    |
-| `tavily`   | 3                 | 60 s     | Deterministic JD/salary/skill fallbacks; no live web intelligence                |
-| `smtp`     | 3                 | 60 s     | Return the simulated/failed dispatch contract; never hang the request            |
-| `razorpay` | 3                 | 60 s     | Production fails fast with a 5xx/503; development uses the mock order path       |
-| `postgres` | 5                 | 30 s     | New transactions short-circuit; routes return `503` + `Retry-After`              |
+| Dependency | Failure threshold | Cooldown | Degraded behavior                                                                   |
+| :--------- | :---------------- | :------- | :---------------------------------------------------------------------------------- |
+| `gemini`   | 3                 | 60 s     | Rotate to the next model; when all are open, deterministic/fallback responses       |
+| `tavily`   | 3                 | 60 s     | Deterministic JD/salary/skill fallbacks; no live web intelligence                   |
+| `smtp`     | 3                 | 60 s     | Return the simulated/failed dispatch contract; never hang the request               |
+| `razorpay` | 3                 | 60 s     | Production fails fast with a 5xx/503; development uses the mock order path          |
+| `postgres` | 5                 | 30 s     | New transactions short-circuit; routes return `503` + `Retry-After`                 |
 | `redis`    | 3                 | 15 s     | In-memory caches/limits/breakers; async chat enqueue returns `503` in degraded mode |
 
 Only connectivity, timeout, `5xx` and `429`-class failures count toward a trip;
@@ -137,12 +137,12 @@ request path.
 
 ## 5. Automated Monitoring & Scraping
 
-The FastAPI and Node/Express backends expose the **same metrics contract**, so
-existing dashboards, alerts and scrape configs keep working through cutover:
+The Express backend exposes the **same metrics contract** the legacy FastAPI
+service used, so existing dashboards, alerts and scrape configs keep working
+through cutover:
 
 - **Prometheus scrape**: `GET /api/metrics` with `Accept: text/plain` and an
-  `Authorization: Bearer <token>` header (the route is authenticated in both
-  backends).
+  `Authorization: Bearer <token>` header (the route is authenticated).
 - **Structured JSON telemetry**: `GET /api/metrics` with any non-`text/plain`
   `Accept` value.
 - **Deep readiness probe**: `GET /api/health/ready` (alias `GET /health/ready`),
@@ -151,16 +151,16 @@ existing dashboards, alerts and scrape configs keep working through cutover:
 
 Stable metric names (do not rename without updating alerting):
 
-| Metric                     | Type    | Meaning                                                      |
-| :------------------------- | :------ | :----------------------------------------------------------- |
-| `recruitai_requests_total` | counter | Requests by `endpoint` (matched route template) and `status` |
-| `recruitai_queue_depth`    | gauge   | Pending async chat jobs                                      |
-| `recruitai_tokens_total`   | counter | LLM tokens by `type="input"\|"output"`                       |
-| `recruitai_llm_cost_usd`   | counter | Estimated cumulative LLM cost in USD                         |
-| `recruitai_dependency_circuit_state`      | gauge   | Breaker state per `dependency`: `0` closed, `1` half-open, `2` open |
-| `recruitai_dependency_circuit_trips_total` | counter | Opens per `dependency` and `reason` (`failure_threshold`, `rate_limit`) |
-| `recruitai_db_pool_connections` | gauge | Postgres connections per `role` (`primary`/`read`) and `state` (`total`/`idle`/`waiting`) |
-| `recruitai_db_pool_size`        | gauge | Configured pool ceiling per `role`                            |
+| Metric                                     | Type    | Meaning                                                                                   |
+| :----------------------------------------- | :------ | :---------------------------------------------------------------------------------------- |
+| `recruitai_requests_total`                 | counter | Requests by `endpoint` (matched route template) and `status`                              |
+| `recruitai_queue_depth`                    | gauge   | Pending async chat jobs                                                                   |
+| `recruitai_tokens_total`                   | counter | LLM tokens by `type="input"\|"output"`                                                    |
+| `recruitai_llm_cost_usd`                   | counter | Estimated cumulative LLM cost in USD                                                      |
+| `recruitai_dependency_circuit_state`       | gauge   | Breaker state per `dependency`: `0` closed, `1` half-open, `2` open                       |
+| `recruitai_dependency_circuit_trips_total` | counter | Opens per `dependency` and `reason` (`failure_threshold`, `rate_limit`)                   |
+| `recruitai_db_pool_connections`            | gauge   | Postgres connections per `role` (`primary`/`read`) and `state` (`total`/`idle`/`waiting`) |
+| `recruitai_db_pool_size`                   | gauge   | Configured pool ceiling per `role`                                                        |
 
 ### Health and readiness semantics
 
@@ -184,14 +184,14 @@ Stable metric names (do not rename without updating alerting):
   enqueue context into the job payload, so one trace spans HTTP → queue → agent
   nodes → database/external calls. Spans are logged as OpenTelemetry-shaped
   records and contain no prompt, resume or candidate text.
-- Structured logs (FastAPI `logging` extras, Node JSON lines) carry
+- Structured logs (one JSON object per line) carry
   `request_id`, and `user_id` / `tenant_id` / `session_id` once those are known.
   Errors before authentication still carry the request id.
 - Sensitive actions emit `[AUDIT]` records with `audit_action`:
   `GDPR_ERASURE`, `GDPR_ACCOUNT_ERASURE`, and `WORKSPACE_RESET`. Payment changes
   remain auditable through the `credit_transactions` ledger.
 - Metrics are exported per instance through a `prom-client` registry (Phase 21)
-  with the same metric names as Python, so Prometheus can sum/rate across
+  with the stable metric names above, so Prometheus can sum/rate across
   replicas without a contract change. The JSON `/api/metrics` summary remains
   the in-process view used by `npm run stabilize`; aggregate at the gateway
   when you need fleet totals. Fleet-wide state (jobs, Tavily cache, circuit
@@ -219,7 +219,7 @@ instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
   use the primary.
 - **List bounds.** Tenant list endpoints accept `limit`/`offset` but clamp to
   `DB_LIST_MAX_LIMIT` (default `1000`), matching the implicit PostgREST cap
-  Python ran under. Retention and tenant sweeps page with keyset cursors and
+  the legacy backend ran under. Retention and tenant sweeps page with keyset cursors and
   process `DB_SWEEP_BATCH_SIZE` rows per round trip; multi-row inserts chunk at
   `DB_INSERT_BATCH_SIZE`. Both defaults are `500`.
 - **Hot-read cache.** With `CACHE_HOT_READS_ENABLED=true`, credits
@@ -236,12 +236,12 @@ instances + worker connections ≤` the pooler/pgBouncer ceiling. Leave at
 
 ### Load and resilience validation (Phase 24)
 
-The k6 suite under `backend-node/scripts/load/` covers sustained load, soak,
+The k6 suite under `backend/scripts/load/` covers sustained load, soak,
 spike and dependency-chaos profiles against a deployed target. It is a
 scheduled/manual job (`.github/workflows/load.yml`), never a required check on
 every commit. Contract targets, scenario sizing (10K active users ≈ 333 chat
 turns/s) and every scaling lever are documented in
-[`backend-node/scripts/load/README.md`](../backend-node/scripts/load/README.md).
+[`backend/scripts/load/README.md`](../backend/scripts/load/README.md).
 
 During the cutover soak, `npm run stabilize` evaluates these signals from the
 same metrics contract. Only the 5xx budget is a formal SLO; the rest are
@@ -260,13 +260,14 @@ migration watch thresholds that need judgement rather than automatic rollback.
 | Local auth       | `0`             | Yes               | Development-only identity bypass                                         |
 | Unconfigured LLM | `0`             | Warning           | Agent turns degrade; production preflight already requires a key         |
 
-`npm run stabilize` also compares the Node 5xx rate with an optional Python
-canary (`--python-url` / `STABILIZATION_PYTHON_BASE_URL`) and warns on drift.
+`npm run stabilize` also compares the Node 5xx rate with an optional legacy
+Python canary (`--python-url` / `STABILIZATION_PYTHON_BASE_URL`) and warns on
+drift during the cutover window.
 Rates are compared, never absolute counters: each process has its own uptime
 window. Below `STABILIZATION_MIN_REQUESTS` (default 100), rate checks are
 skipped because a single request would look like a spike.
 
-The reported `slo_health` object is preserved from Python and counts **4xx**
+The reported `slo_health` object is preserved from the legacy backend and counts **4xx**
 responses as errors, so `slo_compliant` can be false on a perfectly healthy
 window that served 401/404/422 responses. Availability alerts and the
 stabilization check use status buckets (`>= 500`) instead. Do not change the

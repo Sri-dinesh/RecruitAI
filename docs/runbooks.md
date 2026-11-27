@@ -2,7 +2,7 @@
 
 This document contains operational procedures for responding to production alerts, system degradations, and high-severity incidents for RecruitAI (OPS-1).
 
-For the FastAPI → Express switchover itself — dual-run validation, client switch order, and the rollback procedure — see [`docs/cutover.md`](./cutover.md). After a cutover rollback, resume here for the incident follow-up.
+For the legacy FastAPI → Express switchover — dual-run validation, client switch order, and the rollback procedure — see [`docs/cutover.md`](./cutover.md). After a cutover rollback, resume here for the incident follow-up.
 
 ---
 
@@ -26,20 +26,19 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
 
 ### Immediate Diagnostics
 
-1. **Fetch Telemetry Summary** (the route is authenticated in both backends):
+1. **Fetch Telemetry Summary** (the route is authenticated):
    ```bash
    curl -s -H "Authorization: Bearer $ADMIN_JWT" \
      http://localhost:8000/api/metrics | jq .red_metrics
    ```
 2. **Inspect Server Logs for the Reference ID**:
    ```bash
-   # Node/Express (post-cutover): one JSON object per line
+   # Express: one JSON object per line
    docker logs recruitai_backend 2>&1 | jq -c 'select(.ref=="<ref>")'
-
-   # FastAPI (current): plain-text logs
-   tail -n 100 backend/logs/server.log | grep -E "UNHANDLED_EXCEPTION|ref="
    ```
-   The client-visible error text contains `ref=<id>`; server logs add
+   During the cutover window, the still-deployed legacy FastAPI service logs
+   the same reference in its own log drain. The client-visible error text
+   contains `ref=<id>`; server logs add
    `request_id`, and `user_id` / `tenant_id` when authentication succeeded.
    The same `ref` appears as `error_type` plus route/method in structured logs.
 3. **Verify Database Readiness**:
@@ -168,14 +167,14 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    curl -s -H "Authorization: Bearer $ADMIN_JWT" \
      http://localhost:8000/api/metrics | jq .use_metrics
    ```
-2. Identify slow LangGraph nodes (e.g. `screen_node` vs `candidate_qa_node`):
+2. Identify slow graph nodes (e.g. `screen` vs `candidate_qa`):
    ```bash
-   grep "Handled by" backend/logs/server.log | tail -n 20
+   docker logs recruitai_backend 2>&1 | grep '\[span:agent.node\]' | tail -n 20
    ```
 
 ### Mitigation
 
-1. Increase async worker concurrency. Python uses `ASYNC_WORKER_CONCURRENCY`; the Node backend uses `JOB_WORKER_CONCURRENCY` (default `10`):
+1. Increase async worker concurrency with `JOB_WORKER_CONCURRENCY` (default `10`):
    ```bash
    export JOB_WORKER_CONCURRENCY="8"
    ```
@@ -210,7 +209,7 @@ For the FastAPI → Express switchover itself — dual-run validation, client sw
    ```sql
    SELECT application_name, state, count(*)
    FROM pg_stat_activity
-   WHERE application_name LIKE 'recruitai-backend-node:%'
+   WHERE application_name LIKE 'recruitai-backend:%'
    GROUP BY application_name, state;
    ```
    `statement_timeout` should read `15s` (or `PG_STATEMENT_TIMEOUT_MS`), and no
@@ -253,7 +252,7 @@ PG_READ_POOL_MAX) × instances + worker connections` must stay under the
    self-contained message and never contains secret values:
    ```bash
    # Platform log drain, or locally against the deployment environment:
-   cd backend-node && node dist/cli/preflight.js
+   cd backend && node dist/cli/preflight.js
    ```
    Hard-check reference and required values: [`docs/deployment.md`](./deployment.md#4-production-gates).
 2. For a readiness failure while the process is up, check which service is
@@ -443,8 +442,8 @@ fallback`; rate limits, Tavily cache hits and circuit state become
 
 ## Runbook 8: Post-Cutover Stabilization Triage
 
-Use this runbook during the Phase 20 soak, when Node is serving traffic but
-Python is still warm for rollback. For an active outage, use the matching
+Use this runbook during the Phase 20 soak, when Express is serving traffic but
+the legacy FastAPI deployment is still warm for rollback. For an active outage, use the matching
 runbook above first; stabilization is for drift that is not yet an outage.
 
 ### Symptoms
@@ -453,7 +452,7 @@ runbook above first; stabilization is for drift that is not yet an outage.
   threshold, 5xx drift above the Python canary, or webhook 4xx.
 - `npm run stabilize` reports a hard failure: 5xx above budget, queue depth
   above 50, SQLite fallback, local auth, unreadable metrics/readiness.
-- Users report a flow that works but differs from Python (analytics numbers,
+- Users report a flow that works but differs from the legacy backend (analytics numbers,
   outreach status, privacy export fields).
 - Client smoke checks fail on one surface while the other is healthy.
 
@@ -461,7 +460,7 @@ runbook above first; stabilization is for drift that is not yet an outage.
 
 1. Run the read-only probe against the affected host:
    ```bash
-   cd backend-node
+   cd backend
    STABILIZATION_BASE_URL=https://<node-host> \
    STABILIZATION_BEARER_TOKEN=$ADMIN_JWT \
    npm run stabilize
@@ -475,7 +474,7 @@ runbook above first; stabilization is for drift that is not yet an outage.
      https://<node-host>/api/metrics \
      | jq '{total: .red_metrics.requests_total, status: .red_metrics.status_breakdown, errors: .red_metrics.error_breakdown, queue: .use_metrics.queue_depth, slo: .slo_health}'
    ```
-   `slo_health.error_rate` includes 4xx in both backends; use the `:5xx` keys
+   `slo_health.error_rate` includes 4xx; use the `:5xx` keys
    for availability questions.
 3. Check readiness detail before blaming a route:
    ```bash
@@ -551,7 +550,7 @@ runbook above first; stabilization is for drift that is not yet an outage.
 
 ### Mitigation
 
-1. **Auth (401 spike):** confirm both backends use the same
+1. **Auth (401 spike):** confirm Express and the legacy deployment use the same
    `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and that `USE_LOCAL_AUTH` is
    unset/false on Node. Compare a failing token across both hosts before
    changing anything.
@@ -562,7 +561,7 @@ runbook above first; stabilization is for drift that is not yet an outage.
 3. **Chat jobs (queue depth):** follow Runbook 3. In-memory mode cannot survive
    a restart; Redis/BullMQ mode must not be deleted before draining.
 4. **Analytics/outreach drift:** run the parity checker. If shapes match and
-   values differ, verify both backends read the same database and tenant before
+   values differ, verify Express and the legacy deployment read the same database and tenant before
    calling it a regression.
 5. **Any auth/money/data-integrity failure:** switch traffic back using
    `docs/cutover.md` §6, then fix forward with a regression test. Do not debug
@@ -570,9 +569,9 @@ runbook above first; stabilization is for drift that is not yet an outage.
 
 ### Regression Fix
 
-- Reproduce in the owning suite under `backend-node/tests/`, then fix.
+- Reproduce in the owning suite under `backend/tests/`, then fix.
 - Do not include refactors or unrelated improvements in the stabilization fix.
-- Record every intentional difference or Python bug preserved for parity in the
+- Record every intentional difference or legacy bug preserved for parity in the
   behavior-difference register in `docs/cutover.md` §7.
 - Re-run `npm run stabilize`, `npm run parity:check` and the full gate before
   resuming the rollout.

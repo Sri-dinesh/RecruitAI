@@ -9,9 +9,9 @@ RecruitAI is an end-to-end recruitment intelligence platform designed to replace
 ## 2. Product Features & Modules
 
 ### 2.1 Multi-Agent Recruitment Co-Pilot
-The recruitment workspace integrates a multi-agent state machine built with LangGraph:
+The recruitment workspace integrates a multi-agent state machine built on a typed graph runtime:
 - **Supervisor Agent**: Understands recruiter intent, queries vector embeddings, delegates evaluation tasks, and formats structured responses.
-- **Ingestion Agent**: Validates uploaded files, extracts text, chunks semantic segments, and creates 768-dimensional embeddings using Google's text-embedding-004.
+- **Ingestion Agent**: Validates uploaded files, extracts text, chunks semantic segments, and creates 384-dimensional embeddings using Gemini embedding-2.
 - **Evaluation Agent**: Derives scoring criteria from job descriptions and scores each candidate across Technical Mastery, Practical Experience, and Impact.
 - **Outreach Agent**: Generates highly personalized interview invitations, technical assessment briefs, or rejection letters based on the evaluation notes.
 - **HITL Checkpoint**: Any state transitions that produce outbound side-effects (e.g. sending emails or reserving calendar slots) halt execution and await explicit user confirmation.
@@ -34,10 +34,10 @@ To combat implicit bias in the hiring pipeline:
 ## 3. System Architecture & Tech Stack
 
 ```
-[ Next.js 16 Web Client ] <---> [ FastAPI Backend (Python 3.12+) ] <---> [ Supabase PostgreSQL + pgvector ]
+[ Next.js 16 Web Client ] <---> [ Express Backend (Node 24 + TypeScript) ] <---> [ Supabase PostgreSQL + pgvector ]
          |                                      |                                      |
          |                                      v                                      v
-[ Expo 57 Mobile App ]            [ LangGraph / Gemini 2.0 / Groq ]             [ Supabase Auth & RLS ]
+[ Expo 57 Mobile App ]            [ StateGraph / Gemini / BullMQ ]              [ Supabase Auth & RLS ]
 ```
 
 ### Backend Endpoints

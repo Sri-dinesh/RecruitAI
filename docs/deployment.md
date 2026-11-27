@@ -1,31 +1,30 @@
-# Node backend deployment and production hardening (Phase 19)
+# Backend deployment and production hardening
 
 This document is the deployment contract for the Express backend in
-`backend-node/`. It covers the build artifact, startup behavior, every
+`backend/`. It covers the build artifact, startup behavior, every
 environment variable, production gates, secrets handling, log/metric export and
 the operational commands.
 
 For the FastAPI → Express switchover itself, see `docs/cutover.md`. For incident
-procedures once Node is serving traffic, see `docs/runbooks.md`.
+procedures once Express is serving traffic, see `docs/runbooks.md`.
 
 ---
 
 ## 1. Artifact and entrypoint
 
-| Item       | Value                                                          |
-| :--------- | :------------------------------------------------------------- |
-| Build      | `npm ci && npm run build` → `dist/`                            |
-| Entrypoint | `node dist/main.js`                                            |
-| Container  | `backend-node/Dockerfile` (multi-stage, non-root, healthcheck) |
-| Liveness   | `GET /health` (public, process only)                           |
-| Readiness  | `GET /api/health/ready` (authenticated, DB round trip)         |
-| Port       | `PORT` (default `8000`), `HOST` (default `0.0.0.0`)            |
-| Blueprint  | `render.yaml` at the repository root                           |
+| Item       | Value                                                     |
+| :--------- | :-------------------------------------------------------- |
+| Build      | `npm ci && npm run build` → `dist/`                       |
+| Entrypoint | `node dist/main.js`                                       |
+| Container  | `backend/Dockerfile` (multi-stage, non-root, healthcheck) |
+| Liveness   | `GET /health` (public, process only)                      |
+| Readiness  | `GET /api/health/ready` (authenticated, DB round trip)    |
+| Port       | `PORT` (default `8000`), `HOST` (default `0.0.0.0`)       |
+| Blueprint  | `render.yaml` at the repository root                      |
 
-`src/main.ts` is the Node equivalent of
-`uvicorn app.main:app --host $HOST --port $PORT`:
+`src/main.ts` is the service entrypoint:
 
-1. loads `backend-node/.env` **only if present** (deployment variables always
+1. loads `backend/.env` **only if present** (deployment variables always
    win; a container does not need a file),
 2. validates configuration and exits `1` on invalid values,
 3. sets the structured log level from `LOG_LEVEL`,
@@ -33,13 +32,13 @@ procedures once Node is serving traffic, see `docs/runbooks.md`.
    failure (warnings are logged),
 5. starts the retention scheduler (no-op unless enabled) and the HTTP server.
 
-`RELOAD` is read for parity with the Python config but has no effect on the
-built server; development mode uses `npm run dev` (`tsx watch`).
+`RELOAD` is accepted for compatibility but has no effect on the built server;
+development mode uses `npm run dev` (`tsx watch`).
 
 ### Build and run locally
 
 ```bash
-cd backend-node
+cd backend
 npm ci
 npm run build
 node dist/main.js
@@ -48,11 +47,11 @@ node dist/main.js
 ### Build and run the container
 
 ```bash
-docker build -t recruitai-backend-node backend-node
+docker build -t recruitai-backend backend
 docker run --rm -p 8000:8000 \
   -e ENVIRONMENT=development \
   -e USE_LOCAL_AUTH=true \
-  recruitai-backend-node
+  recruitai-backend
 ```
 
 Production containers must receive secrets from the platform, not a baked
@@ -62,7 +61,7 @@ Production containers must receive secrets from the platform, not a baked
 
 ## 2. Environment matrix
 
-`backend-node/.env.example` is the copyable template. The table below is the
+`backend/.env.example` is the copyable template. The table below is the
 authoritative deployment checklist. “Prod” means a value is required (or must
 be explicitly chosen) before the production preflight can pass.
 
@@ -74,24 +73,24 @@ be explicitly chosen) before the production preflight can pass.
 | `NODE_ENV`          | recommended | no     | —                         | Container/userland convention; `ENVIRONMENT` wins.             |
 | `HOST`              | no          | no     | `0.0.0.0`                 | Bind address.                                                  |
 | `PORT`              | no          | no     | `8000`                    | Platform-provided ports override this.                         |
-| `RELOAD`            | no          | no     | `true` dev / `false` prod | Parity only; no effect on `dist/main.js`.                      |
+| `RELOAD`            | no          | no     | `true` dev / `false` prod | Compatibility only; no effect on `dist/main.js`.               |
 | `LLM_DATA_USE_MODE` | **yes**     | no     | `zero_retention_verified` | Exactly this value in production (AI-SEC-1).                   |
 | `LLM_KILL_SWITCH`   | no          | no     | `false`                   | `true` disables model calls and degrades to rule-based paths.  |
 | `LOG_LEVEL`         | no          | no     | `info`                    | `debug`, `info`, `warn`, `error`. Invalid values fail startup. |
 
 ### LLM, search and Supabase
 
-| Variable                    | Prod    | Secret  | Default         | Notes                                                           |
-| :-------------------------- | :------ | :------ | :-------------- | :-------------------------------------------------------------- |
-| `GEMINI_API_KEY`            | **yes** | **yes** | —               | Required production key.                                        |
-| `GOOGLE_API_KEY`            | no      | **yes** | —               | Parity with LangChain integrations; keep in sync if used.       |
-| `GROQ_API_KEY`              | no      | **yes** | —               | Deprecated; defined for parity, not part of the Node LLM stack. |
-| `TAVILY_API_KEY`            | **yes** | **yes** | —               | Live job/salary/trend search; offline fallbacks without it.     |
-| `SUPABASE_URL`              | **yes** | no      | —               | Project URL (not the database URL).                             |
-| `SUPABASE_ANON_KEY`         | no      | public  | —               | Client-facing key; harmless but keep out of logs.               |
-| `SUPABASE_SERVICE_ROLE_KEY` | **yes** | **yes** | —               | Server-side Supabase access.                                    |
-| `SUPABASE_JWT_SECRET`       | **yes** | **yes** | —               | ≥ 32 characters; HS256 verification.                            |
-| `SUPABASE_JWT_AUDIENCE`     | no      | no      | `authenticated` | Non-default values warn in preflight.                           |
+| Variable                    | Prod    | Secret  | Default         | Notes                                                       |
+| :-------------------------- | :------ | :------ | :-------------- | :---------------------------------------------------------- |
+| `GEMINI_API_KEY`            | **yes** | **yes** | —               | Required production key.                                    |
+| `GOOGLE_API_KEY`            | no      | **yes** | —               | Compatibility alias; keep in sync if used.                  |
+| `GROQ_API_KEY`              | no      | **yes** | —               | Deprecated; accepted but unused by the Node LLM stack.      |
+| `TAVILY_API_KEY`            | **yes** | **yes** | —               | Live job/salary/trend search; offline fallbacks without it. |
+| `SUPABASE_URL`              | **yes** | no      | —               | Project URL (not the database URL).                         |
+| `SUPABASE_ANON_KEY`         | no      | public  | —               | Client-facing key; harmless but keep out of logs.           |
+| `SUPABASE_SERVICE_ROLE_KEY` | **yes** | **yes** | —               | Server-side Supabase access.                                |
+| `SUPABASE_JWT_SECRET`       | **yes** | **yes** | —               | ≥ 32 characters; HS256 verification.                        |
+| `SUPABASE_JWT_AUDIENCE`     | no      | no      | `authenticated` | Non-default values warn in preflight.                       |
 
 ### Database
 
@@ -110,7 +109,7 @@ be explicitly chosen) before the production preflight can pass.
 | :------------------ | :----------------- | :----- | :--------------------------------- | :------------------------------------------------------------ |
 | `USE_LOCAL_AUTH`    | **must be false**  | no     | `false`                            | Forced off in production; a `true` value fails preflight.     |
 | `LOCAL_DEV_USER_ID` | no                 | no     | seed UUID                          | Development identity only.                                    |
-| `ALLOWED_ORIGINS`   | **yes**            | no     | Python defaults (include loopback) | Explicit `https://` origins; loopback entries fail preflight. |
+| `ALLOWED_ORIGINS`   | **yes**            | no     | Legacy defaults (include loopback) | Explicit `https://` origins; loopback entries fail preflight. |
 | `TRUST_PROXY`       | platform-dependent | no     | `false`                            | `true` only behind a proxy that overwrites `X-Forwarded-For`. |
 
 The Vercel preview regex (`https://recruitai-*.vercel.app`) is part of the CORS
@@ -121,7 +120,7 @@ middleware and does not need an env var.
 | Variable                   | Prod           | Secret  | Default                | Notes                                                            |
 | :------------------------- | :------------- | :------ | :--------------------- | :--------------------------------------------------------------- |
 | `SMTP_SERVER`              | no             | no      | `smtp.gmail.com`       | Sender host.                                                     |
-| `SMTP_PORT`                | no             | no      | `587`                  | Invalid values fall back like Python.                            |
+| `SMTP_PORT`                | no             | no      | `587`                  | Invalid values fall back to the default.                         |
 | `SMTP_USERNAME`            | optional       | no      | —                      | Set together with password and sender.                           |
 | `SMTP_PASSWORD`            | optional       | **yes** | —                      | Partial SMTP configuration fails preflight.                      |
 | `SMTP_SENDER`              | optional       | no      | username               | From-address.                                                    |
@@ -135,7 +134,7 @@ middleware and does not need an env var.
 | `JOB_WORKER_CONCURRENCY`   | no             | no      | `10`                   | Turns per worker process.                                        |
 | `JOB_EVENT_REPLAY_LIMIT`   | no             | no      | `100`                  | SSE replay buffer per job.                                       |
 
-When SMTP or Razorpay is intentionally absent, the backend keeps Python's
+When SMTP or Razorpay is intentionally absent, the backend keeps the legacy
 simulation behavior: outreach is logged as simulated and orders are simulated;
 payment webhooks reject unless the webhook secret is present. Preflight reports
 these as warnings.
@@ -146,8 +145,8 @@ these as warnings.
 | :------------------------------- | :----------------- | :----- | :--------------------------------- | :------------------------------------------------------ |
 | `RETENTION_JOB_ENABLED`          | no                 | no     | `false`                            | Enable on exactly one instance, after the cutover soak. |
 | `RETENTION_JOB_INTERVAL_SECONDS` | no                 | no     | `86400`                            | Sweep interval.                                         |
-| `RETENTION_RAW_RESUME_TTL_DAYS`  | no                 | no     | `90`                               | Python default.                                         |
-| `RETENTION_CHAT_TTL_DAYS`        | no                 | no     | `365`                              | Python default.                                         |
+| `RETENTION_RAW_RESUME_TTL_DAYS`  | no                 | no     | `90`                               | Legacy default.                                         |
+| `RETENTION_CHAT_TTL_DAYS`        | no                 | no     | `365`                              | Legacy default.                                         |
 | `RATE_LIMIT_ENABLED`             | recommended        | no     | `true` in production, else `false` | Per-process request limiter.                            |
 | `RATE_LIMIT_WINDOW_SECONDS`      | no                 | no     | `60`                               | Fixed window.                                           |
 | `RATE_LIMIT_MAX_REQUESTS`        | no                 | no     | `600`                              | Requests per key per window.                            |
@@ -160,7 +159,7 @@ these as warnings.
 - Secrets live in the platform secret store (Render environment variables,
   Kubernetes `Secret`, Fly secrets). `render.yaml` marks every secret
   `sync: false`, so the blueprint prompts instead of committing values.
-- Never commit `backend-node/.env`; it is git-ignored and excluded from the
+- Never commit `backend/.env`; it is git-ignored and excluded from the
   Docker build context.
 - The backend never logs configuration values. Structured logs use an
   allowlist and drop `prompt`, `resume`, `completion`, `text`, `message`,
@@ -179,7 +178,7 @@ Run the preflight with the deployment environment before every production
 deploy:
 
 ```bash
-cd backend-node
+cd backend
 npm run preflight          # local (tsx)
 node dist/cli/preflight.js # built artifact / CI / container
 ```
@@ -293,7 +292,7 @@ instances, not absolute counters, and keep the alert rules in `docs/slo.md`.
 
 ### Render
 
-`render.yaml` defines a Docker web service rooted at `backend-node` with a
+`render.yaml` defines a Docker web service rooted at `backend` with a
 `/health` health check. It sets the non-secret production values
 (`ENVIRONMENT`, `LLM_DATA_USE_MODE`, rate limits, CORS origins, pool size) and
 marks every credential `sync: false` so Render prompts for it.
@@ -303,7 +302,7 @@ env matrix above as the checklist. Render sets `PORT`; do not hard-code it.
 
 ### Generic container platform
 
-- Build `backend-node/Dockerfile`; run `node dist/main.js` (the image already
+- Build `backend/Dockerfile`; run `node dist/main.js` (the image already
   does).
 - Inject the env matrix as platform variables/secrets.
 - Point the liveness probe at `/health` and a post-deploy check at
@@ -322,13 +321,14 @@ env matrix above as the checklist. Render sets `PORT`; do not hard-code it.
 | `npm run stabilize`                         | Read-only post-cutover health/error/auth/payment/queue check.          |
 | `npm run retention:run -- --dry-run`        | Manual tenant-scoped retention preview.                                |
 | `npm run retention:run -- --user-id <uuid>` | Manual sweep for one tenant.                                           |
-| `npm run parity:check`                      | Read-only comparison against a running FastAPI backend.                |
+| `npm run parity:check`                      | Read-only comparison against a running legacy FastAPI backend.         |
 | `npm start`                                 | Run the built server (`node dist/main.js`).                            |
 | `npm test`                                  | Full unit/contract suite.                                              |
 
-`backend/app/cli.py` is an interactive developer REPL, not an operational
-command. It is intentionally not ported: the HTTP API plus the web/mobile
-clients replace it, and the retention CLI covers the scheduled/ops surface.
+The archived FastAPI developer REPL is intentionally not replaced: it was an
+interactive development tool, not an operational command. The HTTP API plus the
+web/mobile clients replace it, and the retention CLI covers the scheduled/ops
+surface.
 
 ---
 
@@ -336,7 +336,7 @@ clients replace it, and the retention CLI covers the scheduled/ops surface.
 
 Before switching traffic (full procedure in `docs/cutover.md`):
 
-- [ ] Image builds from `backend-node/Dockerfile` and runs as the non-root
+- [ ] Image builds from `backend/Dockerfile` and runs as the non-root
       `node` user.
 - [ ] `npm run preflight` (or `node dist/cli/preflight.js`) passes against the
       real production environment.
@@ -352,5 +352,5 @@ Before switching traffic (full procedure in `docs/cutover.md`):
 - [ ] Rate limiting is enabled with a threshold that matches expected traffic.
 - [ ] SMTP and Razorpay are either fully configured or intentionally in
       simulation mode.
-- [ ] The previous image tag and the Python backend are still available for
-      rollback.
+- [ ] The previous image tag and the archived FastAPI branch are still
+      available for rollback.

@@ -1,7 +1,9 @@
 # Backend cutover and rollback
 
-Operational procedure for moving RecruitAI traffic from the FastAPI backend in
-`backend/` to the Express/TypeScript backend in `backend-node/`.
+Operational procedure for moving RecruitAI traffic from the legacy FastAPI
+deployment to the Express/TypeScript backend in `backend/`. The FastAPI source
+is preserved on the `archive/fastapi-backend` branch; the main tree ships only
+the Express backend.
 
 The cutover is **reversible at every step**. Both services speak the same HTTP
 contract, read and write the same PostgreSQL schema, and are deployed
@@ -13,8 +15,8 @@ Related documents:
 
 - `docs/runbooks.md` — incident procedures once Node is serving traffic.
 - `docs/slo.md` — SLIs/SLOs and the metrics contract.
-- `backend-node/tests/PARITY.md` — Python test module → Node suite matrix and
-  the intentional gaps.
+- `backend/tests/PARITY.md` — archived FastAPI test module → Node suite matrix
+  and the intentional gaps.
 
 ---
 
@@ -22,22 +24,22 @@ Related documents:
 
 Do not start the cutover until every row is true.
 
-| Requirement                     | Check                                                                                                                |
-| :------------------------------ | :------------------------------------------------------------------------------------------------------------------- |
-| Node phase gate is green        | `cd backend-node && npm test && npm run lint && npm run typecheck && npm run build && npm run format:check`          |
-| Node reaches the same database  | `DATABASE_URL` or `SUPABASE_DB_URL` points at the production PostgreSQL instance (direct TCP, not the PostgREST URL) |
-| Auth material matches Python    | Same `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and `USE_LOCAL_AUTH` policy                                     |
-| Product integrations match      | Same `GEMINI_API_KEY`, `TAVILY_API_KEY`, SMTP settings, Razorpay keys/webhook secret                                 |
-| CORS knows the clients          | `ALLOWED_ORIGINS` includes every web origin that currently calls Python                                              |
-| Queue mode is decided           | Either `REDIS_URL` unset (in-memory jobs) or a Redis instance both acceptable to keep and able to drain              |
-| Retention ownership is explicit | `RETENTION_JOB_ENABLED` stays `false` on Node while Python still runs its own job; never let two schedulers sweep    |
-| Python is warm and pinned       | The Python deployment stays running at its current image for the whole soak                                          |
-| No DDL is planned               | Node performs no schema migrations at cutover; it reads/writes the existing schema                                   |
+| Requirement                     | Check                                                                                                                      |
+| :------------------------------ | :------------------------------------------------------------------------------------------------------------------------- |
+| Node phase gate is green        | `cd backend && npm test && npm run lint && npm run typecheck && npm run build && npm run format:check`                     |
+| Node reaches the same database  | `DATABASE_URL` or `SUPABASE_DB_URL` points at the production PostgreSQL instance (direct TCP, not the PostgREST URL)       |
+| Auth material matches legacy    | Same `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, and `USE_LOCAL_AUTH` policy                                           |
+| Product integrations match      | Same `GEMINI_API_KEY`, `TAVILY_API_KEY`, SMTP settings, Razorpay keys/webhook secret                                       |
+| CORS knows the clients          | `ALLOWED_ORIGINS` includes every web origin that currently calls the legacy service                                        |
+| Queue mode is decided           | Either `REDIS_URL` unset (in-memory jobs) or a Redis instance both acceptable to keep and able to drain                    |
+| Retention ownership is explicit | `RETENTION_JOB_ENABLED` stays `false` on Express while the legacy service runs its own job; never let two schedulers sweep |
+| Legacy service is warm          | The FastAPI deployment stays running at its current image for the whole soak                                               |
+| No DDL is planned               | Express performs no schema migrations at cutover; it reads/writes the existing schema                                      |
 
-Node needs a direct Postgres connection string. Python's `SUPABASE_URL` is not
-enough: Drizzle uses `drizzle-orm/node-postgres` over TCP. If only the
-Supabase URL is available, Node silently falls back to SQLite, which is fine for
-shape checks and unacceptable for cutover (readiness reports
+Express needs a direct Postgres connection string. The legacy `SUPABASE_URL` is
+not enough: Drizzle uses `drizzle-orm/node-postgres` over TCP. If only the
+Supabase URL is available, Express silently falls back to SQLite, which is fine
+for shape checks and unacceptable for cutover (readiness reports
 `type: sqlite_fallback`).
 
 ---
@@ -65,7 +67,7 @@ shape checks and unacceptable for cutover (readiness reports
    `recruitai_tokens_total` and `recruitai_llm_cost_usd`.
 
 During this window both backends write to the same database. That is safe:
-Node and Python use the same tables and the same tenant scoping. Do not run the
+Express and the legacy service use the same tables and the same tenant scoping. Do not run the
 retention scheduler on both sides, and do not import bulk data from both.
 
 ---
@@ -75,7 +77,7 @@ retention scheduler on both sides, and do not import bulk data from both.
 Run the parity checker against the live pair:
 
 ```bash
-cd backend-node
+cd backend
 PYTHON_BASE_URL=https://<python-host> \
 NODE_BASE_URL=https://<node-host> \
 PARITY_BEARER_TOKEN=<<a real user token> \
@@ -94,6 +96,20 @@ npm run parity:check
 - A missing bearer token skips every authenticated check. A conditional pass
   with `skipped` rows is not a pass.
 
+For a local dry run, check the archived implementation out of the preservation
+branch and run both services on their SQLite fallbacks:
+
+```bash
+git worktree add /tmp/recruitai-fastapi archive/fastapi-backend
+cd /tmp/recruitai-fastapi/backend
+USE_LOCAL_AUTH=true SUPABASE_URL= SUPABASE_SERVICE_ROLE_KEY= PORT=8010 \
+  venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
+
+The Express side uses `USE_LOCAL_AUTH=true`, an empty `DATABASE_URL`, and a
+temporary `SQLITE_FALLBACK_PATH`; the exact commands are in
+[`backend/README.md`](../backend/README.md#dual-run-parity-checker).
+
 Use a dedicated staging tenant for strict mode, and compare the same session
 ids on both sides. Shape mode alone does not prove data-dependent branches
 (credit balances, shortlist ordering, analytics aggregation).
@@ -102,8 +118,8 @@ ids on both sides. Shape mode alone does not prove data-dependent branches
 
 ## 3. Representative write validation
 
-On the staging tenant, exercise each write path against Node and compare the
-response with Python for the same inputs:
+On the staging tenant, exercise each write path against Express and compare the
+response with the legacy service for the same inputs:
 
 | Flow                | Endpoint(s)                                                                                                                        | What must match                                                                             |
 | :------------------ | :--------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
@@ -139,7 +155,7 @@ steps.
    calling the old host. Keep both hosts serving the same contract; there is no
    forced upgrade.
 4. **Reverse proxy (optional).** Alternatively, keep client URLs unchanged and
-   move the upstream from Python to Node. This is the fastest rollback path if
+   move the upstream from FastAPI to Express. This is the fastest rollback path if
    the proxy change is a single config value.
 
 Do not switch web and mobile in the same window. If a client-specific bug
@@ -166,7 +182,7 @@ appears, the blast radius must be one surface.
 - Database: no connection-pool exhaustion (Runbook 4), no lock contention.
 - Run the stabilization probe every 15 minutes for the first hour:
   ```bash
-  cd backend-node
+  cd backend
   STABILIZATION_BASE_URL=https://<node-host> \
   STABILIZATION_BEARER_TOKEN=<<service token> \
   npm run stabilize
@@ -177,23 +193,23 @@ appears, the blast radius must be one surface.
 
 ### First 24 hours
 
-- Compare `/api/metrics` request counts and latency with the Python baseline
+- Compare `/api/metrics` request counts and latency with the legacy baseline
   captured before the switch. Node's RED maps are process-local, so compare
   rates, not absolute counters.
-- Re-run `npm run parity:check` against the Node host and a Python canary host
+- Re-run `npm run parity:check` against the Express host and a legacy canary host
   (if one is still up) to confirm no contract drift was introduced by runtime
   configuration.
 - Inspect 422 rates for new validation mismatches and 500s for unhandled
   branches.
 - Verify the retention scheduler remains disabled, or enable it on Node only
-  after Python's scheduler is disabled.
-- Re-run `npm run stabilize` hourly. Re-run `npm run parity:check` with a Python
+  after the legacy scheduler is disabled.
+- Re-run `npm run stabilize` hourly. Re-run `npm run parity:check` with a legacy
   canary URL (or a saved baseline snapshot) to confirm runtime configuration did
   not change contract behavior.
 
 ### Soak before decommission
 
-Keep Python deployed, warm and reachable for at least 7 days of normal traffic.
+Keep the legacy service deployed, warm and reachable for at least 7 days of normal traffic.
 Rollback is a config change while it is warm; it is a redeploy afterwards.
 
 ---
@@ -216,18 +232,18 @@ Roll back immediately when any of the following is true:
 ### Steps
 
 1. **Stop sending new traffic to Node.** Either revert the client base URL and
-   redeploy the client, or point the reverse-proxy upstream back to Python.
+   redeploy the client, or point the reverse-proxy upstream back to FastAPI.
    Proxy rollback is immediate; client rollback needs a rebuild/release.
 2. **Keep Node running but unscheduled from the public path** for log capture.
    Do not delete its logs: they are the incident record.
-3. **Verify Python health** at `/health` and `/api/health/ready`, then smoke a
+3. **Verify legacy health** at `/health` and `/api/health/ready`, then smoke a
    read (`GET /api/users/me`), a write (`POST /api/sessions`), and an async chat
    job.
 4. **Resolve in-flight async jobs.**
    - In-memory mode: jobs die with the Node process; affected users see a
      missing job on polling. The client falls back to a new turn — acceptable,
      but record how many were open.
-   - Redis/BullMQ mode: Python does not consume BullMQ queues. Leave the Node
+   - Redis/BullMQ mode: the legacy service does not consume BullMQ queues. Leave the Express
      workers running until the queue is empty, or accept and record the loss.
      Never delete the queue before draining it.
 5. **Reconcile writes.** Both backends use the same database, so no data rollback
@@ -235,14 +251,14 @@ Roll back immediately when any of the following is true:
    without a follow-up turn, duplicate outreach rows, credit ledger entries.
    Reverse only what is clearly duplicated, with the tenant's user id recorded.
 6. **Disable Node-only schedulers** (`RETENTION_JOB_ENABLED=false`) and confirm
-   Python's scheduler is active again.
+   the legacy scheduler is active again.
 7. **File the incident** with the parity/validation record, the failing check,
    and the time of the switch back.
 
 ### After a rollback
 
 Treat the cause as a blocker: add a regression test to the owning Node suite
-(`backend-node/tests/`), fix it, and restart the cutover from section 1 with a
+(`backend/tests/`), fix it, and restart the cutover from section 1 with a
 fresh parity run. Do not resume at the client-switch step.
 
 ---
@@ -279,7 +295,7 @@ row because `EXPO_PUBLIC_BACKEND_URL` ships in the binary.
 | Async chat turn reaches `completed`; SSE closes with a terminal event | ☐   | ☐      |
 | Resume/JD upload returns per-file results                             | ☐   | ☐      |
 | Candidate evaluation and ATS export                                   | ☐   | ☐      |
-| Analytics pages match the Python baseline                             | ☐   | ☐      |
+| Analytics pages match the legacy baseline                             | ☐   | ☐      |
 | Billing/credit balance and 402 message                                | ☐   | ☐      |
 | Outreach history/stats and send status                                | ☐   | ☐      |
 | Privacy export, bias audit, deletion cascade                          | ☐   | ☐      |
@@ -292,13 +308,13 @@ Record the client build/version next to each row. A blank row is not a pass.
    rejection, ledger divergence and missing response fields take priority over
    latency or cosmetic differences.
 2. **Reproduce before changing code.** Add the failing input to the owning
-   suite in `backend-node/tests/`; a fix without a regression test is incomplete.
+   suite in `backend/tests/`; a fix without a regression test is incomplete.
 3. **Fix only the migration regression.** Do not fold in refactors, dependency
    upgrades or new features during stabilization. If the defect is a genuine
-   product bug that also exists in Python, record it and schedule it separately.
-4. **Document the difference.** Every intentional divergence (or Python bug
+   product bug that also exists in the legacy backend, record it and schedule it separately.
+4. **Document the difference.** Every intentional divergence (or legacy bug
    preserved for parity) goes in the register below and, if it changes a
-   contract expectation, in `backend-node/tests/PARITY.md`.
+   contract expectation, in `backend/tests/PARITY.md`.
 5. **Roll back on the documented triggers.** Do not debug a money/auth incident
    in the serving path; switch traffic back first, then fix forward.
 
@@ -310,25 +326,27 @@ Record the client build/version next to each row. A blank row is not a pass.
 
 ### Exit criteria
 
-- Seven days of normal traffic with Python still warm and deployable.
+- Seven days of normal traffic with the legacy service still warm and deployable.
 - No unexplained SEV-1/SEV-2 incident and no open contract/money defect.
 - `npm run stabilize` has no hard failures and every warning is explained.
 - A final parity run against the same database is clean.
-- Retention has exactly one owner (Node scheduler or manual CLI, never Python
-  and Node together).
+- Retention has exactly one owner (Express scheduler or manual CLI, never the
+  legacy service and Express together).
 - Rollback remains a config change, not a redeploy, until the soak ends.
 
 ---
 
-## 8. Decommissioning Python (after soak)
+## 8. Decommissioning the legacy FastAPI service (after soak)
 
-Only after the soak and a clean parity record:
+The repository already ships only the Express backend; this section retires the
+still-deployed legacy service. Only after the soak and a clean parity record:
 
-1. Freeze Python writes, run one final strict parity check on the same database.
-2. Export the last Python metrics/log window for the SLO baseline.
-3. Remove the Python deployment from the proxy and autoscaling group; keep the
+1. Freeze FastAPI writes, run one final strict parity check on the same database.
+2. Export the last FastAPI metrics/log window for the SLO baseline.
+3. Remove the FastAPI deployment from the proxy and autoscaling group; keep the
    image tag and this document for one release cycle.
-4. Enable `RETENTION_JOB_ENABLED=true` on exactly one Node instance, or run the
-   manual `npm run retention:run` schedule documented in `docs/runbooks.md`.
-5. Update `backend/README.md` to mark the service retired, and remove Python
-   from the deployment pipeline only after the next successful Node release.
+4. Enable `RETENTION_JOB_ENABLED=true` on exactly one Express instance, or run
+   the manual `npm run retention:run` schedule documented in `docs/runbooks.md`.
+5. Remove the legacy service from the deployment pipeline. The source remains
+   on `archive/fastapi-backend` as the historical reference and rollback image
+   source.

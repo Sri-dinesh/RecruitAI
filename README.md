@@ -6,10 +6,10 @@
 [![React](https://img.shields.io/badge/React-19.0-61dafb?style=flat-square&logo=react)](https://react.dev/)
 [![Expo](https://img.shields.io/badge/Expo-57.0-000020?style=flat-square&logo=expo)](https://expo.dev/)
 [![React Native](https://img.shields.io/badge/React%20Native-0.86-61dafb?style=flat-square&logo=react)](https://reactnative.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-orange?style=flat-square&logo=chainlink)](https://langchain-ai.github.io/langgraph/)
+[![Node.js](https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=nodedotjs)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-5.x-000000?style=flat-square&logo=express)](https://expressjs.com/)
 [![Supabase pgvector](https://img.shields.io/badge/Supabase-pgvector-3ecf8e?style=flat-square&logo=supabase)](https://supabase.com/)
-[![Tests Passing](https://img.shields.io/badge/Tests-205%2B%20Passing-success?style=flat-square&logo=pytest)](https://github.com/Sri-dinesh/RecruitAI/actions)
+[![Tests Passing](https://img.shields.io/badge/Tests-950%2B%20Passing-success?style=flat-square&logo=nodedotjs)](https://github.com/Sri-dinesh/RecruitAI/actions)
 [![GDPR Compliant](https://img.shields.io/badge/GDPR-Art.%2015%2F17%2F20%2F22-blue?style=flat-square)](https://gdpr-info.eu/)
 [![Lighthouse](https://img.shields.io/badge/Lighthouse-95%2B-green?style=flat-square&logo=lighthouse)](https://web.dev/performance/)
 [![Release](https://img.shields.io/badge/Release-v1.1.0-blue?style=flat-square)](https://github.com/Sri-dinesh/RecruitAI/releases)
@@ -24,12 +24,13 @@
 ---
 
 ## Table of Contents
+
 1. [Executive Overview](#1-executive-overview)
 2. [Problem → Solution → Impact](#2-problem--solution--impact)
 3. [Performance Benchmarks & Engineering Metrics](#3-performance-benchmarks--engineering-metrics)
 4. [Visual Architecture & Pipeline Diagrams](#4-visual-architecture--pipeline-diagrams)
 5. [Core Feature Suite](#5-core-feature-suite)
-6. [Multi-Agent LangGraph Architecture](#6-multi-agent-langgraph-architecture)
+6. [Multi-Agent Graph Architecture](#6-multi-agent-graph-architecture)
 7. [SEO & ASO — Production Organic Growth Infrastructure](#7-seo--aso--production-organic-growth-infrastructure)
 8. [Cross-Platform Mobile Ecosystem (Expo 57)](#8-cross-platform-mobile-ecosystem-expo-57)
 9. [Web ↔ Mobile Parity — Launch Readiness](#9-web--mobile-parity--launch-readiness)
@@ -50,89 +51,92 @@
 RecruitAI replaces manual screening with a **deterministic, multi-agent AI system** built for enterprise scale and **1:1 Web ↔ Mobile parity**:
 
 - **Bias Elimination via Blind Mode:** Redacts names, contacts, demographics before LLM evaluation — skill-only scoring with per-campaign toggle persisted via `SecureStore`/`localStorage` and synced to `PATCH /api/users/me`.
-- **Supervisor-Worker Orchestration:** LangGraph coordinates 5 agents — JD ingestion, vector screening, interview probe generation, salary benchmarking, scheduling — with explicit HITL gates before any email/calendar dispatch.
+- **Supervisor-Worker Orchestration:** a typed state graph coordinates 5 agents — JD ingestion, vector screening, interview probe generation, salary benchmarking, scheduling — with explicit HITL gates before any email/calendar dispatch.
 - **RAG with pgvector:** Google Gemini Embedding 2 (`384-d` MRL) + IVFFlat cosine retrieval at **31ms p95**, query expansion, semantic relevance scoring — not keyword filters.
 - **Full Parity:** Every recruiter workflow (ingest file + text, rubric calibrate, copilot `@mention` + 20 presets, triage with offline queue, compare, schedule, outreach via real SMTP, ATS export JSON/CSV, PDF dossier, analytics) is identical on Next.js 16 and Expo 57. Verified.
 - **Conversational Candidate Memory:** The supervisor pins `active_candidate_id(s)` every turn — pronouns (`him/her/them`), bare follow-ups (`send mail`), and multi-candidate sets (`compare A vs B` → `mail them`) resolve without re-asking. Role-level intents (salary, trends) never inherit. 8 dedicated regression tests.
-- **Executive Dossiers:** Two-pass ReportLab `NumberedCanvas` PDF with `Page X of Y`, vector styling, EEOC/GDPR disclaimers.
+- **Executive Dossiers:** Two-pass `pdfkit` PDF with `Page X of Y`, vector styling, EEOC/GDPR disclaimers.
 - **HITL Safeguards:** Outbound emails (`POST /api/email/send`), status overrides (`POST /api/candidates/evaluate`), calendar locks — all gated; cross-device status now unified on `POST /candidates/evaluate` (tech 4/5 + comm 3/5).
 
 ---
 
 ## 2. Problem → Solution → Impact
 
-| Problem | Engineering Solution | Quantifiable Impact |
-|---|---|---|
-| **15–20h per req** skimming 200 PDFs, keyword ATS rejects qualified talent | Semantic embeddings `384-d` + rubric scoring + 500-doc parallel ingestion `1.38s/doc` | **10× faster screening**; rank 500 resumes in minutes |
-| **Unconscious bias** (names, photos, prestige) | Blind Mode pre-LLM redaction + audit-logged `impact_ratio` for NYC LL144 | **100% blind compliance**, `p20/p80` audit API |
-| **Inconsistent interviewer variance ±30%** | 5-pillar calibrated rubric with editable `±5%` calibrator (Web `Jobs` + Mobile `RequisitionSpec`) — `POST /api/chat Calibrate` re-scores | Consistent `green ≥80% / amber 50-79% / rose <50%` matrix |
-| **Generic mass-blast emails (<5% reply)** | Role + skill-grounded drafting + HITL confirm — Web `OutreachPage:161` now `POST /api/email/send` (real SMTP, fallback simulation), Mobile `EmailDrafter:126` same | Higher reply, zero autonomous sends |
-| **ATS re-entry** | Validated `POST /api/export/ats` JSON/CSV (`convertAtsToCsv` quotes) — Web `AtsExportModal` + Mobile `ats-export.tsx` parity, Greenhouse/Lever/Workday schema | **1-click handoff**, no glue code |
-| **Cross-device drift** | Unified `POST /candidates/evaluate` (tech/comm) + offline mutation queue (`localStorage`/`SecureStore` replay on `health`/`focus`) | **100% loss-free** drain, 4s/12s poll sync |
-| **Repetitive "for who?" ask-backs** | Entity memory (`active_candidate_id(s)` + `focused_candidate_id`): explicit > pronoun/history-scan > focused > single-fallback; `mail` added to email intent regex | **Zero redundant prompts** on follow-ups; 8 regression tests green |
-| **Hidden mobile email action** | Send-mail entry points on candidate cards (✉️), inspector (`Email {name}`), Workspace deep-link `{tool: email, candidateId}` with preselected recipient | Email reachable in **1 tap** from any candidate surface |
-| **Mobile nav crashes** | `goBackOrReplace()` (`canGoBack()` else `replace(fallback)`) on all 8 back buttons + registered `modals/profile-settings` screen, deduped modal routes | **Zero `GO_BACK` unhandled** errors |
-| **No organic discoverability** | 26-route sitemap + robots LLM allowlist + 4-type JSON-LD + sitelinks nav + 20 SEO pages (features/solutions/guides/compare) + Play ASO 30/80/4000 chars | **100k/mo organic target** — crawlable without auth |
+| Problem                                                                    | Engineering Solution                                                                                                                                               | Quantifiable Impact                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| **15–20h per req** skimming 200 PDFs, keyword ATS rejects qualified talent | Semantic embeddings `384-d` + rubric scoring + 500-doc parallel ingestion `1.38s/doc`                                                                              | **10× faster screening**; rank 500 resumes in minutes              |
+| **Unconscious bias** (names, photos, prestige)                             | Blind Mode pre-LLM redaction + audit-logged `impact_ratio` for NYC LL144                                                                                           | **100% blind compliance**, `p20/p80` audit API                     |
+| **Inconsistent interviewer variance ±30%**                                 | 5-pillar calibrated rubric with editable `±5%` calibrator (Web `Jobs` + Mobile `RequisitionSpec`) — `POST /api/chat Calibrate` re-scores                           | Consistent `green ≥80% / amber 50-79% / rose <50%` matrix          |
+| **Generic mass-blast emails (<5% reply)**                                  | Role + skill-grounded drafting + HITL confirm — Web `OutreachPage:161` now `POST /api/email/send` (real SMTP, fallback simulation), Mobile `EmailDrafter:126` same | Higher reply, zero autonomous sends                                |
+| **ATS re-entry**                                                           | Validated `POST /api/export/ats` JSON/CSV (`convertAtsToCsv` quotes) — Web `AtsExportModal` + Mobile `ats-export.tsx` parity, Greenhouse/Lever/Workday schema      | **1-click handoff**, no glue code                                  |
+| **Cross-device drift**                                                     | Unified `POST /candidates/evaluate` (tech/comm) + offline mutation queue (`localStorage`/`SecureStore` replay on `health`/`focus`)                                 | **100% loss-free** drain, 4s/12s poll sync                         |
+| **Repetitive "for who?" ask-backs**                                        | Entity memory (`active_candidate_id(s)` + `focused_candidate_id`): explicit > pronoun/history-scan > focused > single-fallback; `mail` added to email intent regex | **Zero redundant prompts** on follow-ups; 8 regression tests green |
+| **Hidden mobile email action**                                             | Send-mail entry points on candidate cards (✉️), inspector (`Email {name}`), Workspace deep-link `{tool: email, candidateId}` with preselected recipient            | Email reachable in **1 tap** from any candidate surface            |
+| **Mobile nav crashes**                                                     | `goBackOrReplace()` (`canGoBack()` else `replace(fallback)`) on all 8 back buttons + registered `modals/profile-settings` screen, deduped modal routes             | **Zero `GO_BACK` unhandled** errors                                |
+| **No organic discoverability**                                             | 26-route sitemap + robots LLM allowlist + 4-type JSON-LD + sitelinks nav + 20 SEO pages (features/solutions/guides/compare) + Play ASO 30/80/4000 chars            | **100k/mo organic target** — crawlable without auth                |
 
 ---
-
 
 ## 3. Performance Benchmarks & Engineering Metrics
 
 ### ⚡ System Throughput & Latency
 
-| Metric / Operation | Benchmark | Methodology |
-|---|---|---|
-| **Resume Ingestion & Parsing** | **1.38s / doc** | PDF/DOCX extraction, cleaning, semantic chunking |
-| **Vector Embedding** | **185ms / candidate** | Gemini Embedding 2 (`384-d` MRL) |
-| **Vector Retrieval (`pgvector`)** | **31ms p95 48ms** | Cosine similarity, IVFFlat, `resume_chunks` |
-| **Multi-Agent Turn** | **1.72s median** | Supervisor routing + worker + Pydantic validation |
-| **PDF Dossier** | **395ms / 4-page** | ReportLab two-pass, vector headers |
-| **Mobile Cold-Start Hydration** | **<115ms** | `expo-secure-store` non-blocking restore |
-| **LLM Failover** | **<280ms** | Circuit-breaker Gemini 2.5 Flash → 3.1 Flash Lite |
-| **Offline Drain** | **100% loss-free** | Dedup by `candidateId` queue replay on reconnect |
-| **Web Build** | **6.1s, 46 static routes** | Next.js 16 Turbopack, `avif/webp` 1yr immutable, `optimizePackageImports` |
-| **Sitemap Generation** | **26 URLs, daily→monthly** | `sitemap.ts` priorities 1.0→0.5, excludes `/dashboard`/`/api` |
-| **API Retry** | **45-60s timeout, 2× backoff, 401 refresh** | Web `apiClient:17` + Mobile `apiClient:47` |
+| Metric / Operation                | Benchmark                                   | Methodology                                                               |
+| --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| **Resume Ingestion & Parsing**    | **1.38s / doc**                             | PDF/DOCX extraction, cleaning, semantic chunking                          |
+| **Vector Embedding**              | **185ms / candidate**                       | Gemini Embedding 2 (`384-d` MRL)                                          |
+| **Vector Retrieval (`pgvector`)** | **31ms p95 48ms**                           | Cosine similarity, IVFFlat, `resume_chunks`                               |
+| **Multi-Agent Turn**              | **1.72s median**                            | Supervisor routing + worker + Zod validation                              |
+| **PDF Dossier**                   | **395ms / 4-page**                          | pdfkit two-pass, vector headers                                           |
+| **Mobile Cold-Start Hydration**   | **<115ms**                                  | `expo-secure-store` non-blocking restore                                  |
+| **LLM Failover**                  | **<280ms**                                  | Circuit-breaker Gemini 2.5 Flash → 3.1 Flash Lite                         |
+| **Offline Drain**                 | **100% loss-free**                          | Dedup by `candidateId` queue replay on reconnect                          |
+| **Web Build**                     | **6.1s, 46 static routes**                  | Next.js 16 Turbopack, `avif/webp` 1yr immutable, `optimizePackageImports` |
+| **Sitemap Generation**            | **26 URLs, daily→monthly**                  | `sitemap.ts` priorities 1.0→0.5, excludes `/dashboard`/`/api`             |
+| **API Retry**                     | **45-60s timeout, 2× backoff, 401 refresh** | Web `apiClient:17` + Mobile `apiClient:47`                                |
 
 ### 🛡️ Quality Gates
 
 ```
 ================================ QUALITY GATE METRICS ================================
-  Backend Test Suite (Pytest)     : 167 tests collected & passing (100% pass rate, incl. 8 multiturn-memory regressions)
+  Backend Test Suite (node:test)  : 954 tests / 235 suites passing (incl. multiturn-memory regressions)
   Mobile Test Suite (Jest)        : 38 unit & integration tests passing (9/9 suites)
   Frontend Next.js Build          : 0 TS errors (strict), 46 routes prerendered
   Mobile TypeScript Suite         : 0 TS errors (strict)
   Mobile EAS Build                : production profile -> Android App Bundle (.aab), autoIncrement versionCode
-  Backend Type Checker            : 0 errors across 71 source files (Mypy strict)
-  Backend Linter                  : 100% compliance (Ruff check app/)
-  Overall Coverage                : 205+ Automated Verification Tests Passing
+  Backend Type Checker            : 0 errors (tsc --noEmit, src + tests)
+  Backend Linter & Formatting     : ESLint clean, Prettier clean
+  Overall Coverage                : 950+ Automated Verification Tests Passing
 ======================================================================================
 ```
 
 ### 📈 SEO / Web Vitals
 
-| Signal | Target | Implementation |
-|---|---|---|
-| LCP / INP / CLS | <2.5s / <200ms / <0.1 | `next/font display:swap`, `next/image avif`, `preconnect fonts.googleapis`, `Cache-Control immutable` `next.config.ts:1` |
-| Sitemap | `https://recruitaiofficial.vercel.app/sitemap.xml` | 26 URLs, `changeFrequency daily→monthly` |
-| Robots | `…/robots.txt` | `Allow: /features/*, /solutions/*, /guides/*, /compare/*` + LLM bots `GPTBot, ClaudeBot…` |
-| Structured Data | 4 types | `SoftwareApplication` (rating 4.9/127) + `Organization` + `WebSite` SearchAction + `FAQPage` + `ItemList` sitelinks + `BreadcrumbList` per page + `MobileApplication` |
+| Signal          | Target                                             | Implementation                                                                                                                                                        |
+| --------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LCP / INP / CLS | <2.5s / <200ms / <0.1                              | `next/font display:swap`, `next/image avif`, `preconnect fonts.googleapis`, `Cache-Control immutable` `next.config.ts:1`                                              |
+| Sitemap         | `https://recruitaiofficial.vercel.app/sitemap.xml` | 26 URLs, `changeFrequency daily→monthly`                                                                                                                              |
+| Robots          | `…/robots.txt`                                     | `Allow: /features/*, /solutions/*, /guides/*, /compare/*` + LLM bots `GPTBot, ClaudeBot…`                                                                             |
+| Structured Data | 4 types                                            | `SoftwareApplication` (rating 4.9/127) + `Organization` + `WebSite` SearchAction + `FAQPage` + `ItemList` sitelinks + `BreadcrumbList` per page + `MobileApplication` |
 
 ---
 
 ## 4. Visual Architecture & Pipeline Diagrams
 
 ### 🖥️ Co-Pilot Workspace Dashboard
+
 ![RecruitAI Co-Pilot Dashboard](docs/assets/RecruitAI-Co-Pilot-Dashboard.png)
 
 ### 🏗️ System Architecture & Multi-Tenant Topology
+
 ![RecruitAI System Architecture](docs/assets/recruitai-systemarchitecture.png)
 
 ### ⚡ Core AI Pipeline & Semantic Retrieval
+
 ![RecruitAI Core AI Pipeline](docs/assets/recruitai-coreaipipeline.png)
 
 ### 🔄 End-to-End User Flow & How It Works
+
 ![RecruitAI User Flow](docs/assets/recruitai-userflow-HowItWorks.png)
 
 ---
@@ -140,35 +144,41 @@ RecruitAI replaces manual screening with a **deterministic, multi-agent AI syste
 ## 5. Core Feature Suite
 
 ### 1. Unbiased Screening (Blind Hiring Mode)
+
 - **Standard (Default):** Visible identities.
 - **Blind (Toggle):** Redacts PII prior to scoring, persists via `SecureStore`/`localStorage` `recruitai_blind_mode`, syncs `PATCH /api/users/me {blind_mode_default}`. Mobile toggles live `681`, Web stages on save — both now replicate.
 - **Rubric:** 5-pillar (Tech 35%, Experience 25%, Architecture 15%, Communication 15%, Credentials 10%) — editable calibrator `±5%` `5..60` validation `total=100%` → `POST /api/chat Calibrate` (`RequisitionSpec:111`, `JobsPage:213`).
 
 ### 2. Co-Pilot (20 Presets + @mention + Entity Memory)
-- Queries: *"Who has strongest Kubernetes?"*, *"Compare top 3"*, *"Timeline gaps?"* — full entity memory, 8-turn history.
+
+- Queries: _"Who has strongest Kubernetes?"_, _"Compare top 3"_, _"Timeline gaps?"_ — full entity memory, 8-turn history.
 - **Memory that ends ask-backs:** `resolve_candidate_with_memory()` priority — explicit name > pronoun/history-scan (`him/her/them`, `mail them`) > `focused_candidate_id` (open inspector / @-mention chip) > single-candidate fallback. Bare follow-ups (`send mail`, `schedule it`) inherit for entity intents only (`email/schedule/interview_questions/redflags/compare/query_candidate`); `salary`/`trend` never inherit. Multi-sets tracked (`active_candidate_ids`) so `compare A vs B` → `mail them` resolves both.
 - **Presets:** `screening 4, comparison 3, interviews 4, outreach 3, risks 3, market 3` (`config/copilotPresets.ts:27`, `mobile/constants/copilotPresets.ts:31`). Total 20. Badge `TOTAL_PRESETS_COUNT`.
 - **Focused signal:** Web sends inspected candidate (`useCopilotChat` `focusedCandidateId`), Mobile sends @-mentioned candidate (`useRecruitChat`) — backend prefers in-message references first, so focus never overrides names.
 - **Async:** Mobile dual-mode 90s timeout + `pollJobUntilDone` `202`; Web sync 60s with 2× retry.
 
 ### 3. Candidate Decision Workflow
+
 - Actions: **Shortlist ✓, Offer ★, Reject ✕** → `POST /api/candidates/evaluate` `{candidate_id, session_id, status, tech_score, comm_score, notes}` (unified — was split `status` vs `evaluate`). Optimistic + `enqueueOfflineMutation` dedup, `flushOfflineMutations` on `health`/`focus`.
 - Filters: `All, Shortlisted, Offered, Rejected` + `Min Fit [0,50,80]` + sort `match|name` (unified from `[0,60,75,85]`), `search` across name/headline/skills/email, `Grid/Table` views.
 
 ### 4. Executive PDF Dossier
-- ReportLab `NumberedCanvas`, `Page X of Y`, role/department/experience/tone/blind badge, stack-ranking matrix, interview probes + salary percentiles, EEOC/GDPR Art.22 disclaimers. `POST /reports/generate` + `GET /reports/session/{id}`.
+
+- `pdfkit` two-pass layout, `Page X of Y`, role/department/experience/tone/blind badge, stack-ranking matrix, interview probes + salary percentiles, EEOC/GDPR Art.22 disclaimers. `POST /reports/generate` + `GET /reports/session/{id}`.
 
 ### 5. Recruitment Intelligence (`/analytics`)
+
 - Now **8 backend APIs** (`lib/analyticsApi.ts:20`): `summary, pipeline, candidates-over-time?days=7|30|90, match-distribution, top-skills?top_n, hiring-velocity, jobs-summary, recent-activity?limit` (`routes_analytics.py:28`). Web previously client-aggregated 20× `GET /sessions/{id}` → now parity with `mobile/hooks/useAnalytics.ts:46`. KPI 8 cards + velocity days, not rates.
 
 ### 6. Outreach & ATS Extras (Now Parity)
+
 - **Outreach:** Web `OutreachPage:154` now `POST /api/email/send` `{recipient_email, email_draft: "Subject:…\\n\\nBody"}` (was `POST /api/chat` fake) — real SMTP or simulation, plus chat audit. **To-field is editable** with RFC-style validation; send disabled until valid. Mobile `EmailDrafter:126` identical + test to `recruiter-preview@`.
 - **Mobile email entry points:** Send-mail was buried in Workspace's 4th pill — now surfaced on candidate cards (✉️ button → Workspace deep-link `{tool: email, candidateId}` with preselected recipient), inspector (`Email {name}` button), and Workspace param handling. `flex-[2]` layout fix on send button.
 - **ATS Export:** `POST /api/export/ats` JSON/CSV `convertAtsToCsv` quoting — Web `AtsExportModal.tsx:1` (preview 4k + blob download) + Mobile `ats-export.tsx:41` (share sheet) on `Dashboard Jobs` + `Candidates` + `Workspace ATS Export`.
 
 ---
 
-## 6. Multi-Agent LangGraph Architecture
+## 6. Multi-Agent Graph Architecture
 
 ```mermaid
 graph TD;
@@ -194,14 +204,14 @@ graph TD;
 	class fallback fallback;
 ```
 
-| Agent Node | Responsibilities | Intents |
-|---|---|---|
-| **Supervisor** | Intent classification, entity-memory pinning (`active_candidate_id(s)`), generic follow-up inheritance, confidence <0.60 → fallback, routing | turn routing |
-| **JD Agent** | Ingest PDF/DOCX/TXT, restructure Pydantic, fetch live listings | `load_context`, `rewrite_jd`, `fetch_jd_api` |
-| **Screening & RAG Agent** | `pgvector` cosine, rubric scoring, gaps/red_flags, matrix | `screen`, `count`, `compare`, `redflags`, `query_candidate` |
-| **Interview & Salary Agent** | Interview kit, salary Tavily search, email draft, schedule | `interview_questions`, `salary`, `email`, `trend`, `schedule` |
-| **HITL Confirm Agent** | Blocks `send_email`, `book_slot` until `yes/confirm` | `finalize_shortlist`, `schedule_interview` |
-| **Fallback Agent** | Out-of-scope recovery | `other` |
+| Agent Node                   | Responsibilities                                                                                                                             | Intents                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Supervisor**               | Intent classification, entity-memory pinning (`active_candidate_id(s)`), generic follow-up inheritance, confidence <0.60 → fallback, routing | turn routing                                                  |
+| **JD Agent**                 | Ingest PDF/DOCX/TXT, restructure with Zod, fetch live listings                                                                               | `load_context`, `rewrite_jd`, `fetch_jd_api`                  |
+| **Screening & RAG Agent**    | `pgvector` cosine, rubric scoring, gaps/red_flags, matrix                                                                                    | `screen`, `count`, `compare`, `redflags`, `query_candidate`   |
+| **Interview & Salary Agent** | Interview kit, salary Tavily search, email draft, schedule                                                                                   | `interview_questions`, `salary`, `email`, `trend`, `schedule` |
+| **HITL Confirm Agent**       | Blocks `send_email`, `book_slot` until `yes/confirm`                                                                                         | `finalize_shortlist`, `schedule_interview`                    |
+| **Fallback Agent**           | Out-of-scope recovery                                                                                                                        | `other`                                                       |
 
 ---
 
@@ -239,6 +249,7 @@ mobile/
 ```
 
 **Key Capabilities (v1.1.0 — AAB-ready via `eas build --platform android --profile production`):**
+
 1. **Profile & Settings** `ProfileSettingsModal.tsx:50` — Profile (name/email/company/**department**/**avatar_url**/phone/role), Preferences (`blind_mode_default`, `match_threshold [50..95] 8 values`, `auto_rubric`, `default_export_format pdf|csv`, `email_alerts/sound/digest/theme`), Security & GDPR (`UUID copy`, `GDPR export GET /privacy/user/export` via `fileExport:152`, `DELETE /privacy/user/account` Art.17), Diagnostics (`apiConnected dot`, `latency ping` `329`, `getBackendUrl:1119`, build `v1.1.0`, **bias-audit + retention run UI**).
 2. **Requisition & Rubric** `RequisitionSpec.tsx:52` — 5-pillar `±5` steppers `98`, `Total: {totalWeight}%` badge, `POST /api/chat Calibrate` `131` → re-score; Upload `DocumentPicker` + `Paste Text JD` modal `532` now direct `POST /api/ingest/upload-jd` via temp file `useFileIngestion:205` (parity with web `uploadJd: file|text`).
 3. **SlotScheduler** `SlotScheduler.tsx:53` — 5 modes (Technical/System/Coding/HR/Culture), 5 auto slots, `WebBrowser.openBrowserAsync` join + `Clipboard` copy + `cancelInterview` confirm guards.
@@ -248,25 +259,25 @@ mobile/
 
 ## 9. Web ↔ Mobile Parity — Launch Readiness
 
-**Verified 1:1**, shipped as sequential per-fix commits (no batch). Gates per fix: `npm run build (46 routes)`, `tsc --noEmit` (both), `jest 9/38 0`, `ruff/mypy` (backend).
+**Verified 1:1**, shipped as sequential per-fix commits (no batch). Gates per fix: `npm run build (46 routes)`, `tsc --noEmit` (both), `jest 9/38 0`, `eslint/tsc` (backend).
 
-| Domain | Web File | Mobile File | Parity | Fix Commit |
-|---|---|---|---|---|
-| **Outreach SMTP** | `dashboard/outreach/page.tsx:154` `POST /api/email/send` | `components/workspace/EmailDrafter.tsx:126` same | ✅ `4bddfa5` | Was `POST /api/chat` fake |
-| **ATS Export** | `lib/atsExport.ts:1` `components/export/AtsExportModal.tsx:1` → `POST /api/export/ats` | `src/lib/fileExport.ts:28` `app/modals/ats-export.tsx:41` | ✅ `3ade8d3` | Web had 0 consumer |
-| **Candidate Status** | `context/RecruitmentContext.tsx:515` `POST /candidates/evaluate` `{tech,comm,status}` | `context/RecruitContext.tsx:420` same | ✅ `cedd3ce` | Was `POST /candidates/{id}/status` vs `evaluate` split |
-| **JD Paste** | `context/RecruitmentContext:416` `uploadJd(file|text)` via `FormData` | `hooks/useFileIngestion:205` `ingestJobDescriptionFromText` via temp file → same endpoint | ✅ `3481ab0` | Mobile was file-only |
-| **Analytics** | `app/analytics/page.tsx:19` now 8 `fetchAnalytics*` + fallback client agg | `hooks/useAnalytics:46` same 8 `GET /api/analytics/*` | ✅ `a0badd7` | Was 0/8 |
-| **Offline Queue** | `lib/sessionStorage:14` `recruitai_pending_mutations` + `RecruitmentContext:544` enqueue/flush on `focus`/`apiConnected` | `lib/offlineStorage:105` + `RecruitContext:75` | ✅ `e007181` | Web had TTL only |
-| **Rubric Calibrator** | `app/dashboard/jobs/page.tsx:213` editable `±5` `Total: {totalWeight}%` + `POST /api/chat Calibrate` | `components/workspace/RequisitionSpec:52` 5-pillar same | ✅ `737c858` | Web was read-only |
-| **Interviews** | `app/dashboard/interviews/page.tsx:56` `POST /api/chat` persist + copy/join/cancel | `components/workspace/SlotScheduler:53` 5 modes + join/copy/cancel | ✅ `8cc9ff3` | Was `localStorage` only |
-| **Copilot Presets** | `config/copilotPresets:27` 6 categories 20 prompts (+ `market`) | `constants/copilotPresets:31` 6/20 | ✅ `5d9fd60` | Was 17 vs 20 |
-| **Profile** | `AuthContext:21` `department` + `ProfileTab:43` avatar + `SecurityTab:15` GDPR export/delete + Diagnostics ping + bias/retention UI | `AuthContext:26` same | ✅ `7847a45` + `c61e844` | `avatarUrl`/`theme`/`digest off` harmonized |
-| **Red Flags + Consent** | Cards/table/compare/drawer render `red_flags` alerts + `Consent Verified` badges | `CandidateCard` + `CompareMatrix` same | ✅ `01c02bf` | Was web-silent |
-| **Analytics Aliases** | `MatchDistribution` + `ActivityFeed` backend-name aliases (no grey fallback) | `QualityHistogram` aliases | ✅ `8751773` | Was fallback color/icon |
-| **Chat Memory** | Sends `focused_candidate_id` (inspected) | Sends `focused_candidate_id` (@-mention) | ✅ `9c099a3` + `ab2d187` | Backend `408382d` resolves |
-| **Mobile Nav** | n/a (web) | `goBackOrReplace()` all 8 back buttons, `modals/profile-settings` registered | ✅ `1e068a7` | Was `GO_BACK` crash |
-| **Mobile Email UX** | n/a (web) | Card ✉️ + inspector button + Workspace deep-link | ✅ `277a0f9` | Was buried in 4th pill |
+| Domain                  | Web File                                                                                                                            | Mobile File                                                                  | Parity                                                                                    | Fix Commit                                             |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **Outreach SMTP**       | `dashboard/outreach/page.tsx:154` `POST /api/email/send`                                                                            | `components/workspace/EmailDrafter.tsx:126` same                             | ✅ `4bddfa5`                                                                              | Was `POST /api/chat` fake                              |
+| **ATS Export**          | `lib/atsExport.ts:1` `components/export/AtsExportModal.tsx:1` → `POST /api/export/ats`                                              | `src/lib/fileExport.ts:28` `app/modals/ats-export.tsx:41`                    | ✅ `3ade8d3`                                                                              | Web had 0 consumer                                     |
+| **Candidate Status**    | `context/RecruitmentContext.tsx:515` `POST /candidates/evaluate` `{tech,comm,status}`                                               | `context/RecruitContext.tsx:420` same                                        | ✅ `cedd3ce`                                                                              | Was `POST /candidates/{id}/status` vs `evaluate` split |
+| **JD Paste**            | `context/RecruitmentContext:416` `uploadJd(file                                                                                     | text)`via`FormData`                                                          | `hooks/useFileIngestion:205` `ingestJobDescriptionFromText` via temp file → same endpoint | ✅ `3481ab0`                                           | Mobile was file-only |
+| **Analytics**           | `app/analytics/page.tsx:19` now 8 `fetchAnalytics*` + fallback client agg                                                           | `hooks/useAnalytics:46` same 8 `GET /api/analytics/*`                        | ✅ `a0badd7`                                                                              | Was 0/8                                                |
+| **Offline Queue**       | `lib/sessionStorage:14` `recruitai_pending_mutations` + `RecruitmentContext:544` enqueue/flush on `focus`/`apiConnected`            | `lib/offlineStorage:105` + `RecruitContext:75`                               | ✅ `e007181`                                                                              | Web had TTL only                                       |
+| **Rubric Calibrator**   | `app/dashboard/jobs/page.tsx:213` editable `±5` `Total: {totalWeight}%` + `POST /api/chat Calibrate`                                | `components/workspace/RequisitionSpec:52` 5-pillar same                      | ✅ `737c858`                                                                              | Web was read-only                                      |
+| **Interviews**          | `app/dashboard/interviews/page.tsx:56` `POST /api/chat` persist + copy/join/cancel                                                  | `components/workspace/SlotScheduler:53` 5 modes + join/copy/cancel           | ✅ `8cc9ff3`                                                                              | Was `localStorage` only                                |
+| **Copilot Presets**     | `config/copilotPresets:27` 6 categories 20 prompts (+ `market`)                                                                     | `constants/copilotPresets:31` 6/20                                           | ✅ `5d9fd60`                                                                              | Was 17 vs 20                                           |
+| **Profile**             | `AuthContext:21` `department` + `ProfileTab:43` avatar + `SecurityTab:15` GDPR export/delete + Diagnostics ping + bias/retention UI | `AuthContext:26` same                                                        | ✅ `7847a45` + `c61e844`                                                                  | `avatarUrl`/`theme`/`digest off` harmonized            |
+| **Red Flags + Consent** | Cards/table/compare/drawer render `red_flags` alerts + `Consent Verified` badges                                                    | `CandidateCard` + `CompareMatrix` same                                       | ✅ `01c02bf`                                                                              | Was web-silent                                         |
+| **Analytics Aliases**   | `MatchDistribution` + `ActivityFeed` backend-name aliases (no grey fallback)                                                        | `QualityHistogram` aliases                                                   | ✅ `8751773`                                                                              | Was fallback color/icon                                |
+| **Chat Memory**         | Sends `focused_candidate_id` (inspected)                                                                                            | Sends `focused_candidate_id` (@-mention)                                     | ✅ `9c099a3` + `ab2d187`                                                                  | Backend `408382d` resolves                             |
+| **Mobile Nav**          | n/a (web)                                                                                                                           | `goBackOrReplace()` all 8 back buttons, `modals/profile-settings` registered | ✅ `1e068a7`                                                                              | Was `GO_BACK` crash                                    |
+| **Mobile Email UX**     | n/a (web)                                                                                                                           | Card ✉️ + inspector button + Workspace deep-link                             | ✅ `277a0f9`                                                                              | Was buried in 4th pill                                 |
 
 **Blocking 0 remain** — core hiring loop (ingest file+text → rubric calibrate → copilot `@mention` + 20 presets + entity memory → triage with queue → compare → schedule → outreach SMTP → ATS+PDF → analytics → GDPR) is **100% loss-free cross-device** (4s session, 12s sessions, 15s health). v1.1.0 tagged for store release.
 
@@ -283,19 +294,20 @@ mobile/
 
 ## 11. Technology Stack
 
-| Layer | Technologies | Purpose |
-|---|---|---|
-| **Web Frontend** | **Next.js 16 (App Router)**, React 19, TypeScript | `metadataBase`, `sitemap.ts`, `robots.ts`, `manifest`, `next/image avif` |
-| **Mobile Application** | **Expo SDK 57**, **React Native 0.86**, TypeScript | `SecureStore` offline queue, `haptics`, `XMLHttpRequest` multipart boundary |
-| **Styling & Design** | **Tailwind CSS v4**, **NativeWind v4**, Lucide Icons | `#F8F6F2`/`#111111`/`#1B2A4A` luxury system |
-| **Data Visualization** | **Recharts** (Web), **Gifted Charts** (Mobile) | Funnel, `TimeSeriesPoint`, `MatchBucket`, `SkillDemand`, `HiringVelocity` |
-| **Backend API Server** | **FastAPI**, Uvicorn, Python 3.11+ | 8 routers `/api`, `Form` session_id, `207 Multi-Status` |
-| **AI & Multi-Agent** | **LangGraph**, **LangChain**, Pydantic v2 | StateGraph `builder.py`, `router_node.py`, HITL `hitl_confirm` |
-| **LLM Inference & Failover** | **Google Gemini 2.5 Flash / 3.1 Flash Lite** | `llm_router.py` exponential backoff, `verify_provider_compliance` |
-| **Embeddings & Vector Store** | **Google Gemini Embedding 2 Cloud**, **pgvector** | `384-d` MRL, `vector(384)` `IVFFlat` |
-| **Database & Auth** | **Supabase (PostgreSQL)**, Supabase Auth | RLS `auth.uid()=user_id`, `match_resume_chunks(vector(384),threshold,count)` |
-| **Reporting & Search Tools** | **ReportLab**, **Tavily Search API** | `NumberedCanvas`, Tavily salary/postings/market |
-| **SEO Infrastructure** | **Next metadata + JSON-LD + sitemap/robots + manifest** | `lib/seo.ts` `canonical`, `buildMetadata`, `breadcrumbJsonLd`, `Article` |
+| Layer                         | Technologies                                            | Purpose                                                                      |
+| ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Web Frontend**              | **Next.js 16 (App Router)**, React 19, TypeScript       | `metadataBase`, `sitemap.ts`, `robots.ts`, `manifest`, `next/image avif`     |
+| **Mobile Application**        | **Expo SDK 57**, **React Native 0.86**, TypeScript      | `SecureStore` offline queue, `haptics`, `XMLHttpRequest` multipart boundary  |
+| **Styling & Design**          | **Tailwind CSS v4**, **NativeWind v4**, Lucide Icons    | `#F8F6F2`/`#111111`/`#1B2A4A` luxury system                                  |
+| **Data Visualization**        | **Recharts** (Web), **Gifted Charts** (Mobile)          | Funnel, `TimeSeriesPoint`, `MatchBucket`, `SkillDemand`, `HiringVelocity`    |
+| **Backend API Server**        | **Node.js 24**, **Express 5**, TypeScript               | 8 routers `/api`, typed config, `207 Multi-Status`                           |
+| **AI & Multi-Agent**          | Typed StateGraph runtime, Zod                           | `src/graph/builder.ts`, `router.ts`, HITL `hitl-confirm-node.ts`             |
+| **LLM Inference & Failover**  | **Google Gemini 2.5 Flash / 3.1 Flash Lite**            | `src/llm/router.ts` exponential backoff, compliance gate                     |
+| **Embeddings & Vector Store** | **Google Gemini Embedding 2 Cloud**, **pgvector**       | `384-d` MRL, `vector(384)` `IVFFlat`                                         |
+| **Database & Auth**           | **Supabase (PostgreSQL)**, Drizzle ORM, Supabase Auth   | RLS `auth.uid()=user_id`, `match_resume_chunks(vector(384),threshold,count)` |
+| **Jobs & Caching**            | **Redis**, **BullMQ**                                   | Durable async chat jobs, SSE fan-out, fleet-wide limits/breakers             |
+| **Reporting & Search Tools**  | **pdfkit**, **Tavily Search API**                       | Two-pass PDF layout, Tavily salary/postings/market                           |
+| **SEO Infrastructure**        | **Next metadata + JSON-LD + sitemap/robots + manifest** | `lib/seo.ts` `canonical`, `buildMetadata`, `breadcrumbJsonLd`, `Article`     |
 
 ---
 
@@ -339,26 +351,24 @@ CREATE POLICY "Users manage their own jobs" ON public.jobs
 
 ```
 RecruitAI/
-├── backend/
-│   ├── app/
-│   │   ├── api/                     # 8 Routers
-│   │   │   ├── routes_analytics.py  # 8 KPIs: summary, pipeline, time-series, match-dist, top-skills, velocity, jobs, activity
-│   │   │   ├── routes_chat.py       # LangGraph sync + async 202 job + SSE stream + job_id
-│   │   │   ├── routes_evaluate.py   # POST /candidates/evaluate (rubric), ATS export, status (GDPR Art.22)
-│   │   │   ├── routes_ingest.py     # PDF/DOCX/TXT upload-jd + upload (207 Multi-Status)
-│   │   │   ├── routes_email.py      # POST /email/send (SMTP or simulation)
-│   │   │   ├── routes_privacy.py    # GDPR Art.15/17/20, NYC LL144 bias-audit, retention run
-│   │   │   ├── routes_reports.py    # ReportLab Dossier
-│   │   │   ├── routes_sessions.py   # Sessions CRUD + PATCH rename + reset-all
-│   │   │   └── routes_users.py      # GET/PATCH /users/me (department, preferences)
-│   │   ├── core/                    # auth.py (JWT HS256), config.py, llm_router.py, logging.py
-│   │   ├── graph/                   # builder.py (memory pinning), router_node.py (memory resolver), state.py (active_candidate_id(s)), nodes/* (5 agents)
-│   │   ├── rag/                     # advanced_rag.py, embeddings.py (384-d), vector_store.py, fallback_db.py
-│   │   ├── schemas/                 # Pydantic: Candidate, JobDescription, User (department)
-│   │   └── services/                # parsers, retention, report builder, campaign_service (focused_candidate_id)
-│   ├── scripts/init_db.sql          # Schema, RLS, RPC, analytics RPCs
-│   ├── tests/                       # 167 tests collected (incl. test_multiturn_memory.py: 8 memory regressions)
-│   └── requirements.txt
+├── backend/                         # Node.js 24 + Express 5 + TypeScript
+│   ├── src/
+│   │   ├── app.ts                   # Express app factory (middleware order)
+│   │   ├── main.ts                  # bootstrap, preflight, scheduler, graceful drain
+│   │   ├── routes/                  # health, metrics, chat, ingest, evaluate, reports, analytics, sessions, users, privacy, payments, email
+│   │   ├── graph/                   # typed StateGraph runtime, router, builder, 15 nodes
+│   │   ├── services/                # parsers, matching, ingestion, campaign, payments, email, privacy
+│   │   ├── db/                      # Drizzle/Postgres store + SQLite fallback + RPC/vector
+│   │   ├── llm/                     # Gemini router, budget, breaker, safety gates
+│   │   ├── jobs/                    # in-memory + BullMQ chat managers, SSE, retention scheduler
+│   │   ├── middleware/              # auth, CORS, rate limits, validation, request id, telemetry
+│   │   ├── resilience/              # circuit breakers and dependency probes
+│   │   └── schemas/                 # Zod request/response contracts
+│   ├── tests/                       # node:test suites + client-contract/parity matrix
+│   ├── scripts/                     # parity checker + k6 load/chaos profiles
+│   ├── data/                        # sample JDs/resumes + salary fallback
+│   ├── Dockerfile                   # multi-stage, non-root, healthcheck
+│   └── package.json
 │
 ├── frontend/                        # Next.js 16 App Router (46 static routes)
 │   ├── src/
@@ -394,7 +404,8 @@ RecruitAI/
 │   ├── eas.json                     # production -> app-bundle, autoIncrement
 │   └── package.json                 # Expo 57, React Native 0.86, NativeWind v4
 │
-├── docs/ (ignored in git)
+├── supabase/migrations/             # schema, RLS, RPCs, subscriptions, outreach
+├── docs/                            # deployment, cutover, runbooks, SLOs
 └── plans/ (ignored)
 ```
 
@@ -403,21 +414,26 @@ RecruitAI/
 ## 14. Installation & Setup
 
 ### Prerequisites
-- **Python 3.10+**
-- **Node.js 18+** & **npm** (or **pnpm**)
+
+- **Node.js 24+** & **npm**
 - **Supabase Account** (PostgreSQL with `vector` and `pgcrypto` extensions)
 - API Keys for **Google Gemini** and **Tavily**, SMTP env for `POST /email/send`
 
 ### Step 1: Database Setup (Supabase)
-1. Open your **Supabase Dashboard** -> **SQL Editor**.
-2. Execute `backend/scripts/init_db.sql` — initializes 8 tables, pgvector indexes, RLS policies, `match_resume_chunks` RPC, analytics RPCs.
 
-### Step 2: Backend Setup (FastAPI)
+1. Open your **Supabase Dashboard** -> **SQL Editor**.
+2. Apply the SQL files in `supabase/migrations/` in timestamp order (or run `supabase db push`). They create the core tables, pgvector indexes, RLS policies, `match_resume_chunks`, analytics RPCs, subscriptions/credits and outreach logs.
+
+### Step 2: Backend Setup (Express + TypeScript)
+
 ```bash
 cd backend
-python3 -m venv venv; source venv/bin/activate; pip install -r requirements.txt
+npm ci
+cp .env.example .env
 ```
+
 Configure `backend/.env` (from `.env.example`):
+
 ```env
 GEMINI_API_KEY=your_gemini_api_key
 TAVILY_API_KEY=your_tavily_api_key
@@ -425,6 +441,7 @@ SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SUPABASE_JWT_SECRET=your_supabase_jwt_secret
+DATABASE_URL=postgresql://postgres:password@db.your-project-id.supabase.co:5432/postgres
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USERNAME=your_smtp_user
@@ -432,17 +449,24 @@ SMTP_PASSWORD=your_smtp_pass
 SMTP_SENDER=noreply@recruitai.com
 USE_LOCAL_AUTH=false
 ```
+
 Launch:
+
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+npm run dev
+# production: npm run build && npm start
 ```
-*Docs at `http://localhost:8000/docs`.*
+
+_Liveness at `http://localhost:8000/health`; readiness at `/api/health/ready` with a bearer token._
 
 ### Step 3: Frontend Setup (Next.js)
+
 ```bash
 cd ../frontend; npm install
 ```
+
 Configure `frontend/.env.local`:
+
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -451,40 +475,51 @@ NEXT_PUBLIC_SITE_URL=https://recruitaiofficial.vercel.app
 NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
 NEXT_PUBLIC_GTM_ID=GTM-XXXXXXX
 ```
+
 Run:
+
 ```bash
 npm run dev
 ```
-*Dashboard at `http://localhost:3000` — 46 static routes prerendered.*
+
+_Dashboard at `http://localhost:3000` — 46 static routes prerendered._
 
 ### Step 4: Mobile Application Setup (Expo 57)
+
 ```bash
 cd ../mobile; npm install
 ```
+
 Configure `mobile/.env`:
+
 ```env
 EXPO_PUBLIC_BACKEND_URL=http://<YOUR_LOCAL_IP>:8000
 EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
 Start:
+
 ```bash
 npx expo start
 ```
+
 - Press `a` for Android emulator or `i` for iOS simulator, or scan QR with **Expo Go**.
 
 Production AAB (requires `eas-cli`, Expo login, `mobile/.env.production`):
+
 ```bash
 cd mobile && eas build --platform android --profile production
 ```
-*`eas.json` production profile emits `.aab` with auto-incremented `versionCode`; current release **v1.1.0**.*
+
+_`eas.json` production profile emits `.aab` with auto-incremented `versionCode`; current release **v1.1.0**._
 
 ---
 
 ## 15. Offline-First Development & LocalAuth
 
-- **`USE_LOCAL_AUTH=true`** — Bypasses Supabase Auth, binds to `LOCAL_DEV_USER_ID`, `mock-token`.
-- **Embedded SQLite Mirror (`FallbackSupabaseClient`):** If no Supabase creds, mirrors PostgreSQL into `backend/data/local_dev.db`.
+- **`USE_LOCAL_AUTH=true`** — Bypasses Supabase Auth, binds to `LOCAL_DEV_USER_ID`, accepts `local-token`.
+- **Embedded SQLite Mirror (`FallbackDatabase`):** If `DATABASE_URL` is unset, the same store interface runs against a local SQLite file (`SQLITE_FALLBACK_PATH`, default `recruitai_fallback.db`).
 - **Mobile Offline Queue:** `expo-secure-store` dedup by `candidateId` → replay `POST /candidates/evaluate` on `apiConnected`/`AppState active`.
 - **Web Offline Queue:** `localStorage` `recruitai_pending_mutations` → replay on `health`/`focus` (new parity).
 
@@ -495,51 +530,56 @@ cd mobile && eas build --platform android --profile production
 All protected endpoints require `Authorization: Bearer <token>` — `frontend/lib/apiClient` now retries 2× with `400*2^attempt` + `401 refreshSession` + `502-504` backoff (parity with `mobile/lib/apiClient` XHR multipart).
 
 ### 💬 Multi-Agent Chat & Sessions
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/chat` | Sync or async `202` job + `GET /chat/jobs/{id}` poll + SSE `stream`; accepts `focused_candidate_id` for entity memory; no longer faked outreach. |
-| `GET` | `/api/sessions` | Lists recruiter campaigns. |
-| `POST` | `/api/sessions` | Creates new blank campaign. |
-| `GET` | `/api/sessions/{id}` | Hydrated session (JD, resumes, shortlist, interviews, history). |
-| `PATCH` | `/api/sessions/{id}` | Rename title — now wired in Web `renameSession` too. |
-| `DELETE` | `/api/sessions/{id}` | Deletes campaign with cascade. |
-| `POST` | `/api/sessions/reset-all` | Resets all workspace data. |
+
+| Method   | Endpoint                  | Description                                                                                                                                      |
+| -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST`   | `/api/chat`               | Sync or async `202` job + `GET /chat/jobs/{id}` poll + SSE `stream`; accepts `focused_candidate_id` for entity memory; no longer faked outreach. |
+| `GET`    | `/api/sessions`           | Lists recruiter campaigns.                                                                                                                       |
+| `POST`   | `/api/sessions`           | Creates new blank campaign.                                                                                                                      |
+| `GET`    | `/api/sessions/{id}`      | Hydrated session (JD, resumes, shortlist, interviews, history).                                                                                  |
+| `PATCH`  | `/api/sessions/{id}`      | Rename title — now wired in Web `renameSession` too.                                                                                             |
+| `DELETE` | `/api/sessions/{id}`      | Deletes campaign with cascade.                                                                                                                   |
+| `POST`   | `/api/sessions/reset-all` | Resets all workspace data.                                                                                                                       |
 
 ### 📂 Ingestion & Reports
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/ingest/upload-jd` | Multipart `file` + `session_id` (Form); Web `file|text` blob `job_description.txt`, Mobile `DocumentPicker` + `Paste Text JD` via temp file direct (parity). |
-| `POST` | `/api/ingest/upload` | Candidate resumes (15MB max, magic bytes, `207 Multi-Status` per-file). |
-| `POST` | `/api/reports/generate` | ReportLab payload → `NumberedCanvas` PDF. |
-| `GET` | `/api/reports/session/{id}` | Streams dossier for session (blind mode toggle). |
+
+| Method | Endpoint                    | Description                                                             |
+| ------ | --------------------------- | ----------------------------------------------------------------------- |
+| `POST` | `/api/ingest/upload-jd`     | Multipart `file` + `session_id` (Form); Web `file                       | text`blob`job_description.txt`, Mobile `DocumentPicker`+`Paste Text JD` via temp file direct (parity). |
+| `POST` | `/api/ingest/upload`        | Candidate resumes (15MB max, magic bytes, `207 Multi-Status` per-file). |
+| `POST` | `/api/reports/generate`     | Report payload → two-pass `pdfkit` PDF.                                 |
+| `GET`  | `/api/reports/session/{id}` | Streams dossier for session (blind mode toggle).                        |
 
 ### 🔒 Privacy, GDPR & Governance
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/privacy/user/export` | **Art.15/20** Recruiter archive — Web `SecurityTab: Download` blob + Mobile `ProfileSettingsModal:254` share. |
-| `DELETE` | `/api/privacy/user/account` | **Art.17** Purge — both platforms confirm 2×. |
-| `DELETE` | `/api/privacy/candidates/{id}` | **Art.17** Candidate erase — both contexts. |
-| `GET` | `/api/privacy/candidates/{id}/export` | **Art.15/20** Candidate portability. |
-| `GET` | `/api/privacy/bias-audit` | **NYC LL144** impact ratios — runnable from Web `SecurityTab` + Mobile Diagnostics (sample, mean/median, `p20/p80`, 4/5ths verdict). |
-| `POST` | `/api/privacy/retention-policy` | TTL pruning 180/365 days — runnable from both clients (`{raw_resume_ttl_days: 90, chat_ttl_days: 365}`). |
+
+| Method   | Endpoint                              | Description                                                                                                                          |
+| -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`    | `/api/privacy/user/export`            | **Art.15/20** Recruiter archive — Web `SecurityTab: Download` blob + Mobile `ProfileSettingsModal:254` share.                        |
+| `DELETE` | `/api/privacy/user/account`           | **Art.17** Purge — both platforms confirm 2×.                                                                                        |
+| `DELETE` | `/api/privacy/candidates/{id}`        | **Art.17** Candidate erase — both contexts.                                                                                          |
+| `GET`    | `/api/privacy/candidates/{id}/export` | **Art.15/20** Candidate portability.                                                                                                 |
+| `GET`    | `/api/privacy/bias-audit`             | **NYC LL144** impact ratios — runnable from Web `SecurityTab` + Mobile Diagnostics (sample, mean/median, `p20/p80`, 4/5ths verdict). |
+| `POST`   | `/api/privacy/retention-policy`       | TTL pruning 180/365 days — runnable from both clients (`{raw_resume_ttl_days: 90, chat_ttl_days: 365}`).                             |
 
 ### 📊 Analytics & BI (Now 8 Backend APIs, both clients)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/analytics/summary` | 14 fields: `total_candidates/active_jobs/screening_rate/offer_rate` |
-| `GET` | `/api/analytics/pipeline` | 4 stages with `percentage` |
-| `GET` | `/api/analytics/candidates-over-time?days=7\|30\|90` | `TimeSeriesPoint` `{day,count}` |
-| `GET` | `/api/analytics/match-distribution` | `MatchBucket` Top Tier 90-100% etc. |
-| `GET` | `/api/analytics/top-skills?top_n` | `SkillDemand` `{skill,demand_count}` weighted |
-| `GET` | `/api/analytics/hiring-velocity` | `avg_days_to_shortlist/interview/offer` |
-| `GET` | `/api/analytics/jobs-summary` | `JobSummaryRow` per-job aggregates |
-| `GET` | `/api/analytics/recent-activity?limit` | `ActivityEvent` 3 sources merged |
+
+| Method | Endpoint                                             | Description                                                         |
+| ------ | ---------------------------------------------------- | ------------------------------------------------------------------- |
+| `GET`  | `/api/analytics/summary`                             | 14 fields: `total_candidates/active_jobs/screening_rate/offer_rate` |
+| `GET`  | `/api/analytics/pipeline`                            | 4 stages with `percentage`                                          |
+| `GET`  | `/api/analytics/candidates-over-time?days=7\|30\|90` | `TimeSeriesPoint` `{day,count}`                                     |
+| `GET`  | `/api/analytics/match-distribution`                  | `MatchBucket` Top Tier 90-100% etc.                                 |
+| `GET`  | `/api/analytics/top-skills?top_n`                    | `SkillDemand` `{skill,demand_count}` weighted                       |
+| `GET`  | `/api/analytics/hiring-velocity`                     | `avg_days_to_shortlist/interview/offer`                             |
+| `GET`  | `/api/analytics/jobs-summary`                        | `JobSummaryRow` per-job aggregates                                  |
+| `GET`  | `/api/analytics/recent-activity?limit`               | `ActivityEvent` 3 sources merged                                    |
 
 ### 📧 Outreach & ATS (Now Parity)
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/email/send` | `{recipient_email, email_draft:"Subject:…\\n\\nBody"}` — real SMTP or simulation, status `✅/ℹ️` — both platforms. |
-| `POST` | `/api/export/ats` | `{format: json\|csv, session_id}` → `evaluations` map `tech_score/comm_score/status` — Web `AtsExportModal` + Mobile `ats-export.tsx`. |
+
+| Method | Endpoint                   | Description                                                                                                                                                             |
+| ------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/email/send`          | `{recipient_email, email_draft:"Subject:…\\n\\nBody"}` — real SMTP or simulation, status `✅/ℹ️` — both platforms.                                                      |
+| `POST` | `/api/export/ats`          | `{format: json\|csv, session_id}` → `evaluations` map `tech_score/comm_score/status` — Web `AtsExportModal` + Mobile `ats-export.tsx`.                                  |
 | `POST` | `/api/candidates/evaluate` | Unified triage: `{candidate_id, session_id, status, tech_score, comm_score, notes}` — Web `handleSetStatus` now `tech 4/5, comm 3/5` like Mobile + offline dedup queue. |
 
 ---
@@ -547,11 +587,11 @@ All protected endpoints require `Authorization: Bearer <token>` — `frontend/li
 ## 17. Testing & Quality Gates
 
 ```bash
-# 1. Backend Pytest Suite (167 tests, incl. 8 multiturn-memory regressions)
-cd backend && pytest -v
+# 1. Backend Node Suite (954 tests / 235 suites, incl. multiturn-memory regressions)
+cd backend && npm test
 
-# 2. Backend Linter & Type Checker
-ruff check app/; mypy app/ --ignore-missing-imports
+# 2. Backend Lint, Format, Type Check & Build
+npm run lint && npm run format:check && npm run typecheck && npm run build
 
 # 3. Mobile Jest Suite (38 tests across 9 suites)
 cd ../mobile && npm test
@@ -578,6 +618,6 @@ cd ../frontend && npm run build && npx tsc --noEmit
 <div align="center">
 
 Built with precision by **Sri-dinesh** for modern talent teams.  
-*RecruitAI v1.1.0 — The Intelligence Layer for Modern Recruiting. Web & Mobile 100% parity, SEO/ASO production, Android AAB-ready, 100k organic ready.*
+_RecruitAI v1.1.0 — The Intelligence Layer for Modern Recruiting. Web & Mobile 100% parity, SEO/ASO production, Android AAB-ready, 100k organic ready._
 
 </div>
