@@ -93,7 +93,7 @@ export default function AIResumeScreeningPage() {
             </p>
             <ul className="mt-4 grid md:grid-cols-2 gap-3 text-sm">
               {[
-                "Deterministic Pydantic schemas — zero hallucinations in export payloads",
+                "Deterministic Zod schemas — zero hallucinations in export payloads",
                 "Confidence scores + highlighted gaps guide interview question generation",
                 "Audit-logged, timestamped evaluations for fairness reviews",
                 "Works for engineering, product and go-to-market roles (not just tech)",

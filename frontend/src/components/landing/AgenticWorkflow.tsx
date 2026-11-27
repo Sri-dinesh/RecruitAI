@@ -25,8 +25,8 @@ const workflowStages = [
     id: 'supervisor',
     number: '02',
     name: 'Supervisor Orchestration',
-    agent: 'LangGraph Supervisor',
-    badge: 'LangGraph StateGraph',
+    agent: 'Supervisor Graph',
+    badge: 'Typed StateGraph',
     summary: 'The central supervisor agent classifies intent, builds the scoring rubric, and enforces blind mode.',
     details: [
       'Derives weighted evaluation criteria directly from the job description',
@@ -90,7 +90,7 @@ export default function AgenticWorkflow() {
             How RecruitAI evaluates candidates behind the scenes.
           </h2>
           <p className="text-muted text-lg leading-relaxed">
-            A LangGraph multi-agent system coordinates specialized AI agents to extract requirements, score technical competence, and prepare outreach — with sub-second execution.
+            A typed multi-agent graph coordinates specialized AI agents to extract requirements, score technical competence, and prepare outreach — with sub-second execution.
           </p>
         </div>
 
@@ -210,7 +210,7 @@ export default function AgenticWorkflow() {
                 </div>
                 <div className="bg-[#161616] px-4 py-2 border-t border-neutral-800 text-[10px] text-neutral-400 font-mono flex items-center justify-between">
                   <span>State: Deterministic</span>
-                  <span className="text-emerald-400 font-semibold">● LangGraph Ready</span>
+                  <span className="text-emerald-400 font-semibold">● StateGraph Ready</span>
                 </div>
               </div>
             </div>

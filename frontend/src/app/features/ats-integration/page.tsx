@@ -17,7 +17,7 @@ export const metadata: Metadata = buildMetadata({
 
 const faq = [
   { question: "Which ATS platforms are supported?", answer: "Greenhouse, Lever, Workday and Ashby via validated JSON and CSV. Exports match their API schemas — no custom mapping required. Enterprise plans add bi-directional sync and webhook triggers." },
-  { question: "What data is included in exports?", answer: "Candidate match score, matched skills with evidence, identified gaps, rubric breakdown, interview question suggestions and salary context where available — all validated via Pydantic." },
+  { question: "What data is included in exports?", answer: "Candidate match score, matched skills with evidence, identified gaps, rubric breakdown, interview question suggestions and salary context where available — all validated via Zod." },
   { question: "Do we need to change our ATS workflow?", answer: "No. Export as spreadsheet or payload and import into your ATS; or use RecruitAI as the screening layer before candidates enter your ATS pipeline." },
   { question: "Is data kept in sync?", answer: "Trial accounts use 1-click exports. Enterprise plans support automated sync with rate-limited webhooks and idempotent upserts." },
 ];

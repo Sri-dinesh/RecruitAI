@@ -10,7 +10,7 @@ import { SITE_URL } from "@/config/site";
 
 export const metadata: Metadata = buildMetadata({
   title: "AI Recruiting Guide — When & How to Automate Hiring Responsibly",
-  description: "AI recruiting guide covering LangGraph orchestration, human-in-the-loop safeguards, blind hiring compliance and rollout checklist. Automation map for HR teams, startups and enterprises.",
+  description: "AI recruiting guide covering multi-agent graph orchestration, human-in-the-loop safeguards, blind hiring compliance and rollout checklist. Automation map for HR teams, startups and enterprises.",
   path: "/guides/ai-recruiting-guide",
   keywords: ["AI recruiting guide","AI recruitment guide","hiring automation guide","recruitment automation playbook"],
   ogType: "article",
@@ -92,7 +92,7 @@ export default function Page() {
                 { label: "ATS Guide", href: "/guides/ats-guide", description: "Where automation hands off" },
               ]},
               { title: "Start automating", links: [
-                { label: "Recruitment Automation Feature", href: "/features/recruitment-automation", description: "LangGraph orchestration in product" },
+                { label: "Recruitment Automation Feature", href: "/features/recruitment-automation", description: "Graph orchestration in product" },
                 { label: "Tech Hiring Solution", href: "/solutions/tech-hiring", description: "Eng-specific pipeline scaling" },
               ]},
             ]} />

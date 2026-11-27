@@ -88,7 +88,7 @@ export default function Page() {
             { title: "Security & integration", links: [
               { label: "ATS Integration (Workday)", href: "/features/ats-integration", description: "Enterprise sync patterns" },
               { label: "Blind Hiring Vectors", href: "/features/blind-hiring", description: "Prove unbiased evaluation to legal" },
-              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "LangGraph orchestration at scale" },
+              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "Graph orchestration at scale" },
             ]},
             { title: "Trust", links: [
               { label: "Privacy Policy", href: "/privacy", description: "RLS, encryption, retention" },

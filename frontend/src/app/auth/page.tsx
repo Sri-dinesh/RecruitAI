@@ -143,7 +143,7 @@ function AuthContent() {
                     <TrendingUp className="w-3 h-3" />
                   </div>
                   <div>
-                    <div className="text-xs font-semibold text-foreground">Multi-Agent LangGraph Screening</div>
+                    <div className="text-xs font-semibold text-foreground">Multi-Agent Graph Screening</div>
                     <div className="text-[11px] text-muted leading-relaxed">
                       Dense semantic retrieval and rubric scoring against your active job descriptions.
                     </div>

@@ -80,7 +80,7 @@ export default function FeatureHighlights() {
             Deterministic, schema-validated candidate data.
           </h3>
           <p className="text-muted text-lg leading-relaxed">
-            Eliminate fuzzy, unpredictable AI hallucinations. RecruitAI validates every agent output with strict Pydantic schemas so your exports plug seamlessly into Greenhouse, Lever, and Workday without custom glue code.
+            Eliminate fuzzy, unpredictable AI hallucinations. RecruitAI validates every agent output with strict Zod schemas so your exports plug seamlessly into Greenhouse, Lever, and Workday without custom glue code.
           </p>
           <ul className="mt-6 space-y-3 text-sm text-foreground/80">
             <li className="flex items-center gap-2.5">

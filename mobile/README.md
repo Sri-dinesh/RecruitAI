@@ -19,7 +19,7 @@
 ## 📱 Features & Screen Overview
 
 ### 1. Conversational Co-Pilot (Tab 1)
-- **LangGraph Multi-Agent Engine**: Interacts with the backend recruitment supervisor and specialized workers (JD parser, vector screener, interview architect, salary analyst, and coordinator).
+- **Multi-Agent Graph Engine**: Interacts with the backend recruitment supervisor and specialized workers (JD parser, vector screener, interview architect, salary analyst, and coordinator).
 - **Recruitment Action Chips**: 8 pre-configured agent routine chips (*Screen All Resumes*, *Generate Shortlist*, *Draft Outreach*, *Salary Benchmark*, *Schedule Interview*, *Compare Candidates*, *Interview Questions*, *Pipeline Status*).
 - **Document & Resume Ingestion**: Attach files (`.pdf`, `.docx`, `.txt`, `.png`) directly from local device storage or camera scan via `expo-document-picker`.
 - **Typing Indicator & Abort Controller**: Live pulsating three-dot animation and instantaneous request abortion via native `AbortController`.
@@ -33,7 +33,7 @@
 
 ### 3. Dynamic Workspace Tools (Tab 3)
 - **Side-by-Side Comparison Matrix**: Compare candidate scorecards, matched qualifications, and gap analyses.
-- **Visual Interview Slot Scheduler**: Interactive calendar slots for 30-minute interviews that sync directly to the LangGraph session state.
+- **Visual Interview Slot Scheduler**: Interactive calendar slots for 30-minute interviews that sync directly to the session state.
 - **Recruiter Email Drafter**: Auto-drafted candidate outreach with tone selector (`Professional`, `Casual`, `Direct`) and direct SMTP sending.
 - **Native ATS Export & PDF Reports**: Generate RFC 4180 compliant CSV or Lever/Greenhouse JSON and export via native iOS/Android sharing (`expo-sharing`).
 

@@ -24,7 +24,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/dashboard': { title: 'Mission Control', subtitle: 'Overview of active campaigns, pipeline velocity, and candidate intelligence' },
   '/dashboard/candidates': { title: 'Talent Pool & Pipeline', subtitle: 'Demographically redacted candidate screening, rubric scoring, and shortlist decisions' },
   '/dashboard/jobs': { title: 'Positions & Rubrics', subtitle: 'Job requisition specifications, required competencies, and 5-pillar scoring rubrics' },
-  '/dashboard/copilot': { title: 'AI Copilot Workspace', subtitle: 'Conversational multi-agent recruiting copilot with LangGraph supervisor' },
+  '/dashboard/copilot': { title: 'AI Copilot Workspace', subtitle: 'Conversational multi-agent recruiting copilot with a supervisor graph' },
   '/dashboard/compare': { title: 'Candidate Comparison Matrix', subtitle: 'Side-by-side comparative rubric evaluation against active role requirements' },
   '/dashboard/interviews': { title: 'Interview Pipeline & Schedule', subtitle: 'Candidate interview slots, video meeting coordinates, and interviewer feedback' },
   '/dashboard/outreach': { title: 'Outreach & Dispatcher', subtitle: 'Context-aware candidate email drafting and human-gated outreach dispatch' },

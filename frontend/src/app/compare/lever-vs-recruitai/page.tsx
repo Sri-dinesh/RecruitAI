@@ -16,7 +16,7 @@ export const metadata: Metadata = buildMetadata({
 
 const rows = [
   { cap: "Focus", lever: "Candidate sourcing, CRM and pipeline organization; limited scoring depth.", recruitai: "Evaluation intelligence — semantic ranking, blind rubric scoring, gap & interview kit generation." },
-  { cap: "Screening automation", lever: "Manual stages and tags; reports rely on human-entered feedback.", recruitai: "Autonomous LangGraph agents ingest, vectorize and score 500+ resumes in minutes." },
+  { cap: "Screening automation", lever: "Manual stages and tags; reports rely on human-entered feedback.", recruitai: "Autonomous graph agents ingest, vectorize and score 500+ resumes in minutes." },
   { cap: "Blind hiring", lever: "No native PII redaction before review; demographic leakage persists.", recruitai: "Pre-scoring redaction proves skill-only evaluation; per-campaign toggle and audit logging." },
   { cap: "Scoring consistency", lever: "Hiring manager notes vary wildly in format and rigor.", recruitai: "Deterministic matrices with evidence-cited skills; shared PDFs align hiring committees." },
   { cap: "Integration story", lever: "Core system; add-ons via marketplace but gaps in scoring intelligence.", recruitai: "Complements Lever — validated Lever-ready exports, mobile approvals, analytics feed." },

@@ -58,7 +58,7 @@ export default function Page() {
   "interview_kit": ["Design Raft failure recovery", "Tune Postgres for 150k DAU"],
   "source_citations": ["resume chunk 3: led K8s migration..."]
 }`}</pre>
-              <p className="text-muted mt-3">All fields are Pydantic-validated; missing required ATS fields block export before you send bad data downstream.</p>
+              <p className="text-muted mt-3">All fields are Zod-validated; missing required ATS fields block export before you send bad data downstream.</p>
             </section>
 
             <section>

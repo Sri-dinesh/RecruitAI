@@ -106,7 +106,7 @@ export default function Page() {
           <InternalLinks groups={[
             { title: "Feature enablers", links: [
               { label: "AI Resume Screening", href: "/features/ai-resume-screening", description: "Remove skimming toil" },
-              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "LangGraph agents assist, not replace" },
+              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "Graph agents assist, not replace" },
               { label: "Blind Hiring", href: "/features/blind-hiring", description: "Keep early funnel fair" },
             ]},
             { title: "Learn more", links: [

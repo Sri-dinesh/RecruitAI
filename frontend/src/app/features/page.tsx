@@ -43,7 +43,7 @@ const features = [
   {
     href: "/features/recruitment-automation",
     label: "Recruitment Automation",
-    desc: "Multi-agent LangGraph orchestration automates intake, scoring, interview drafts and hire-ready reports requiring only human confirmation.",
+    desc: "Multi-agent graph orchestration automates intake, scoring, interview drafts and hire-ready reports requiring only human confirmation.",
     intent: "recruitment automation · AI recruiting software",
   },
 ];
@@ -127,7 +127,7 @@ export default function FeaturesPage() {
               links: [
                 { label: "AI Resume Screening", href: "/features/ai-resume-screening", description: "For teams drowning in resumes; 1.4s per PDF parsing" },
                 { label: "Blind Hiring Platform", href: "/features/blind-hiring", description: "Eliminate name, photo and location bias" },
-                { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "LangGraph multi-agent orchestration" },
+                { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "Multi-agent graph orchestration" },
               ],
             },
             {

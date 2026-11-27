@@ -45,7 +45,7 @@ export function useRecruitChat() {
 
       setInput("");
       setIsLoading(true);
-      setCurrentStep("Routing to LangGraph supervisor...");
+      setCurrentStep("Routing to supervisor graph...");
 
       const userMessage: ChatMessage = {
         role: "user",

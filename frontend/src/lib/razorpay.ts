@@ -47,7 +47,7 @@ export async function openRazorpayCheckout({
       return;
     }
 
-    // 1. Create order on FastAPI backend
+    // 1. Create order on the Express backend
     const orderRes = await fetchWithAuth('/api/payments/order', {
       method: 'POST',
       body: JSON.stringify({ plan_id: planId }),

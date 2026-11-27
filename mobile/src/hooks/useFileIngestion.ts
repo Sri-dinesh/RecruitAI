@@ -201,7 +201,7 @@ export function useFileIngestion() {
     }
   }, [setJd, activeSessionId, refreshActiveSession]);
 
-  // Text paste parity with web — direct /api/ingest/upload-jd via temp file (no LangGraph chat)
+  // Text paste parity with web — direct /api/ingest/upload-jd via temp file (no graph chat)
   const ingestJobDescriptionFromText = useCallback(
     async (text: string): Promise<JobDescription | null> => {
       if (!text.trim()) return null;

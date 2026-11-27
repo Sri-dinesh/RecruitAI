@@ -72,7 +72,7 @@ export const PreferencesTab: React.FC<PreferencesTabProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-900">Auto-Generate Evaluation Rubrics</span>
             <span className="text-[10px] bg-indigo-50 text-brand-primary font-semibold px-2 py-0.5 rounded-full border border-indigo-100">
-              LangGraph
+              StateGraph
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">

@@ -176,7 +176,7 @@ export const RequisitionSpec: React.FC = () => {
         setPastedJdText("");
         return;
       }
-      // Fallback: LangGraph chat parsing if direct ingest unavailable
+      // Fallback: graph chat parsing if direct ingest unavailable
       const res = await fetchWithAuth("/api/chat", {
         method: "POST",
         body: JSON.stringify({

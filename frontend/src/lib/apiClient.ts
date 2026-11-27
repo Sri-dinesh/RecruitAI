@@ -7,7 +7,7 @@ export interface FetchWithAuthOptions extends RequestInit {
 }
 
 /**
- * A drop-in replacement for fetch() that hits the FastAPI backend,
+ * A drop-in replacement for fetch() that hits the Express backend,
  * automatically attaches the user's Supabase JWT, and provides
  * client-side timeout and AbortController signal handling (ARCH-4).
  *
