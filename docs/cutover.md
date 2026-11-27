@@ -102,6 +102,7 @@ branch and run both services on their SQLite fallbacks:
 ```bash
 git worktree add /tmp/recruitai-fastapi archive/fastapi-backend
 cd /tmp/recruitai-fastapi/backend
+python3 -m venv venv && venv/bin/pip install -r requirements.txt
 USE_LOCAL_AUTH=true SUPABASE_URL= SUPABASE_SERVICE_ROLE_KEY= PORT=8010 \
   venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
 ```
