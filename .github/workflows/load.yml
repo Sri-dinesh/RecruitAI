@@ -21,10 +21,10 @@ on:
       target_rps:
         description: Override TARGET_RPS (blank uses the scenario default)
         required: false
-        default: ''
+        default: ""
   schedule:
     # Nightly at 03:15 UTC; the job is skipped when no target is configured.
-    - cron: '15 3 * * *'
+    - cron: "15 3 * * *"
 
 permissions:
   contents: read
@@ -68,7 +68,7 @@ jobs:
 
       - name: Run scenario
         if: steps.gate.outputs.configured == 'true'
-        working-directory: backend-node
+        working-directory: backend
         run: |
           args=(--env "BASE_URL=${BASE_URL}" --env "AUTH_TOKEN=${AUTH_TOKEN}")
           if [ -n "${SESSION_ID}" ]; then args+=(--env "SESSION_ID=${SESSION_ID}"); fi

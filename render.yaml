@@ -1,4 +1,4 @@
-# Render blueprint for the Express backend (Phase 19).
+# Render blueprint for the Express backend.
 #
 # This mirrors the deployment requirements documented in docs/deployment.md.
 # Secrets use `sync: false`, so Render prompts for them in the dashboard and
@@ -9,8 +9,8 @@ services:
   - type: web
     name: recruitai-backend-node
     runtime: docker
-    dockerfilePath: ./backend-node/Dockerfile
-    dockerContext: ./backend-node
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /health
     envVars:
       # ─── Runtime and production gates ────────────────────────────────────
