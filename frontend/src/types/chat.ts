@@ -1,6 +1,6 @@
 /**
  * Strictly typed interfaces for RecruitAI Chat / Copilot interactions.
- * Aligned with backend Pydantic models (ChatRequest, ChatResponse).
+ * Aligned with backend Zod schemas (ChatRequest, ChatResponse).
  */
 
 export interface ChatMessage {

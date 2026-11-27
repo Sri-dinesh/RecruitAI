@@ -1,0 +1,804 @@
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+
+import { getConfig, type AppConfig } from '../config/index.js';
+import { HotReadCache, getHotReadCache, type CachedSubscription } from '../cache/hot-read-cache.js';
+import {
+  createPaymentStore,
+  type CreditTransactionRecord,
+  type PaymentStore,
+  type TimestampValue,
+} from '../db/payment-store.js';
+import type { PricingPlan } from '../schemas/payment.js';
+import {
+  isRateLimitError,
+  isTransientDependencyError,
+  runWithBreaker,
+} from '../resilience/dependencies.js';
+import { createLogger } from '../telemetry/logger.js';
+import { withSpan } from '../telemetry/tracing.js';
+import { fetchWithTimeout } from './http.js';
+
+const logger = createLogger('recruitai.payment_service');
+
+/**
+ * Port of `backend/app/services/payment_service.py`.
+ *
+ * Preserved behaviors:
+ * - the three public plans and their exact amounts/quotas/features;
+ * - Razorpay order creation (REST `/v1/orders`, Basic auth) with the same
+ *   development fallback to `order_mock_*` orders;
+ * - checkout and webhook HMAC verification rules, including the mock/test
+ *   acceptance paths;
+ * - subscription activation, credit top-ups, the credit audit ledger and the
+ *   HTTP-visible results;
+ * - best-effort logging semantics: a failed balance write or ledger insert is
+ *   logged and never aborts the surrounding flow.
+ *
+ * Database access goes through `PaymentStore` so the same behavior runs on
+ * PostgreSQL and the local SQLite fallback.
+ */
+
+/** Plans configured for MRR targets (Starter ₹1,499, Pro ₹3,999, Agency ₹7,999). */
+export const AVAILABLE_PLANS: Readonly<Record<string, PricingPlan>> = {
+  starter: {
+    id: 'starter',
+    name: 'Starter Recruiter',
+    amount: 149900, // ₹1,499 in paise (~$18)
+    currency: 'INR',
+    interval: 'monthly',
+    candidate_quota: 50,
+    features: [
+      '50 Candidate Resume Parses/month',
+      '5 Active Job Campaigns',
+      'Automated Interview Outreach via Email',
+      'Basic Analytics & Blind Hiring Mode',
+    ],
+  },
+  pro: {
+    id: 'pro',
+    name: 'Pro Recruiter',
+    amount: 399900, // ₹3,999 in paise (~$48)
+    currency: 'INR',
+    interval: 'monthly',
+    candidate_quota: 250,
+    features: [
+      '250 Candidate Resume Parses/month',
+      'Unlimited Job Campaigns',
+      'ATS Export (CSV, JSON, PDF)',
+      'AI Copilot Chat Assistant',
+      'Custom Rubrics & Scoring Criteria',
+    ],
+  },
+  agency: {
+    id: 'agency',
+    name: 'Agency / Growth',
+    amount: 799900, // ₹7,999 in paise (~$96 — achieves the $100 MRR target)
+    currency: 'INR',
+    interval: 'monthly',
+    candidate_quota: 1000,
+    features: [
+      '1,000 Candidate Resume Parses/month',
+      'Bulk Resume Zip Parsing',
+      'Multi-seat Team Sharing',
+      'Priority LLM Generation Speed',
+      'Dedicated Support & Custom Integrations',
+    ],
+  },
+};
+
+export const DEFAULT_FREE_CREDITS = 10;
+export const DEFAULT_RAZORPAY_BASE_URL = 'https://api.razorpay.com';
+export const MOCK_RAZORPAY_KEY_ID = 'rzp_test_mock_key';
+
+const SUBSCRIPTION_PERIOD_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Python raises `ValueError` for these; routes map them to 400 (or 402). */
+export class PaymentValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentValidationError';
+  }
+}
+
+export interface CreateOrderResult {
+  order_id: string;
+  amount: number;
+  currency: string;
+  key_id: string | null;
+  plan_id: string;
+}
+
+export interface SubscriptionStatusResult {
+  user_id: string;
+  plan_id: string;
+  status: string;
+  credits_remaining: number;
+  current_period_end: string | null;
+}
+
+export interface ActivationResult {
+  success: boolean;
+  subscription_id: string;
+  plan_id: string;
+  status: string;
+  credits_remaining: number;
+  current_period_end: string;
+}
+
+export interface ConsumptionResult {
+  success: boolean;
+  credits_remaining: number;
+  amount_deducted: number;
+  reason: string;
+}
+
+export interface CreditTransactionResult {
+  id: string;
+  user_id: string;
+  amount: number;
+  balance_after: number;
+  reason: string;
+  created_at: string;
+}
+
+export interface PaymentServiceOptions {
+  readonly config?: AppConfig;
+  /** Explicit store for tests; otherwise resolved lazily from config. */
+  readonly store?: PaymentStore;
+  /** Explicit hot-read cache for tests; otherwise the process-wide cache. */
+  readonly hotReadCache?: HotReadCache;
+  readonly fetchImpl?: typeof fetch;
+  /** Hard Razorpay request deadline; defaults to config/env. */
+  readonly timeoutMs?: number;
+  /** Injectable clock for deterministic periods/audit timestamps. */
+  readonly now?: () => Date;
+}
+
+interface RazorpayOrderEntity {
+  id?: unknown;
+  amount?: unknown;
+  currency?: unknown;
+}
+
+export class PaymentService {
+  private readonly config: AppConfig;
+  private readonly keyId: string;
+  private readonly keySecret: string;
+  private readonly webhookSecret: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
+  private readonly now: () => Date;
+  private readonly hotReadCache: HotReadCache;
+  private store: PaymentStore | undefined;
+
+  constructor(options: PaymentServiceOptions = {}) {
+    this.config = options.config ?? getConfig();
+    this.keyId = this.config.razorpay.keyId;
+    this.keySecret = this.config.razorpay.keySecret;
+    this.webhookSecret = this.config.razorpay.webhookSecret;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? this.config.outbound.razorpayTimeoutMs;
+    this.now = options.now ?? (() => new Date());
+    this.store = options.store;
+    this.hotReadCache =
+      options.hotReadCache ??
+      (options.config === undefined
+        ? getHotReadCache()
+        : new HotReadCache({ config: this.config }));
+  }
+
+  private getStore(): PaymentStore {
+    this.store ??= createPaymentStore({ config: this.config });
+    return this.store;
+  }
+
+  getPlans(): PricingPlan[] {
+    return Object.values(AVAILABLE_PLANS);
+  }
+
+  getPlan(planId: string): PricingPlan | undefined {
+    return AVAILABLE_PLANS[planId.toLowerCase()];
+  }
+
+  async createOrder(planId: string, userId: string): Promise<CreateOrderResult> {
+    const plan = this.getPlan(planId);
+    if (!plan) {
+      throw new PaymentValidationError(`Plan '${planId}' does not exist.`);
+    }
+
+    // With live credentials, create the order through Razorpay.
+    if (this.keyId && this.keySecret) {
+      try {
+        const orderPayload = {
+          amount: plan.amount,
+          currency: plan.currency,
+          receipt: `rcpt_${userId.slice(0, 8)}_${Number.parseInt(
+            randomUUID().replaceAll('-', '').slice(0, 6),
+            16,
+          )}`,
+          notes: {
+            user_id: userId,
+            plan_id: plan.id,
+          },
+        };
+
+        const credentials = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
+        const order = await withSpan(
+          'external.razorpay.create_order',
+          () =>
+            runWithBreaker(
+              {
+                config: this.config,
+                dependency: 'razorpay',
+                key: 'create_order',
+                isFailure: (error) =>
+                  /responded with 5\d\d/.test(errorMessage(error)) ||
+                  isTransientDependencyError(error),
+                isRateLimit: (error) =>
+                  /responded with 429/.test(errorMessage(error)) || isRateLimitError(error),
+              },
+              async () => {
+                const response = await fetchWithTimeout(
+                  this.fetchImpl,
+                  `${DEFAULT_RAZORPAY_BASE_URL}/v1/orders`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      authorization: `Basic ${credentials}`,
+                      'content-type': 'application/json',
+                    },
+                    body: JSON.stringify(orderPayload),
+                  },
+                  this.timeoutMs,
+                );
+
+                if (!response.ok) {
+                  throw new Error(`Razorpay API responded with ${response.status}`);
+                }
+
+                const parsed = (await response.json()) as RazorpayOrderEntity;
+                const id = parsed.id;
+                const amount = parsed.amount;
+                const currency = parsed.currency;
+                if (
+                  typeof id !== 'string' ||
+                  typeof amount !== 'number' ||
+                  typeof currency !== 'string'
+                ) {
+                  throw new Error('Razorpay returned an unexpected order payload');
+                }
+                return { id, amount, currency };
+              },
+            ),
+          { 'external.provider': 'razorpay' },
+        );
+
+        return {
+          order_id: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          key_id: this.keyId,
+          plan_id: plan.id,
+        };
+      } catch (error) {
+        // Match Python: a live failure is fatal in production, but development
+        // and tests fall through to the simulated order path.
+        if (this.config.isProduction) {
+          throw new Error(`Razorpay order creation failed: ${errorMessage(error)}`, {
+            cause: error,
+          });
+        }
+      }
+    }
+
+    // Deterministic mock/simulated order when keys are absent or unusable.
+    return {
+      order_id: `order_mock_${randomHex(14)}`,
+      amount: plan.amount,
+      currency: plan.currency,
+      key_id: this.keyId || MOCK_RAZORPAY_KEY_ID,
+      plan_id: plan.id,
+    };
+  }
+
+  /** Verifies the standard Razorpay HMAC-SHA256 checkout signature. */
+  verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
+    if (
+      signature === 'mock_valid_signature' ||
+      (!this.keySecret && signature.startsWith('test_'))
+    ) {
+      return true;
+    }
+
+    if (!this.keySecret) {
+      // Without a secret outside production, accept mock testing payloads.
+      return true;
+    }
+
+    const expected = createHmac('sha256', this.keySecret)
+      .update(`${orderId}|${paymentId}`, 'utf8')
+      .digest('hex');
+    return timingSafeCompare(expected, signature);
+  }
+
+  /** Verifies the `X-Razorpay-Signature` webhook header over the raw bytes. */
+  verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+    if (!this.webhookSecret) {
+      return true;
+    }
+    const expected = createHmac('sha256', this.webhookSecret).update(rawBody).digest('hex');
+    return timingSafeCompare(expected, signature);
+  }
+
+  /**
+   * Current credits balance. Defaults to `DEFAULT_FREE_CREDITS` for missing
+   * users and unreadable rows, exactly like Python.
+   *
+   * This is the hot-read path: it may answer from the short-TTL cache. Mutating
+   * paths use `readPrimaryCredits()` so a stale entry can never authorise a
+   * spend or a top-up calculation.
+   */
+  async getUserCredits(userId: string): Promise<number> {
+    return this.fetchCredits(userId, true);
+  }
+
+  private async fetchCredits(userId: string, useCache: boolean): Promise<number> {
+    try {
+      const load = (): Promise<number | undefined> => this.getStore().getCreditsBalance(userId);
+      const value = useCache ? await this.hotReadCache.credits(userId, load) : await load();
+      if (value !== undefined && value !== null) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+          return numeric;
+        }
+        throw new Error('credits_balance is not a finite number');
+      }
+    } catch (error) {
+      logger.warn(`Failed to fetch credits balance for user ${userId}: ${errorMessage(error)}`);
+    }
+    return DEFAULT_FREE_CREDITS;
+  }
+
+  /** Cache-bypassing balance read used before an authoritative ledger write. */
+  private readPrimaryCredits(userId: string): Promise<number> {
+    return this.fetchCredits(userId, false);
+  }
+
+  async getSubscriptionStatus(userId: string): Promise<SubscriptionStatusResult> {
+    let summary: CachedSubscription = { planId: 'free', status: 'active', periodEnd: null };
+
+    try {
+      summary = await this.hotReadCache.subscription(userId, async () => {
+        try {
+          const subscription = await this.getStore().getLatestSubscription(userId);
+          if (!subscription) {
+            return { planId: 'free', status: 'active', periodEnd: null };
+          }
+          return {
+            planId: subscription.planId ?? 'free',
+            status: subscription.status ?? 'active',
+            periodEnd: toIsoString(subscription.currentPeriodEnd),
+          };
+        } catch (error) {
+          logger.warn(
+            `Failed to fetch subscription status for user ${userId}: ${errorMessage(error)}`,
+          );
+          return { planId: 'free', status: 'active', periodEnd: null };
+        }
+      });
+    } catch (error) {
+      logger.warn(`Failed to read cached subscription for user ${userId}: ${errorMessage(error)}`);
+    }
+
+    const creditsRemaining = await this.getUserCredits(userId);
+    return {
+      user_id: userId,
+      plan_id: summary.planId,
+      status: summary.status,
+      credits_remaining: creditsRemaining,
+      current_period_end: summary.periodEnd,
+    };
+  }
+
+  async activateSubscription(
+    userId: string,
+    planId: string,
+    razorpayOrderId: string,
+    razorpayPaymentId: string,
+    kind: 'verify' | 'webhook' = 'verify',
+  ): Promise<ActivationResult> {
+    const plan = this.getPlan(planId);
+    if (!plan) {
+      throw new PaymentValidationError(`Plan '${planId}' does not exist.`);
+    }
+
+    const store = this.getStore();
+    const now = this.now();
+
+    // Phase 22 idempotency fence: verify calls and webhook redeliveries share
+    // one key per Razorpay payment id. The request that inserts the key grants
+    // credits exactly once; every replay returns the current subscription.
+    const claimed = await store.claimProcessedEvent({
+      id: `payment:${razorpayPaymentId}`,
+      kind,
+      userId,
+      expiresAt: new Date(now.getTime() + this.config.payments.idempotencyTtlSeconds * 1000),
+    });
+    if (!claimed) {
+      logger.info(
+        `[payment] duplicate activation ignored for payment ${razorpayPaymentId} (user ${userId})`,
+      );
+      return this.replayActivation(userId, plan.id);
+    }
+
+    const nowIso = now.toISOString();
+    const periodEnd = new Date(now.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY_MS);
+    const periodEndIso = periodEnd.toISOString();
+    const subscriptionId = `sub_${randomHex(12)}`;
+
+    // 1. Save/replace the tenant's subscription row.
+    await store.saveSubscription({
+      id: subscriptionId,
+      userId,
+      planId: plan.id,
+      status: 'active',
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySubscriptionId: null,
+      currentPeriodStart: nowIso,
+      currentPeriodEnd: periodEndIso,
+      createdAt: nowIso,
+    });
+
+    // 2. Add the plan's credits to the user's quota. Read the primary so a
+    // stale cached balance can never inflate the new total.
+    const currentCredits = await this.readPrimaryCredits(userId);
+    const newCredits = currentCredits + plan.candidate_quota;
+
+    try {
+      if (await store.userExists(userId)) {
+        await store.updateCreditsBalance(userId, newCredits);
+      } else {
+        await store.insertUser({
+          id: userId,
+          email: `${userId}@recruitai.local`,
+          fullName: 'Recruiter',
+          role: 'recruiter',
+          creditsBalance: newCredits,
+        });
+      }
+    } catch (error) {
+      logger.error(`Failed to update user credit balance: ${errorMessage(error)}`);
+    }
+
+    // 3. Append to the credit audit ledger (best effort).
+    try {
+      await store.insertCreditTransaction({
+        id: `tx_${randomHex(12)}`,
+        userId,
+        amount: plan.candidate_quota,
+        balanceAfter: newCredits,
+        reason: `Plan Upgrade: ${plan.name} (+${plan.candidate_quota} credits)`,
+        createdAt: nowIso,
+      });
+    } catch (error) {
+      logger.warn(`Failed to log credit transaction: ${errorMessage(error)}`);
+    }
+
+    // 4. Drop cached reads only after the authoritative writes above.
+    await this.invalidateHotReads(userId);
+
+    return {
+      success: true,
+      subscription_id: subscriptionId,
+      plan_id: plan.id,
+      status: 'active',
+      credits_remaining: newCredits,
+      current_period_end: periodEndIso,
+    };
+  }
+
+  /**
+   * Replay-safe response for a duplicate payment key. Returns the stored
+   * subscription and the primary balance without granting credits again.
+   */
+  private async replayActivation(userId: string, planId: string): Promise<ActivationResult> {
+    const store = this.getStore();
+    const credits = await this.readPrimaryCredits(userId);
+    try {
+      const subscription = await store.getLatestSubscription(userId);
+      if (subscription) {
+        return {
+          success: true,
+          subscription_id: String(subscription.id),
+          plan_id: subscription.planId ?? planId,
+          status: subscription.status ?? 'active',
+          credits_remaining: credits,
+          current_period_end: toIsoString(subscription.currentPeriodEnd) ?? '',
+        };
+      }
+    } catch (error) {
+      logger.warn(
+        `Failed to read subscription for replay (user ${userId}): ${errorMessage(error)}`,
+      );
+    }
+    return {
+      success: true,
+      subscription_id: '',
+      plan_id: planId,
+      status: 'active',
+      credits_remaining: credits,
+      current_period_end: '',
+    };
+  }
+
+  private async invalidateHotReads(userId: string): Promise<void> {
+    try {
+      await this.hotReadCache.invalidateTenant(userId);
+    } catch (error) {
+      logger.warn(`Failed to invalidate hot-read cache for user ${userId}: ${errorMessage(error)}`);
+    }
+  }
+
+  async consumeCredits(
+    userId: string,
+    amount = 1,
+    reason = 'candidate_analysis',
+  ): Promise<ConsumptionResult> {
+    if (amount <= 0) {
+      throw new PaymentValidationError('Amount must be greater than 0.');
+    }
+
+    const store = this.getStore();
+    const deduct = (): Promise<number | undefined> =>
+      store.consumeCreditsAtomic(userId, amount, {
+        id: `tx_${randomHex(12)}`,
+        reason,
+        createdAt: this.now().toISOString(),
+      });
+
+    // The store does the balance check inside a conditional UPDATE, so a
+    // parallel consumer cannot spend the same credits twice. `undefined` means
+    // the row went missing or the balance did not cover the spend.
+    let balance = await deduct();
+
+    if (balance === undefined) {
+      const remaining = await store.getCreditsBalance(userId);
+      if (remaining !== undefined) {
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${remaining}, required: ${amount}`,
+        );
+      }
+
+      // Missing user: keep the legacy default-free-balance behavior, then retry
+      // the atomic spend. If a concurrent request provisioned the row first, the
+      // retry deducts from it instead of overwriting the balance.
+      if (DEFAULT_FREE_CREDITS < amount) {
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${DEFAULT_FREE_CREDITS}, required: ${amount}`,
+        );
+      }
+      try {
+        await store.insertUser({
+          id: userId,
+          email: `${userId}@recruitai.local`,
+          fullName: 'Recruiter',
+          role: 'recruiter',
+          creditsBalance: DEFAULT_FREE_CREDITS,
+        });
+      } catch (error) {
+        if (!(await store.userExists(userId))) {
+          throw error;
+        }
+      }
+
+      balance = await deduct();
+      if (balance === undefined) {
+        const current = await store.getCreditsBalance(userId);
+        throw new PaymentValidationError(
+          `Insufficient credits. Remaining: ${current ?? DEFAULT_FREE_CREDITS}, required: ${amount}`,
+        );
+      }
+    }
+
+    await this.invalidateHotReads(userId);
+
+    return {
+      success: true,
+      credits_remaining: balance,
+      amount_deducted: amount,
+      reason,
+    };
+  }
+
+  async getCreditTransactions(userId: string, limit = 50): Promise<CreditTransactionResult[]> {
+    try {
+      const records = await this.getStore().listCreditTransactions(userId, limit);
+      return records.map((record) => mapCreditTransaction(record));
+    } catch (error) {
+      logger.warn(
+        `Failed to retrieve credit transactions for user ${userId}: ${errorMessage(error)}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Processes Razorpay asynchronous webhooks (payment captured, order paid,
+   * subscription lifecycle). Returns the same result objects as Python.
+   */
+  async processWebhookEvent(eventData: unknown): Promise<Record<string, unknown>> {
+    const root = isRecord(eventData) ? eventData : {};
+    const eventName = typeof root.event === 'string' ? root.event : '';
+    const payload = isRecord(root.payload) ? root.payload : {};
+
+    const paymentEntity = nestedEntity(payload, 'payment');
+    const orderEntity = nestedEntity(payload, 'order');
+    const subscriptionEntity = nestedEntity(payload, 'subscription');
+
+    const notes = firstNonEmptyObject(
+      paymentEntity.notes,
+      orderEntity.notes,
+      subscriptionEntity.notes,
+    );
+    const userId = typeof notes.user_id === 'string' ? notes.user_id : undefined;
+    const planId = typeof notes.plan_id === 'string' ? notes.plan_id : undefined;
+
+    const paymentId = nonEmptyString(paymentEntity.id) ?? `pay_${randomHex(8)}`;
+    const orderId =
+      nonEmptyString(orderEntity.id) ??
+      nonEmptyString(paymentEntity.order_id) ??
+      `order_${randomHex(8)}`;
+
+    // Razorpay redelivers webhooks on timeouts and non-2xx responses. When the
+    // payload carries an event id, that id is the replay fence; payment events
+    // additionally share the `payment:<id>` key claimed in activateSubscription.
+    const eventId = nonEmptyString(root.id) ?? nonEmptyString(root.event_id);
+    if (eventId) {
+      const claimed = await this.getStore().claimProcessedEvent({
+        id: `webhook:${eventId}`,
+        kind: 'webhook',
+        userId: userId ?? null,
+        expiresAt: new Date(
+          this.now().getTime() + this.config.payments.idempotencyTtlSeconds * 1000,
+        ),
+      });
+      if (!claimed) {
+        logger.info(`[payment] duplicate webhook ${eventId} ignored (event=${eventName})`);
+        return { status: 'duplicate', event: eventName };
+      }
+    }
+
+    if (
+      eventName === 'payment.captured' ||
+      eventName === 'order.paid' ||
+      eventName === 'subscription.charged' ||
+      eventName === 'subscription.activated'
+    ) {
+      if (userId && planId) {
+        const subscription = await this.activateSubscription(
+          userId,
+          planId,
+          orderId,
+          paymentId,
+          'webhook',
+        );
+        return {
+          status: 'processed',
+          event: eventName,
+          subscription_activated: true,
+          plan_id: planId,
+          user_id: userId,
+          credits_remaining: subscription.credits_remaining,
+        };
+      }
+      return {
+        status: 'skipped',
+        event: eventName,
+        reason: 'Missing user_id or plan_id in payload notes',
+      };
+    }
+
+    if (eventName === 'subscription.cancelled' || eventName === 'subscription.halted') {
+      if (userId) {
+        try {
+          await this.getStore().cancelSubscriptions(userId);
+          await this.invalidateHotReads(userId);
+        } catch (error) {
+          logger.warn(`Error canceling subscription for ${userId}: ${errorMessage(error)}`);
+        }
+        return {
+          status: 'processed',
+          event: eventName,
+          subscription_canceled: true,
+          user_id: userId,
+        };
+      }
+    }
+
+    return { status: 'ignored', event: eventName };
+  }
+}
+
+/** Process-wide service, mirroring the Python `payment_service` singleton. */
+let singleton: PaymentService | undefined;
+
+export function createPaymentService(options: PaymentServiceOptions = {}): PaymentService {
+  return new PaymentService(options);
+}
+
+export function getPaymentService(): PaymentService {
+  singleton ??= new PaymentService();
+  return singleton;
+}
+
+/** Test helper: drop the memoised singleton. */
+export function resetPaymentServiceForTests(): void {
+  singleton = undefined;
+}
+
+function mapCreditTransaction(record: CreditTransactionRecord): CreditTransactionResult {
+  return {
+    id: String(record.id),
+    user_id: String(record.userId),
+    amount: Number(record.amount),
+    balance_after: Number(record.balanceAfter),
+    reason: String(record.reason),
+    created_at: toIsoString(record.createdAt) ?? '',
+  };
+}
+
+function toIsoString(value: TimestampValue): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
+function randomHex(length: number): string {
+  return randomUUID().replaceAll('-', '').slice(0, length);
+}
+
+function timingSafeCompare(expected: string, actual: string): boolean {
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  const actualBytes = Buffer.from(actual, 'utf8');
+  if (expectedBytes.length !== actualBytes.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBytes, actualBytes);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nestedEntity(payload: Record<string, unknown>, key: string): Record<string, unknown> {
+  const section = payload[key];
+  if (!isRecord(section)) {
+    return {};
+  }
+  return isRecord(section.entity) ? section.entity : {};
+}
+
+/** Python's `a or b or c or {}` treats empty objects as falsy. */
+function firstNonEmptyObject(...values: unknown[]): Record<string, unknown> {
+  for (const value of values) {
+    if (isRecord(value) && Object.keys(value).length > 0) {
+      return value;
+    }
+  }
+  return {};
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

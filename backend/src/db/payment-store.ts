@@ -1,0 +1,535 @@
+import { randomUUID } from 'node:crypto';
+
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
+
+import { getConfig, type AppConfig } from '../config/index.js';
+import { getDb, type Database } from './client.js';
+import { getFallbackDatabase, type FallbackDatabase } from './fallback.js';
+import { creditTransactions, processedEvents, subscriptions, users } from './schema.js';
+
+/**
+ * Narrow data-access contract used by `services/payment-service.ts`.
+ *
+ * The Python payment service talks to Supabase directly. Keeping every query
+ * behind this store gives the same behavior on the primary Drizzle/PostgreSQL
+ * path and the SQLite fallback, with one place per table that knows how rows
+ * are written.
+ *
+ * Two deliberate porting notes:
+ *
+ * - Python writes `sub_…`/`tx_…` string ids, while the PostgreSQL schema
+ *   declares UUID primary keys. The Drizzle implementation therefore maps a
+ *   non-UUID id to a generated UUID; the public `subscription_id` returned by
+ *   `/verify` keeps the original `sub_…` value. (Python's Supabase upsert would
+ *   fail on those ids, so this preserves the API contract while making the
+ *   audit rows durable.)
+ * - Subscriptions are consolidated to one row per user, matching the SQLite
+ *   fallback's `subscriptions(user_id)` upsert priority and the "latest
+ *   subscription" lookup.
+ */
+
+/** Database timestamps arrive as `Date` (Drizzle) or ISO text (SQLite). */
+export type TimestampValue = Date | string | null;
+
+export interface SubscriptionUpsert {
+  readonly id: string;
+  readonly userId: string;
+  readonly planId: string;
+  readonly status: string;
+  readonly razorpayOrderId: string | null;
+  readonly razorpayPaymentId: string | null;
+  readonly razorpaySubscriptionId?: string | null;
+  readonly currentPeriodStart: TimestampValue;
+  readonly currentPeriodEnd: TimestampValue;
+  readonly createdAt: TimestampValue;
+}
+
+export type SubscriptionRecord = SubscriptionUpsert;
+
+export interface CreditTransactionInsert {
+  readonly id: string;
+  readonly userId: string;
+  readonly amount: number;
+  readonly balanceAfter: number;
+  readonly reason: string;
+  readonly createdAt: TimestampValue;
+}
+
+export type CreditTransactionRecord = CreditTransactionInsert;
+
+/** Caller-supplied ledger fields; the store fills `userId`, `amount` and `balanceAfter`. */
+export type CreditDeduction = Pick<CreditTransactionInsert, 'id' | 'reason' | 'createdAt'>;
+
+export interface UserInsert {
+  readonly id: string;
+  readonly email: string;
+  readonly fullName: string;
+  readonly role: string;
+  readonly creditsBalance: number;
+}
+
+/** Idempotency key claimed before a payment verify/webhook grants credits. */
+export interface ProcessedEventInsert {
+  readonly id: string;
+  readonly kind: 'verify' | 'webhook';
+  readonly userId: string | null;
+  readonly expiresAt: Date;
+}
+
+export interface PaymentStore {
+  /** Current credit balance, or `undefined` when the user row is missing. */
+  getCreditsBalance(userId: string): Promise<number | undefined>;
+  /** Most recently created subscription for the tenant. */
+  getLatestSubscription(userId: string): Promise<SubscriptionRecord | undefined>;
+  /** Insert or replace the tenant's subscription row. */
+  saveSubscription(record: SubscriptionUpsert): Promise<void>;
+  userExists(userId: string): Promise<boolean>;
+  updateCreditsBalance(userId: string, balance: number): Promise<void>;
+  /**
+   * Atomically deduct `amount` from the tenant balance and append the matching
+   * ledger row in one transaction. Returns the resulting balance, or
+   * `undefined` when the user row is missing or the balance does not cover the
+   * spend. The conditional read-inside-write is what prevents two concurrent
+   * consumers from both spending the same credits.
+   */
+  consumeCreditsAtomic(
+    userId: string,
+    amount: number,
+    entry: CreditDeduction,
+  ): Promise<number | undefined>;
+  insertUser(record: UserInsert): Promise<void>;
+  insertCreditTransaction(record: CreditTransactionInsert): Promise<void>;
+  listCreditTransactions(userId: string, limit: number): Promise<CreditTransactionRecord[]>;
+  cancelSubscriptions(userId: string): Promise<void>;
+  /**
+   * Atomically claim an idempotency key. Returns `true` when this caller won
+   * the claim and may grant credits; `false` when a previous verify/webhook
+   * already processed the same payment or event.
+   */
+  claimProcessedEvent(record: ProcessedEventInsert): Promise<boolean>;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** PostgreSQL `uuid` columns cannot store the public `sub_…`/`tx_…` ids. */
+function uuidOrGenerated(id: string): string {
+  return UUID_PATTERN.test(id) ? id : randomUUID();
+}
+
+/** SQLite reports a duplicate primary key as a UNIQUE constraint failure. */
+function isUniqueViolation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('UNIQUE constraint failed') || message.includes('PRIMARY KEY');
+}
+
+function asDate(value: TimestampValue): Date | null {
+  if (value === null) {
+    return null;
+  }
+  return value instanceof Date ? value : new Date(value);
+}
+
+function toIso(value: TimestampValue): string | null {
+  if (value === null) {
+    return null;
+  }
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function drizzleSubscription(row: {
+  id: string;
+  userId: string;
+  planId: string;
+  status: string;
+  razorpayOrderId: string | null;
+  razorpayPaymentId: string | null;
+  razorpaySubscriptionId: string | null;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  createdAt: Date;
+}): SubscriptionRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    planId: row.planId,
+    status: row.status,
+    razorpayOrderId: row.razorpayOrderId,
+    razorpayPaymentId: row.razorpayPaymentId,
+    razorpaySubscriptionId: row.razorpaySubscriptionId,
+    currentPeriodStart: row.currentPeriodStart,
+    currentPeriodEnd: row.currentPeriodEnd,
+    createdAt: row.createdAt,
+  };
+}
+
+/** Primary path: Drizzle queries against PostgreSQL. */
+export function createDrizzlePaymentStore(db: Database): PaymentStore {
+  return {
+    async getCreditsBalance(userId) {
+      const rows = await db
+        .select({ creditsBalance: users.creditsBalance })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      const value = rows[0]?.creditsBalance;
+      return value === undefined || value === null ? undefined : Number(value);
+    },
+
+    async getLatestSubscription(userId) {
+      const rows = await db
+        .select({
+          id: subscriptions.id,
+          userId: subscriptions.userId,
+          planId: subscriptions.planId,
+          status: subscriptions.status,
+          razorpayOrderId: subscriptions.razorpayOrderId,
+          razorpayPaymentId: subscriptions.razorpayPaymentId,
+          razorpaySubscriptionId: subscriptions.razorpaySubscriptionId,
+          currentPeriodStart: subscriptions.currentPeriodStart,
+          currentPeriodEnd: subscriptions.currentPeriodEnd,
+          createdAt: subscriptions.createdAt,
+        })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, userId))
+        .orderBy(desc(subscriptions.createdAt))
+        .limit(1);
+      return rows[0] ? drizzleSubscription(rows[0]) : undefined;
+    },
+
+    async saveSubscription(record) {
+      const existing = await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, record.userId))
+        .limit(1);
+
+      const values = {
+        planId: record.planId,
+        status: record.status,
+        razorpayOrderId: record.razorpayOrderId,
+        razorpayPaymentId: record.razorpayPaymentId,
+        razorpaySubscriptionId: record.razorpaySubscriptionId ?? null,
+        currentPeriodStart: asDate(record.currentPeriodStart),
+        currentPeriodEnd: asDate(record.currentPeriodEnd),
+        updatedAt: new Date(),
+      };
+
+      if (existing[0]) {
+        await db.update(subscriptions).set(values).where(eq(subscriptions.id, existing[0].id));
+        return;
+      }
+
+      await db.insert(subscriptions).values({
+        id: uuidOrGenerated(record.id),
+        userId: record.userId,
+        ...values,
+        createdAt: asDate(record.createdAt) ?? new Date(),
+      });
+    },
+
+    async userExists(userId) {
+      const rows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      return rows.length > 0;
+    },
+
+    async updateCreditsBalance(userId, balance) {
+      await db.update(users).set({ creditsBalance: balance }).where(eq(users.id, userId));
+    },
+
+    async consumeCreditsAtomic(userId, amount, entry) {
+      return db.transaction(async (tx) => {
+        // One conditional UPDATE is the whole race guard: concurrent callers
+        // either match `credits_balance >= amount` and get a distinct row lock,
+        // or match nothing and receive `undefined` rather than going negative.
+        const rows = await tx
+          .update(users)
+          .set({ creditsBalance: sql`${users.creditsBalance} - ${amount}` })
+          .where(and(eq(users.id, userId), gte(users.creditsBalance, amount)))
+          .returning({ creditsBalance: users.creditsBalance });
+
+        const balance = rows[0]?.creditsBalance;
+        if (balance === undefined || balance === null) {
+          return undefined;
+        }
+
+        await tx.insert(creditTransactions).values({
+          id: uuidOrGenerated(entry.id),
+          userId,
+          amount: -amount,
+          balanceAfter: Number(balance),
+          reason: entry.reason,
+          createdAt: asDate(entry.createdAt) ?? new Date(),
+        });
+        return Number(balance);
+      });
+    },
+
+    async insertUser(record) {
+      await db.insert(users).values({
+        id: record.id,
+        email: record.email,
+        fullName: record.fullName,
+        role: record.role,
+        creditsBalance: record.creditsBalance,
+      });
+    },
+
+    async insertCreditTransaction(record) {
+      await db.insert(creditTransactions).values({
+        id: uuidOrGenerated(record.id),
+        userId: record.userId,
+        amount: record.amount,
+        balanceAfter: record.balanceAfter,
+        reason: record.reason,
+        createdAt: asDate(record.createdAt) ?? new Date(),
+      });
+    },
+
+    async listCreditTransactions(userId, limit) {
+      const rows = await db
+        .select({
+          id: creditTransactions.id,
+          userId: creditTransactions.userId,
+          amount: creditTransactions.amount,
+          balanceAfter: creditTransactions.balanceAfter,
+          reason: creditTransactions.reason,
+          createdAt: creditTransactions.createdAt,
+        })
+        .from(creditTransactions)
+        .where(eq(creditTransactions.userId, userId))
+        .orderBy(desc(creditTransactions.createdAt))
+        .limit(limit);
+      return rows;
+    },
+
+    async cancelSubscriptions(userId) {
+      await db
+        .update(subscriptions)
+        .set({ status: 'canceled', updatedAt: new Date() })
+        .where(eq(subscriptions.userId, userId));
+    },
+
+    async claimProcessedEvent(record) {
+      const inserted = await db
+        .insert(processedEvents)
+        .values({
+          id: record.id,
+          kind: record.kind,
+          userId: record.userId,
+          expiresAt: record.expiresAt,
+        })
+        .onConflictDoNothing({ target: processedEvents.id })
+        .returning({ id: processedEvents.id });
+      return inserted.length > 0;
+    },
+  };
+}
+
+/** Fallback path: the same contract over the local SQLite database. */
+export function createSqlitePaymentStore(db: FallbackDatabase): PaymentStore {
+  return {
+    async getCreditsBalance(userId) {
+      const rows = db
+        .table('users')
+        .select('credits_balance')
+        .eq('id', userId)
+        .limit(1)
+        .execute().data;
+      const value = rows[0]?.credits_balance;
+      return value === undefined || value === null ? undefined : Number(value);
+    },
+
+    async getLatestSubscription(userId) {
+      const rows = db
+        .table('subscriptions')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', true)
+        .limit(1)
+        .execute().data;
+      const row = rows[0];
+      if (!row) {
+        return undefined;
+      }
+      return {
+        id: String(row.id),
+        userId: String(row.user_id),
+        planId: String(row.plan_id),
+        status: String(row.status),
+        razorpayOrderId: (row.razorpay_order_id as string | null | undefined) ?? null,
+        razorpayPaymentId: (row.razorpay_payment_id as string | null | undefined) ?? null,
+        razorpaySubscriptionId: (row.razorpay_subscription_id as string | null | undefined) ?? null,
+        currentPeriodStart: (row.current_period_start as string | null | undefined) ?? null,
+        currentPeriodEnd: (row.current_period_end as string | null | undefined) ?? null,
+        createdAt: (row.created_at as string | null | undefined) ?? null,
+      };
+    },
+
+    async saveSubscription(record) {
+      const existing = db
+        .table('subscriptions')
+        .select('id')
+        .eq('user_id', record.userId)
+        .limit(1)
+        .execute().data[0];
+
+      const values = {
+        plan_id: record.planId,
+        status: record.status,
+        razorpay_order_id: record.razorpayOrderId,
+        razorpay_payment_id: record.razorpayPaymentId,
+        razorpay_subscription_id: record.razorpaySubscriptionId ?? null,
+        current_period_start: toIso(record.currentPeriodStart),
+        current_period_end: toIso(record.currentPeriodEnd),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (existing) {
+        db.table('subscriptions').update(values).eq('id', String(existing.id)).execute();
+        return;
+      }
+
+      db.table('subscriptions')
+        .insert({
+          id: record.id,
+          user_id: record.userId,
+          ...values,
+          created_at: toIso(record.createdAt) ?? new Date().toISOString(),
+        })
+        .execute();
+    },
+
+    async userExists(userId) {
+      return db.table('users').select('id').eq('id', userId).limit(1).execute().data.length > 0;
+    },
+
+    async updateCreditsBalance(userId, balance) {
+      db.table('users')
+        .update({ credits_balance: balance, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+        .execute();
+    },
+
+    async consumeCreditsAtomic(userId, amount, entry) {
+      // `deductCredits` runs one synchronous conditional UPDATE and the ledger
+      // insert follows in the same tick, so no other consumer can observe or
+      // spend the balance in between.
+      const balance = db.deductCredits(userId, amount);
+      if (balance === undefined) {
+        return undefined;
+      }
+      db.table('credit_transactions')
+        .insert({
+          id: entry.id,
+          user_id: userId,
+          amount: -amount,
+          balance_after: balance,
+          reason: entry.reason,
+          created_at: toIso(entry.createdAt) ?? new Date().toISOString(),
+        })
+        .execute();
+      return balance;
+    },
+
+    async insertUser(record) {
+      db.table('users')
+        .insert({
+          id: record.id,
+          email: record.email,
+          full_name: record.fullName,
+          role: record.role,
+          credits_balance: record.creditsBalance,
+        })
+        .execute();
+    },
+
+    async insertCreditTransaction(record) {
+      db.table('credit_transactions')
+        .insert({
+          id: record.id,
+          user_id: record.userId,
+          amount: record.amount,
+          balance_after: record.balanceAfter,
+          reason: record.reason,
+          created_at: toIso(record.createdAt) ?? new Date().toISOString(),
+        })
+        .execute();
+    },
+
+    async listCreditTransactions(userId, limit) {
+      return db
+        .table('credit_transactions')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', true)
+        .limit(limit)
+        .execute()
+        .data.map((row) => ({
+          id: String(row.id),
+          userId: String(row.user_id),
+          amount: Number(row.amount),
+          balanceAfter: Number(row.balance_after),
+          reason: String(row.reason),
+          createdAt: (row.created_at as string | null | undefined) ?? null,
+        }));
+    },
+
+    async cancelSubscriptions(userId) {
+      db.table('subscriptions')
+        .update({ status: 'canceled', updated_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .execute();
+    },
+
+    async claimProcessedEvent(record) {
+      // SQLite has one writer at a time, so an insert that conflicts with the
+      // primary key is the same atomic fence as Postgres' ON CONFLICT DO NOTHING.
+      try {
+        db.table('processed_events')
+          .insert({
+            id: record.id,
+            kind: record.kind,
+            user_id: record.userId,
+            expires_at: record.expiresAt.toISOString(),
+          })
+          .execute();
+        return true;
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          return false;
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+export interface PaymentStoreOptions {
+  readonly config?: AppConfig;
+  /** Explicit Drizzle handle (tests / scripts). */
+  readonly db?: Database;
+  /** Explicit SQLite fallback handle (tests). */
+  readonly fallback?: FallbackDatabase;
+}
+
+/**
+ * Resolve the production store: PostgreSQL when `DATABASE_URL` is configured,
+ * otherwise the local SQLite fallback, mirroring the Python database choice.
+ * Lazy by design, so constructing a payment service never opens a connection.
+ */
+export function createPaymentStore(options: PaymentStoreOptions = {}): PaymentStore {
+  if (options.db) {
+    return createDrizzlePaymentStore(options.db);
+  }
+  if (options.fallback) {
+    return createSqlitePaymentStore(options.fallback);
+  }
+  const config = options.config ?? getConfig();
+  return config.database.url
+    ? createDrizzlePaymentStore(getDb())
+    : createSqlitePaymentStore(getFallbackDatabase());
+}

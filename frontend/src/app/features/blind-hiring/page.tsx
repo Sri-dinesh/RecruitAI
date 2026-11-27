@@ -111,7 +111,7 @@ export default function Page() {
             { title: "Pair blind hiring with", links: [
               { label: "AI Candidate Screening", href: "/features/ai-candidate-screening", description: "Rubric scoring that blind mode protects" },
               { label: "Resume Screening Automation", href: "/features/ai-resume-screening", description: "Parsing that powers unbiased pipelines" },
-              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "LangGraph agents that respect HITL gates" },
+              { label: "Recruitment Automation", href: "/features/recruitment-automation", description: "Graph agents that respect HITL gates" },
             ]},
             { title: "Proof points", links: [
               { label: "Security & Privacy", href: "/#security" as any, description: "RLS isolation and encryption" },

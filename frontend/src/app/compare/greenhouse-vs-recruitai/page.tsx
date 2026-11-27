@@ -20,7 +20,7 @@ const rows = [
   { cap: "Scoring consistency", greenhouse: "Unstructured feedback with ±30% variance across interviewers.", recruitai: "Calibrated 5-pillar rubric auto-generated from JD; color-coded fit tiers." },
   { cap: "Pipeline velocity", greenhouse: "Hours per req; hiring managers wait on recruiter spreadsheets.", recruitai: "Sub-second retrieval; 500 resumes ranked in minutes, 31ms pgvector p95." },
   { cap: "ATS role", greenhouse: "System of record and attempted screening engine.", recruitai: "Intelligence layer before your ATS — exports Greenhouse-ready JSON/CSV; no migration needed." },
-  { cap: "Human oversight", greenhouse: "Manual workflow; limited HITL automation.", recruitai: "LangGraph agents + explicit HITL gates block autonomous sends/calendar holds." },
+  { cap: "Human oversight", greenhouse: "Manual workflow; limited HITL automation.", recruitai: "Multi-agent graph + explicit HITL gates block autonomous sends/calendar holds." },
 ];
 
 export default function Page() {

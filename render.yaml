@@ -1,0 +1,82 @@
+# Render blueprint for the Express backend.
+#
+# This mirrors the deployment requirements documented in docs/deployment.md.
+# Secrets use `sync: false`, so Render prompts for them in the dashboard and
+# they are never stored in git. If the service already exists in the Render
+# dashboard, keep that service and use this file as the canonical env checklist.
+
+services:
+  - type: web
+    name: recruitai-backend-node
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      # ─── Runtime and production gates ────────────────────────────────────
+      - key: ENVIRONMENT
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: LLM_DATA_USE_MODE
+        value: zero_retention_verified
+      - key: LLM_KILL_SWITCH
+        value: "false"
+
+      # ─── Production hardening (Phase 19) ─────────────────────────────────
+      - key: LOG_LEVEL
+        value: info
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "600"
+      # Render terminates TLS and overwrites X-Forwarded-For.
+      - key: TRUST_PROXY
+        value: "true"
+
+      # ─── CORS: explicit https origins only ───────────────────────────────
+      - key: ALLOWED_ORIGINS
+        value: https://recruitaiofficial.vercel.app,https://recruitai.vercel.app
+
+      # ─── Auth audience ───────────────────────────────────────────────────
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+
+      # ─── Database and connection budget ──────────────────────────────────
+      - key: PG_POOL_MAX
+        value: "10"
+      # Retention stays manual until the cutover soak is complete.
+      - key: RETENTION_JOB_ENABLED
+        value: "false"
+
+      # ─── Secrets (prompted by Render, never committed) ───────────────────
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_SENDER
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false

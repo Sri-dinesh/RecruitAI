@@ -13,7 +13,7 @@ export default function TechnologyStack() {
           <div className="w-10 h-10 bg-[#f3f4f6] rounded-md flex items-center justify-center mb-6 group-hover:bg-accent/10 transition-colors">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-foreground group-hover:text-accent transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
           </div>
-          <h4 className="font-semibold text-foreground text-lg mb-2">LangGraph</h4>
+          <h4 className="font-semibold text-foreground text-lg mb-2">Typed StateGraph</h4>
           <p className="text-muted text-sm leading-relaxed">Multi-agent orchestrator managing distinct workflows for ingest, retrieval, and synthesis.</p>
         </div>
         
@@ -29,8 +29,8 @@ export default function TechnologyStack() {
           <div className="w-10 h-10 bg-[#f3f4f6] rounded-md flex items-center justify-center mb-6 group-hover:bg-accent/10 transition-colors">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-foreground group-hover:text-accent transition-colors" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline><polyline points="7.5 19.79 7.5 14.6 3 12"></polyline><polyline points="21 12 16.5 14.6 16.5 19.79"></polyline><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
           </div>
-          <h4 className="font-semibold text-foreground text-lg mb-2">FastAPI</h4>
-          <p className="text-muted text-sm leading-relaxed">High-performance async Python backend executing rigorous evaluation pipelines flawlessly.</p>
+          <h4 className="font-semibold text-foreground text-lg mb-2">Node.js + Express</h4>
+          <p className="text-muted text-sm leading-relaxed">Typed Express backend executing rigorous evaluation pipelines with Redis-backed jobs.</p>
         </div>
 
         <div className="bg-white border border-border p-8 rounded-xl shadow-sm hover:shadow-md transition-shadow group">

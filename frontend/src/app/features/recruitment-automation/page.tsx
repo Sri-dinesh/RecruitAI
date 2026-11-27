@@ -10,7 +10,7 @@ import { SITE_URL } from "@/config/site";
 
 export const metadata: Metadata = buildMetadata({
   title: "Recruitment Automation Software — AI Orchestrated Hiring Workflows",
-  description: "Recruitment automation software using LangGraph multi-agent orchestration: JD parsing, resume scoring, interview kit generation and outreach drafting — with human-in-the-loop approvals and audit logs.",
+  description: "Recruitment automation software using multi-agent graph orchestration: JD parsing, resume scoring, interview kit generation and outreach drafting — with human-in-the-loop approvals and audit logs.",
   path: "/features/recruitment-automation",
   keywords: ["recruitment automation","hiring automation","recruiting automation software","AI recruiting automation","talent automation"],
 });
@@ -18,7 +18,7 @@ export const metadata: Metadata = buildMetadata({
 const faq = [
   { question: "Does automation replace recruiters?", answer: "No. RecruitAI automates the repetitive 80% (parsing, scoring, draft generation) and reserves the 20% that requires judgment (final interview, offer decisions, reveals) for humans. Every outbound action is gated behind explicit confirmation." },
   { question: "What agents handle each step?", answer: "Supervisor routes intent → JD Agent structures job requirements → Screening/RAG agent performs vector retrieval and scoring → Interview/Salary agent drafts questions and outreach → HITL Confirm gate halts before sending." },
-  { question: "How is quality ensured?", answer: "Structured Pydantic schemas, multi-agent cross-checks, confidence thresholds (<0.60 routes to fallback with quick-action options), and full audit logging." },
+  { question: "How is quality ensured?", answer: "Structured Zod schemas, multi-agent cross-checks, confidence thresholds (<0.60 routes to fallback with quick-action options), and full audit logging." },
   { question: "Can we run automation on mobile?", answer: "Yes. The Expo mobile app mirrors web workflows with offline mutation queuing, push approvals for emails and interview bookings, and analytics dashboards." },
 ];
 
@@ -27,7 +27,7 @@ export default function Page() {
   const ld = {
     "@context": "https://schema.org",
     "@graph": [
-      { "@type": "SoftwareApplication", name: "RecruitAI — Recruitment Automation", url: canonical("/features/recruitment-automation"), applicationCategory: "BusinessApplication", publisher: { "@id": `${SITE_URL}/#organization` }, description: "Recruitment automation with LangGraph agents and human-in-the-loop controls.", offers: { "@type": "Offer", price: "0", priceCurrency: "USD" } },
+      { "@type": "SoftwareApplication", name: "RecruitAI — Recruitment Automation", url: canonical("/features/recruitment-automation"), applicationCategory: "BusinessApplication", publisher: { "@id": `${SITE_URL}/#organization` }, description: "Recruitment automation with graph agents and human-in-the-loop controls.", offers: { "@type": "Offer", price: "0", priceCurrency: "USD" } },
       { "@context": "https://schema.org", ...breadcrumbJsonLd(crumbs.map(c => ({ name: c.name, url: canonical(c.href) }))) },
       { "@context": "https://schema.org", ...faqJsonLd(faq) },
     ],
@@ -40,10 +40,10 @@ export default function Page() {
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-10">
           <Breadcrumbs items={crumbs} />
           <div className="max-w-3xl mt-4">
-            <span className="inline-flex px-3 py-1 rounded-full bg-accent/10 border border-accent/15 text-[11px] font-semibold tracking-widest uppercase text-accent">LangGraph Multi-Agent • Human-in-the-Loop</span>
+            <span className="inline-flex px-3 py-1 rounded-full bg-accent/10 border border-accent/15 text-[11px] font-semibold tracking-widest uppercase text-accent">Multi-Agent Graph • Human-in-the-Loop</span>
             <h1 className="font-serif text-4xl md:text-5xl tracking-tight mt-4">Automate the pipeline. Keep human judgment in charge.</h1>
             <p className="text-muted text-lg leading-relaxed mt-4">
-              RecruitAI coordinates <strong className="text-foreground">specialized LangGraph agents</strong> for JD ingestion, screening, interview-question generation and outreach — so recruiters handle exceptions and approvals, not copy-paste.
+              RecruitAI coordinates <strong className="text-foreground">specialized graph agents</strong> for JD ingestion, screening, interview-question generation and outreach — so recruiters handle exceptions and approvals, not copy-paste.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link href="/auth?tab=signup" className="bg-accent text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#263a66]">Automate a campaign</Link>

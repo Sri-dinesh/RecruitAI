@@ -18,7 +18,7 @@ export const metadata: Metadata = buildMetadata({
 const faq = [
   { question: "What makes this different from generic ATS scoring?", answer: "RecruitAI generates a rubric from your actual job description — not a fixed template. Scoring dimensions (technical mastery, system design, communication, velocity) are calibrated to your role and weighted by importance, with every score backed by extracted evidence from resumes." },
   { question: "Can we customize rubrics per role?", answer: "Yes. Edit weights (Core Skills, Architecture, Problem Solving, Communication, Velocity) via ±5% steppers, toggle blind mode per campaign, and reveal PII only when you move a candidate to interview." },
-  { question: "How do you prevent hallucinated experience?", answer: "All agent outputs are validated against strict Pydantic schemas, and skill matches include source snippets from resume chunks. Candidates also receive red-flag detection for timeline gaps and unverifiable claims." },
+  { question: "How do you prevent hallucinated experience?", answer: "All agent outputs are validated against strict Zod schemas, and skill matches include source snippets from resume chunks. Candidates also receive red-flag detection for timeline gaps and unverifiable claims." },
   { question: "Is scoring auditable for compliance?", answer: "Every score, blind redaction decision and status change is timestamped and stored with tenant isolation. Bias audit endpoint reports selection-rate impact ratios for NYC LL144-style reviews." },
 ];
 

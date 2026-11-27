@@ -6,7 +6,7 @@ RecruitAI is designed for modern hiring teams, technical recruiters, and talent 
 
 ## Core Capabilities
 
-- **Autonomous Multi-Agent Orchestration**: Specialized LangGraph agents handle resume parsing, JD analysis, candidate evaluation, interview question generation, and personalized outreach drafting.
+- **Autonomous Multi-Agent Orchestration**: Specialized graph agents handle resume parsing, JD analysis, candidate evaluation, interview question generation, and personalized outreach drafting.
 - **Objective Rubric Scoring**: Automatically translates job descriptions into multi-dimensional rubrics (technical skills, relevant experience, impact metrics) and grades candidates against uniform standards.
 - **Blind Candidate Screening**: Eliminates demographic bias by redacting names, contact information, gender markers, dates, and locations prior to evaluation.
 - **Human-in-the-Loop Safeguards**: Outreach emails, calendar scheduling, and candidate status decisions require explicit human confirmation before dispatch.
@@ -21,7 +21,7 @@ RecruitAI is designed for modern hiring teams, technical recruiters, and talent 
 - [AI Candidate Screening](https://recruitaiofficial.vercel.app/features/ai-candidate-screening): Rubric-based candidate evaluation with side-by-side matrices and gap analysis.
 - [Blind Hiring & Unbiased Screening](https://recruitaiofficial.vercel.app/features/blind-hiring): Demographic redaction before LLM scoring, audit-logged compliance.
 - [ATS Integration](https://recruitaiofficial.vercel.app/features/ats-integration): Greenhouse, Lever, Workday, Ashby JSON/CSV export with validated schemas.
-- [Recruitment Automation](https://recruitaiofficial.vercel.app/features/recruitment-automation): LangGraph multi-agent orchestration with human-in-the-loop gates.
+- [Recruitment Automation](https://recruitaiofficial.vercel.app/features/recruitment-automation): Multi-agent graph orchestration with human-in-the-loop gates.
 - [Tech Hiring Solution](https://recruitaiofficial.vercel.app/solutions/tech-hiring): AI recruiting for engineering teams — Kubernetes, React, Python scoring depth.
 - [Solutions for Startups](https://recruitaiofficial.vercel.app/solutions/startups): Recruitment software for startups scaling the first 50 hires.
 - [Enterprise Platform](https://recruitaiofficial.vercel.app/solutions/enterprise): Enterprise-grade RLS isolation, audit logging and bias audits.
@@ -44,8 +44,8 @@ RecruitAI is designed for modern hiring teams, technical recruiters, and talent 
 
 - **Web Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS v4, GSAP & Framer Motion animations.
 - **Mobile Client**: Expo 57 / React Native, NativeWind, SecureStore offline-first architecture.
-- **Backend API**: FastAPI (Python 3.12+), Pydantic v2 schemas, streaming server-sent events.
-- **AI & RAG Engine**: Google Gemini 2.0 / 1.5 Pro & Flash with fallback failover, Google Cloud Text Embeddings (text-embedding-004), LangGraph state graphs.
+- **Backend API**: Node.js 24, Express 5, TypeScript, Zod schemas, streaming server-sent events.
+- **AI & RAG Engine**: Google Gemini 2.0 / 1.5 Pro & Flash with fallback failover, Gemini embedding-2 (384-d), typed state graphs.
 - **Database & Auth**: PostgreSQL with pgvector, Supabase Authentication & Row-Level Security.
 
 ## Contact & Ownership

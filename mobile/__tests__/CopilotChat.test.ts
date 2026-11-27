@@ -96,13 +96,13 @@ describe("AI Copilot Mobile Parity", () => {
         json: async () => ({
           job_id: "job-err-456",
           status: "failed",
-          error: "LangGraph execution node timed out",
+          error: "Graph execution node timed out",
         }),
       });
 
       await expect(
         pollJobUntilDone("job-err-456", undefined, 5000)
-      ).rejects.toThrow("LangGraph execution node timed out");
+      ).rejects.toThrow("Graph execution node timed out");
     });
   });
 

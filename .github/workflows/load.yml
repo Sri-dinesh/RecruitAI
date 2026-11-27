@@ -1,0 +1,86 @@
+name: Load validation
+
+# Phase 24: scheduled/optional performance validation. This workflow is
+# intentionally not a required status check on pull requests. It skips cleanly
+# until LOAD_BASE_URL and LOAD_AUTH_TOKEN repository secrets are configured.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: k6 scenario to run
+        required: true
+        default: chat-load.js
+        type: choice
+        options:
+          - chat-load.js
+          - traffic-mix.js
+          - chat-soak.js
+          - chat-spike.js
+          - chaos.js
+      target_rps:
+        description: Override TARGET_RPS (blank uses the scenario default)
+        required: false
+        default: ""
+  schedule:
+    # Nightly at 03:15 UTC; the job is skipped when no target is configured.
+    - cron: "15 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      BASE_URL: ${{ secrets.LOAD_BASE_URL }}
+      AUTH_TOKEN: ${{ secrets.LOAD_AUTH_TOKEN }}
+      SESSION_ID: ${{ secrets.LOAD_SESSION_ID }}
+      SCENARIO: ${{ inputs.scenario || 'chat-load.js' }}
+      TARGET_RPS: ${{ inputs.target_rps }}
+      K6_VERSION: v0.54.0
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Decide whether a target is configured
+        id: gate
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$AUTH_TOKEN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Load validation skipped::Set LOAD_BASE_URL and LOAD_AUTH_TOKEN repository secrets to enable this suite."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install k6
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          curl -fsSL "https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz
+          sudo mv "k6-${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+
+      - name: Run scenario
+        if: steps.gate.outputs.configured == 'true'
+        working-directory: backend
+        run: |
+          args=(--env "BASE_URL=${BASE_URL}" --env "AUTH_TOKEN=${AUTH_TOKEN}")
+          if [ -n "${SESSION_ID}" ]; then args+=(--env "SESSION_ID=${SESSION_ID}"); fi
+          if [ -n "${TARGET_RPS}" ]; then args+=(--env "TARGET_RPS=${TARGET_RPS}"); fi
+          k6 run --summary-export=summary.json "${args[@]}" "scripts/load/${SCENARIO}"
+
+      - name: Upload k6 summary
+        if: always() && steps.gate.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary
+          path: |
+            summary.json
+            *.log
+          if-no-files-found: ignore

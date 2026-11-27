@@ -173,7 +173,7 @@ export default function AtsExportModal({ isOpen, onClose }: AtsExportModalProps)
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                Validated Pydantic schema — ready for Greenhouse / Lever / Workday import.
+                Validated Zod schema — ready for Greenhouse / Lever / Workday import.
               </div>
             </>
           )}

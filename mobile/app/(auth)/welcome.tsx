@@ -81,7 +81,7 @@ export default function WelcomeScreen() {
               </View>
               <View className="flex-1">
                 <Text className="font-sans-bold text-xs text-foreground">
-                  Multi-Agent LangGraph Screening
+                  Multi-Agent Graph Screening
                 </Text>
                 <Text className="font-sans text-[11px] text-muted leading-relaxed">
                   Dense semantic retrieval and rubric scoring against your active job descriptions.

@@ -830,7 +830,7 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
                     Auto-Generate 5-Pillar Rubrics
                   </Text>
                   <Text className="font-sans text-[11px] text-muted">
-                    LangGraph multi-agent supervisor automatically calibrates scoring rubrics from JDs.
+                    Multi-agent supervisor graph automatically calibrates scoring rubrics from JDs.
                   </Text>
                 </View>
                 <Switch
@@ -1210,7 +1210,7 @@ export const ProfileSettingsModal: React.FC<ProfileSettingsModalProps> = ({
               {/* Engine */}
               <View className="flex-row items-center justify-between p-2.5 bg-[#F8F6F2] rounded border border-border">
                 <Text className="font-sans-medium text-xs text-foreground">AI Orchestration</Text>
-                <Text className="font-sans-bold text-xs text-brand-primary">LangGraph Multi-Agent</Text>
+                <Text className="font-sans-bold text-xs text-brand-primary">Multi-Agent Graph</Text>
               </View>
 
               {/* Fairness & Retention Audits — parity with web */}
